@@ -4,7 +4,7 @@ import {
   setCentralConfig,
   readLocalFallback,
   writeLocalFallback,
-} from '../_db.ts';
+} from '../_db';
 
 const LEADS_FALLBACK_FILE = 'persistent_b2b_leads.json';
 const APPOINTMENTS_FALLBACK_FILE = 'persistent_b2b_appointments.json';

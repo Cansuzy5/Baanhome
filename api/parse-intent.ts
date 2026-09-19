@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { setCorsHeaders } from './_db.ts';
+import { setCorsHeaders } from './_db';
 
 export default async function handler(req: any, res: any) {
   setCorsHeaders(res);

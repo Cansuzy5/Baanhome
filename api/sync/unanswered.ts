@@ -1,4 +1,4 @@
-import { setCorsHeaders, getCentralConfig, setCentralConfig } from '../_db.ts';
+import { setCorsHeaders, getCentralConfig, setCentralConfig } from '../_db';
 
 const CONFIG_ID = 'unanswered';
 const FALLBACK_FILE = 'persistent_unanswered.json';

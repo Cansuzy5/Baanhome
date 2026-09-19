@@ -1,4 +1,4 @@
-import { setCorsHeaders, getCentralConfig, setCentralConfig, INITIAL_SHARED_USERS } from '../_db.ts';
+import { setCorsHeaders, getCentralConfig, setCentralConfig, INITIAL_SHARED_USERS } from '../_db';
 
 const CONFIG_ID = 'users';
 const FALLBACK_FILE = 'persistent_users.json';

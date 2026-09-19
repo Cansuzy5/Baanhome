@@ -1,4 +1,4 @@
-import { setCorsHeaders, getCentralConfig, setCentralConfig } from '../_db.ts';
+import { setCorsHeaders, getCentralConfig, setCentralConfig } from '../_db';
 
 const CONFIG_ID = 'activities';
 const FALLBACK_FILE = 'persistent_activities.json';

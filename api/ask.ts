@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { setCorsHeaders } from './_db.ts';
+import { setCorsHeaders } from './_db';
 
 function cleanCustomerResponse(text: string): string {
   if (!text) return '';

@@ -1,5 +1,5 @@
-import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getFirestore, doc, getDoc, setDoc, Firestore } from 'firebase/firestore';
 import fs from 'fs';
 import path from 'path';
 
@@ -14,8 +14,22 @@ const firebaseConfig = {
   firestoreDatabaseId: "ai-studio-1982e74e-9ff9-469a-9cec-64e98f787d0b"
 };
 
-const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// Reuse Firestore instance across serverless invocations
+let dbInstance: Firestore | null = null;
+
+export function getDb(): Firestore {
+  if (!dbInstance) {
+    try {
+      const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+      dbInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+    } catch (e) {
+      console.warn('[Firebase DB] Could not initialize Firestore client, falling back to local/memory store:', e);
+    }
+  }
+  return dbInstance as Firestore;
+}
+
+export const db: Firestore = getDb();
 
 export function setCorsHeaders(res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -27,8 +41,11 @@ export function setCorsHeaders(res: any) {
   );
 }
 
+// In-memory fallback cache across warm serverless functions
+const memoryCache = new Map<string, any>();
+
 function getLocalFilePath(fileName: string): string {
-  // Check if project-level data/ exists
+  // Check if project-level data/ exists and is writable
   const localDataDir = path.join(process.cwd(), 'data');
   if (fs.existsSync(localDataDir)) {
     return path.join(localDataDir, fileName);
@@ -46,12 +63,16 @@ function getLocalFilePath(fileName: string): string {
 }
 
 export function readLocalFallback<T>(fileName: string, defaultValue: T): T {
+  if (memoryCache.has(fileName)) {
+    return memoryCache.get(fileName) as T;
+  }
   try {
     const filePath = getLocalFilePath(fileName);
     if (fs.existsSync(filePath)) {
       const content = fs.readFileSync(filePath, 'utf-8');
       const parsed = JSON.parse(content);
       if (parsed !== undefined && parsed !== null) {
+        memoryCache.set(fileName, parsed);
         return parsed as T;
       }
     }
@@ -62,6 +83,7 @@ export function readLocalFallback<T>(fileName: string, defaultValue: T): T {
 }
 
 export function writeLocalFallback<T>(fileName: string, data: T): void {
+  memoryCache.set(fileName, data);
   try {
     const filePath = getLocalFilePath(fileName);
     const dir = path.dirname(filePath);
@@ -70,22 +92,35 @@ export function writeLocalFallback<T>(fileName: string, data: T): void {
     }
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
   } catch (e) {
-    // ignore
+    // If cwd is read-only (e.g. Vercel), try /tmp directly
+    try {
+      const tmpPath = path.join('/tmp', 'data', fileName);
+      const tmpDir = path.dirname(tmpPath);
+      if (!fs.existsSync(tmpDir)) {
+        fs.mkdirSync(tmpDir, { recursive: true });
+      }
+      fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (tmpErr) {
+      // Memory cache is already updated
+    }
   }
 }
 
 export async function getCentralConfig<T>(configId: string, fallbackFileName: string, defaultValue: T): Promise<T> {
   try {
-    const snap = await getDoc(doc(db, 'systemConfig', configId));
-    if (snap.exists()) {
-      const data = snap.data();
-      if (data && 'payload' in data) {
-        writeLocalFallback(fallbackFileName, data.payload);
-        return data.payload as T;
+    const database = getDb();
+    if (database) {
+      const snap = await getDoc(doc(database, 'systemConfig', configId));
+      if (snap && snap.exists()) {
+        const data = snap.data();
+        if (data && 'payload' in data) {
+          writeLocalFallback(fallbackFileName, data.payload);
+          return data.payload as T;
+        }
       }
     }
   } catch (err) {
-    // In case of Firestore read issues or quota limitations, fall back gracefully
+    // In case of Firestore read issues or quota limitations, fall back gracefully to local/memory
   }
   return readLocalFallback(fallbackFileName, defaultValue);
 }
@@ -93,10 +128,13 @@ export async function getCentralConfig<T>(configId: string, fallbackFileName: st
 export async function setCentralConfig<T>(configId: string, fallbackFileName: string, payload: T): Promise<void> {
   writeLocalFallback(fallbackFileName, payload);
   try {
-    await setDoc(doc(db, 'systemConfig', configId), {
-      payload,
-      updatedAt: new Date().toISOString()
-    });
+    const database = getDb();
+    if (database) {
+      await setDoc(doc(database, 'systemConfig', configId), {
+        payload,
+        updatedAt: new Date().toISOString()
+      });
+    }
   } catch (err) {
     // ignore
   }
