@@ -1,0 +1,123 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    function isValidQuestionLog(data) {
+      let hasRequired = data.keys().hasAll(['id', 'timestamp', 'staffName', 'department', 'question', 'answerSummary', 'category', 'sourceDoc', 'found', 'createdAt']);
+      let validTypes = data.id is string && data.id.size() <= 128
+                    && data.timestamp is string && data.timestamp.size() <= 64
+                    && data.staffName is string && data.staffName.size() <= 100
+                    && data.department is string && data.department.size() <= 100
+                    && data.question is string && data.question.size() <= 500
+                    && data.answerSummary is string && data.answerSummary.size() <= 1000
+                    && data.category is string && data.category.size() <= 100
+                    && data.sourceDoc is string && data.sourceDoc.size() <= 200
+                    && data.found is bool
+                    && data.createdAt == request.time;
+      
+      let validFeedback = !('feedback' in data.keys()) || (data.feedback is string && data.feedback.size() <= 20 && data.feedback in ['accurate', 'inaccurate', 'unclear']);
+      let validFeedbackNote = !('feedbackNote' in data.keys()) || (data.feedbackNote is string && data.feedbackNote.size() <= 500);
+      
+      return hasRequired && validTypes && validFeedback && validFeedbackNote;
+    }
+
+    function isValidUnansweredQuestion(data) {
+      let hasRequired = data.keys().hasAll(['id', 'timestamp', 'staffName', 'department', 'question', 'status', 'createdAt']);
+      let validTypes = data.id is string && data.id.size() <= 128
+                    && data.timestamp is string && data.timestamp.size() <= 64
+                    && data.staffName is string && data.staffName.size() <= 100
+                    && data.department is string && data.department.size() <= 100
+                    && data.question is string && data.question.size() <= 500
+                    && data.status is string && data.status.size() <= 20 && data.status in ['pending', 'assigned', 'resolved']
+                    && data.createdAt == request.time;
+
+      let validSuggestedCategory = !('suggestedCategory' in data.keys()) || (data.suggestedCategory is string && data.suggestedCategory.size() <= 100);
+      let validTargetDoc = !('targetDoc' in data.keys()) || (data.targetDoc is string && data.targetDoc.size() <= 200);
+      let validAdminNotes = !('adminNotes' in data.keys()) || (data.adminNotes is string && data.adminNotes.size() <= 1000);
+
+      return hasRequired && validTypes && validSuggestedCategory && validTargetDoc && validAdminNotes;
+    }
+
+    function isValidAppUser(data) {
+      let hasRequired = data.keys().hasAll(['id', 'username', 'name', 'department', 'role', 'status', 'passwordHash']);
+      let validTypes = data.id is string && data.id.size() <= 128
+                    && data.username is string && data.username.size() <= 64
+                    && data.name is string && data.name.size() <= 100
+                    && data.department is string && data.department.size() <= 100
+                    && data.role is string && data.role in ['Knowledge User', 'Operator', 'Administrator']
+                    && data.status is string && data.status in ['active', 'inactive']
+                    && data.passwordHash is string && data.passwordHash.size() <= 256;
+      return hasRequired && validTypes;
+    }
+
+    function isValidUserActivityLog(data) {
+      let hasRequired = data.keys().hasAll(['id', 'userId', 'username', 'staffName', 'role', 'action', 'details', 'timestamp']);
+      let validTypes = data.id is string && data.id.size() <= 128
+                    && data.userId is string && data.userId.size() <= 128
+                    && data.username is string && data.username.size() <= 64
+                    && data.staffName is string && data.staffName.size() <= 100
+                    && data.role is string && data.role.size() <= 50
+                    && data.action is string && data.action.size() <= 80
+                    && data.details is string && data.details.size() <= 1000
+                    && data.timestamp is string && data.timestamp.size() <= 64;
+      return hasRequired && validTypes;
+    }
+
+    match /questionLogs/{logId} {
+      allow list: if true; // Internal tool, everyone can see logs
+      allow get: if isValidId(logId);
+      allow create: if isValidId(logId) && isValidQuestionLog(incoming()) && incoming().keys().size() <= 12;
+      allow update: if isValidId(logId) 
+                    && isValidQuestionLog(incoming())
+                    && incoming().id == existing().id
+                    && incoming().timestamp == existing().timestamp
+                    && incoming().createdAt == existing().createdAt
+                    && incoming().diff(existing()).affectedKeys().hasOnly(['feedback', 'feedbackNote']);
+      allow delete: if isValidId(logId);
+    }
+
+    match /unansweredQuestions/{unansweredId} {
+      allow list: if true;
+      allow get: if isValidId(unansweredId);
+      allow create: if isValidId(unansweredId) && isValidUnansweredQuestion(incoming()) && incoming().keys().size() <= 10;
+      allow update: if isValidId(unansweredId)
+                    && isValidUnansweredQuestion(incoming())
+                    && incoming().id == existing().id
+                    && incoming().timestamp == existing().timestamp
+                    && incoming().createdAt == existing().createdAt
+                    && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNotes', 'suggestedCategory', 'targetDoc']);
+      allow delete: if isValidId(unansweredId);
+    }
+
+    match /appUsers/{userId} {
+      allow list: if true;
+      allow get: if isValidId(userId);
+      allow create: if isValidId(userId) && isValidAppUser(incoming());
+      allow update: if isValidId(userId) && isValidAppUser(incoming()) && incoming().id == existing().id;
+      allow delete: if isValidId(userId);
+    }
+
+    match /userActivityLogs/{activityId} {
+      allow list: if true;
+      allow get: if isValidId(activityId);
+      allow create: if isValidId(activityId) && isValidUserActivityLog(incoming());
+      allow update: if false; // Audit logs are append-only and immutable
+      allow delete: if isValidId(activityId);
+    }
+
+    match /departments/{deptId} {
+      allow read, list: if true;
+      allow create, update, delete: if isValidId(deptId);
+    }
+  }
+}

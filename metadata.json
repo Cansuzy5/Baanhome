@@ -1,0 +1,8 @@
+{
+  "name": "น้องโฮม - ผู้ช่วยตอบคำถามบ้านโฮม",
+  "description": "ระบบต้นแบบผู้ช่วยตอบคำถามอัจฉริยะสำหรับพนักงานบ้านโฮม ค้นหาข้อมูลจากฐานความรู้ Google Docs และเก็บบันทึกประวัติคำถามลง Google Sheets",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

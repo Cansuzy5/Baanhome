@@ -1,0 +1,96 @@
+{
+  "entities": {
+    "QuestionLog": {
+      "title": "Question Log",
+      "description": "Log of a search query executed by a staff member.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "timestamp": { "type": "string", "maxLength": 64 },
+        "staffName": { "type": "string", "maxLength": 100 },
+        "department": { "type": "string", "maxLength": 100 },
+        "question": { "type": "string", "maxLength": 500 },
+        "answerSummary": { "type": "string", "maxLength": 1000 },
+        "category": { "type": "string", "maxLength": 100 },
+        "sourceDoc": { "type": "string", "maxLength": 200 },
+        "found": { "type": "boolean" },
+        "feedback": { "type": "string", "enum": ["accurate", "inaccurate", "unclear"], "maxLength": 20 },
+        "feedbackNote": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["id", "timestamp", "staffName", "department", "question", "answerSummary", "category", "sourceDoc", "found"]
+    },
+    "UnansweredQuestion": {
+      "title": "Unanswered Question",
+      "description": "A search query that yielded no results, flagged for admin review.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "timestamp": { "type": "string", "maxLength": 64 },
+        "staffName": { "type": "string", "maxLength": 100 },
+        "department": { "type": "string", "maxLength": 100 },
+        "question": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["pending", "assigned", "resolved"], "maxLength": 20 },
+        "suggestedCategory": { "type": "string", "maxLength": 100 },
+        "targetDoc": { "type": "string", "maxLength": 200 },
+        "adminNotes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["id", "timestamp", "staffName", "department", "question", "status"]
+    },
+    "AppUser": {
+      "title": "App User",
+      "description": "User profile with role-based access control and login credentials.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 100 },
+        "department": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["Knowledge User", "Operator", "Administrator"], "maxLength": 30 },
+        "status": { "type": "string", "enum": ["active", "inactive"], "maxLength": 20 },
+        "avatar": { "type": "string", "maxLength": 20 },
+        "passwordHash": { "type": "string", "maxLength": 256 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "lastLoginAt": { "type": "string", "maxLength": 64 },
+        "lastPasswordResetAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "username", "name", "department", "role", "status", "passwordHash"]
+    },
+    "UserActivityLog": {
+      "title": "User Activity Log",
+      "description": "Audit and activity log tracking user actions across the system.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128 },
+        "username": { "type": "string", "maxLength": 64 },
+        "staffName": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "maxLength": 50 },
+        "action": { "type": "string", "maxLength": 80 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "timestamp": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["id", "userId", "username", "staffName", "role", "action", "details", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/questionLogs/{logId}": {
+      "schema": { "$ref": "#/entities/QuestionLog" },
+      "description": "Stores logs of all searches."
+    },
+    "/unansweredQuestions/{unansweredId}": {
+      "schema": { "$ref": "#/entities/UnansweredQuestion" },
+      "description": "Stores questions that could not be answered."
+    },
+    "/appUsers/{userId}": {
+      "schema": { "$ref": "#/entities/AppUser" },
+      "description": "Stores system user accounts with role assignments."
+    },
+    "/userActivityLogs/{activityId}": {
+      "schema": { "$ref": "#/entities/UserActivityLog" },
+      "description": "Stores user activity audit trails."
+    }
+  }
+}
