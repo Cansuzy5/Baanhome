@@ -170,6 +170,29 @@ function setCustomImagesMap(map: Record<string, string[]>): void {
   } catch (e) {
     console.error('Failed to save custom item images to localStorage', e);
   }
+
+  // Sync to shared backend server
+  try {
+    fetch('/api/sync/custom-images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ images: map }),
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+export function syncCustomImagesWithServer(): void {
+  try {
+    fetch('/api/sync/custom-images')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.images && typeof data.images === 'object' && Object.keys(data.images).length > 0) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.images));
+          window.dispatchEvent(new CustomEvent('baan_home_images_updated'));
+        }
+      })
+      .catch(() => {});
+  } catch (e) {}
 }
 
 /**

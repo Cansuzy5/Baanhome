@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { StaffProfile } from '../types';
 import { authenticateLogin } from '../utils/authService';
@@ -34,6 +34,12 @@ export const UserWelcomeGate: React.FC<UserWelcomeGateProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [loginSuccessUser, setLoginSuccessUser] = useState<StaffProfile | null>(null);
+
+  useEffect(() => {
+    if (initialProfile?.username) {
+      setUsername(initialProfile.username);
+    }
+  }, [initialProfile?.username]);
 
   if (!isOpen) return null;
 

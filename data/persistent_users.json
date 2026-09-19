@@ -1,0 +1,27 @@
+[
+  {
+    "id": "usr_candy",
+    "username": "cansuzy3",
+    "name": "Candy",
+    "department": "ช่างและปฏิบัติการ (Engineering & Operations)",
+    "role": "Administrator",
+    "status": "active",
+    "avatar": "🧑🏻‍💼",
+    "passwordHash": "d93028673bae1ae8f8296bf87a2d05d9407ba69427da36d7a073e6e6c06c786d",
+    "createdAt": "2026-09-19 14:48:00",
+    "lastLoginAt": "2026-09-19 14:49:15",
+    "lastPasswordResetAt": "2026-09-19 15:06:46"
+  },
+  {
+    "id": "usr_admin",
+    "username": "admin",
+    "name": "คุณผู้จัดการศิริชัย (Admin)",
+    "department": "ฝ่ายขายและการตลาด (Sales & MICE)",
+    "role": "Administrator",
+    "status": "active",
+    "avatar": "👨🏻‍💼",
+    "passwordHash": "9dbcd8e2eef014a070e1713d9657b98d287ef3e3d937107db71fb3426e0e2c81",
+    "createdAt": "2026-03-01 08:00:00",
+    "lastLoginAt": "2026-09-19 14:49:15"
+  }
+]

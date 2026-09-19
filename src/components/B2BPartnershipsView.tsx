@@ -117,21 +117,54 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   const [leadToDelete, setLeadToDelete] = useState<B2BLead | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
-  // Save leads to local storage
+  // Load and sync from shared server on mount
+  useEffect(() => {
+    fetch('/api/sync/b2b')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data) {
+          if (Array.isArray(data.leads) && data.leads.length > 0) {
+            setLeadsList(data.leads);
+            try {
+              localStorage.setItem(LEADS_STORAGE_KEY, JSON.stringify(data.leads));
+            } catch (e) {}
+          }
+          if (Array.isArray(data.appointments) && data.appointments.length > 0) {
+            setAppointments(data.appointments);
+            try {
+              localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(data.appointments));
+            } catch (e) {}
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Save leads to local storage and sync to server
   const persistLeads = (newLeads: B2BLead[]) => {
     setLeadsList(newLeads);
     try {
       localStorage.setItem(LEADS_STORAGE_KEY, JSON.stringify(newLeads));
+      fetch('/api/sync/b2b', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leads: newLeads, appointments }),
+      }).catch(() => {});
     } catch (e) {
       console.error('Failed to persist leads', e);
     }
   };
 
-  // Save appointments to local storage
+  // Save appointments to local storage and sync to server
   const persistAppointments = (newApts: B2BAppointment[]) => {
     setAppointments(newApts);
     try {
       localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(newApts));
+      fetch('/api/sync/b2b', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leads: leadsList, appointments: newApts }),
+      }).catch(() => {});
     } catch (e) {
       console.error('Failed to persist appointments', e);
     }

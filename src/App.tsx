@@ -40,13 +40,14 @@ import {
   getLocalQuestionLogs,
   getLocalUnansweredQuestions
 } from './utils/firebase';
-import { getSyncedKnowledgeItems } from './utils/googleSheetsSync';
+import { getSyncedKnowledgeItems, syncKnowledgeWithServer } from './utils/googleSheetsSync';
 import { 
   GoogleSheetsDbConfig, 
   getStoredSheetsConfig, 
   appendQuestionLogToSheet 
 } from './utils/googleSheetsDatabase';
 import { getGoogleAccessToken, initGoogleAuth } from './utils/googleWorkspaceAuth';
+import { syncCustomImagesWithServer } from './utils/itemImageManager';
 import { 
   getActiveSessionUser, 
   setActiveSessionUser, 
@@ -63,25 +64,13 @@ import {
 import { Sparkles, ShieldAlert, Lock, ArrowRight } from 'lucide-react';
 
 export default function App() {
-  // Current Authenticated User (Default to active session or default Admin for rich initial state)
-  const [currentStaff, setCurrentStaff] = useState<StaffProfile>(() => {
-    const active = getActiveSessionUser();
-    if (active) return active;
-    const defaultAdmin = INITIAL_DEFAULT_USERS[0];
-    return {
-      id: defaultAdmin.id,
-      username: defaultAdmin.username,
-      name: defaultAdmin.name,
-      department: defaultAdmin.department,
-      avatar: defaultAdmin.avatar || '👨🏻‍💼',
-      role: defaultAdmin.role,
-      status: defaultAdmin.status,
-      lastLoginAt: defaultAdmin.lastLoginAt,
-    };
+  // Current Authenticated User (Strict Login Required: anyone opening the link must log in first)
+  const [currentStaff, setCurrentStaff] = useState<StaffProfile | null>(() => {
+    return getActiveSessionUser();
   });
 
-  const [showWelcomeGate, setShowWelcomeGate] = useState<boolean>(false);
-  const [allowWelcomeGateCancel, setAllowWelcomeGateCancel] = useState<boolean>(true);
+  const [showWelcomeGate, setShowWelcomeGate] = useState<boolean>(() => !getActiveSessionUser());
+  const [allowWelcomeGateCancel, setAllowWelcomeGateCancel] = useState<boolean>(() => !!getActiveSessionUser());
   
   const [activeTab, setActiveTab] = useState<NavigationTab>('qa');
   const [searchQuery, setSearchQuery] = useState('');
@@ -149,6 +138,28 @@ export default function App() {
     // Initialize Google Workspace OAuth auth listener
     initGoogleAuth();
 
+    // Sync custom knowledge from server if uploaded by any staff/admin
+    syncKnowledgeWithServer((items) => {
+      setActiveKnowledgeItems(items);
+      setIsUsingCustomSheet(true);
+    });
+
+    // Sync custom item images from server
+    syncCustomImagesWithServer();
+
+    // Sync B2B appointments from server
+    fetch('/api/sync/b2b')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && Array.isArray(data.appointments) && data.appointments.length > 0) {
+          setB2bAppointments(data.appointments);
+          try {
+            localStorage.setItem('baan_home_b2b_appointments_v2', JSON.stringify(data.appointments));
+          } catch (e) {}
+        }
+      })
+      .catch(() => {});
+
     // Seed default users if Firestore is empty
     initializeDefaultUsersIfNeeded();
 
@@ -157,19 +168,22 @@ export default function App() {
       if (loadedUsers && loadedUsers.length > 0) {
         setUsers(loadedUsers);
         // If current staff status or role was updated by admin in real-time, sync it
-        const matchingCurrent = loadedUsers.find((u) => u.id === currentStaff.id);
-        if (matchingCurrent) {
-          if (matchingCurrent.status === 'inactive') {
-            // Account deactivated! Force sign out
-            alert('บัญชีของคุณถูกระงับการใช้งานโดยผู้ดูแลระบบ');
-            setActiveSessionUser(null);
-            setShowWelcomeGate(true);
-            setAllowWelcomeGateCancel(false);
-          } else if (matchingCurrent.role !== currentStaff.role) {
-            setCurrentStaff((prev) => ({
-              ...prev,
-              role: matchingCurrent.role,
-            }));
+        if (currentStaff) {
+          const matchingCurrent = loadedUsers.find((u) => u.id === currentStaff.id);
+          if (matchingCurrent) {
+            if (matchingCurrent.status === 'inactive') {
+              // Account deactivated! Force sign out
+              alert('บัญชีของคุณถูกระงับการใช้งานโดยผู้ดูแลระบบ');
+              setActiveSessionUser(null);
+              setCurrentStaff(null);
+              setShowWelcomeGate(true);
+              setAllowWelcomeGateCancel(false);
+            } else if (matchingCurrent.role !== currentStaff.role) {
+              setCurrentStaff((prev) => (prev ? {
+                ...prev,
+                role: matchingCurrent.role,
+              } : null));
+            }
           }
         }
       }
@@ -201,16 +215,17 @@ export default function App() {
       unsubQuestionLogs();
       unsubUnanswered();
     };
-  }, [currentStaff.id]);
+  }, [currentStaff?.id]);
 
   // Role Protection: Ensure current user has permission to view current tab
   useEffect(() => {
+    if (!currentStaff) return;
     const role = currentStaff.role || 'Knowledge User';
     if (!canUserAccessTab(role, activeTab)) {
       // Auto fallback to 'qa' if switching to an unauthorized tab
       setActiveTab('qa');
     }
-  }, [currentStaff.role, activeTab]);
+  }, [currentStaff?.role, activeTab]);
 
   const handleExecuteSearch = (queryToSearch?: string) => {
     const targetQuery = queryToSearch !== undefined ? queryToSearch : searchQuery;
@@ -275,9 +290,27 @@ export default function App() {
 
   const handleLogout = () => {
     setActiveSessionUser(null);
+    setCurrentStaff(null);
     setShowWelcomeGate(true);
     setAllowWelcomeGateCancel(false);
   };
+
+  // If not logged in, render the login gate directly as the entry page
+  if (!currentStaff) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#143224] via-[#1B3D2F] to-[#0A1A12] flex items-center justify-center p-3 sm:p-5 relative overflow-hidden">
+        {/* Ambient luxury background glow */}
+        <div className="fixed top-0 right-0 w-[550px] h-[550px] bg-[#E8C57D]/10 rounded-full blur-3xl pointer-events-none -z-10" />
+        <div className="fixed bottom-0 left-0 w-[450px] h-[450px] bg-[#2D5A43]/20 rounded-full blur-3xl pointer-events-none -z-10" />
+        <UserWelcomeGate
+          isOpen={true}
+          initialProfile={null}
+          allowCancel={false}
+          onSaveProfile={handleSaveUserProfile}
+        />
+      </div>
+    );
+  }
 
   const currentRole: UserRole = currentStaff.role || 'Knowledge User';
   const roleConfig = ROLE_PERMISSIONS[currentRole] || ROLE_PERMISSIONS['Knowledge User'];

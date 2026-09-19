@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 
@@ -186,6 +187,264 @@ ${contextText}
         hasCondition: false,
         needsClarification: false,
       });
+    }
+  });
+
+  // Shared Data Persistence Store (Sync across all tabs, preview iframe, and shared links)
+  const DATA_DIR = path.join(process.cwd(), 'data');
+  if (!fs.existsSync(DATA_DIR)) {
+    try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
+  }
+  const USERS_FILE = path.join(DATA_DIR, 'persistent_users.json');
+  const ACTIVITIES_FILE = path.join(DATA_DIR, 'persistent_activities.json');
+
+  const INITIAL_SHARED_USERS = [
+    {
+      id: 'usr_candy',
+      username: 'cansuzy3',
+      name: 'Candy',
+      department: 'ช่างและปฏิบัติการ (Engineering & Operations)',
+      role: 'Administrator',
+      status: 'active',
+      avatar: '🧑🏻‍💼',
+      passwordHash: 'd93028673bae1ae8f8296bf87a2d05d9407ba69427da36d7a073e6e6c06c786d',
+      createdAt: '2026-09-19 14:48:00',
+      lastLoginAt: '2026-09-19 14:49:15',
+    },
+    {
+      id: 'usr_admin',
+      username: 'admin',
+      name: 'คุณผู้จัดการศิริชัย (Admin)',
+      department: 'ฝ่ายขายและการตลาด (Sales & MICE)',
+      role: 'Administrator',
+      status: 'active',
+      avatar: '👨🏻‍💼',
+      passwordHash: '9dbcd8e2eef014a070e1713d9657b98d287ef3e3d937107db71fb3426e0e2c81',
+      createdAt: '2026-03-01 08:00:00',
+      lastLoginAt: '2026-09-19 14:49:15',
+    }
+  ];
+
+  app.get('/api/sync/users', (req, res) => {
+    try {
+      if (fs.existsSync(USERS_FILE)) {
+        const raw = fs.readFileSync(USERS_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return res.json({ users: parsed });
+        }
+      }
+    } catch (e) {
+      console.error('Failed reading users file', e);
+    }
+    res.json({ users: INITIAL_SHARED_USERS });
+  });
+
+  app.post('/api/sync/users', (req, res) => {
+    try {
+      const { users } = req.body || {};
+      if (Array.isArray(users)) {
+        fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
+        return res.json({ success: true, count: users.length });
+      }
+      res.status(400).json({ error: 'Invalid users array' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/sync/activities', (req, res) => {
+    try {
+      if (fs.existsSync(ACTIVITIES_FILE)) {
+        const raw = fs.readFileSync(ACTIVITIES_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return res.json({ activities: parsed });
+        }
+      }
+    } catch (e) {}
+    res.json({ activities: [] });
+  });
+
+  app.post('/api/sync/activities', (req, res) => {
+    try {
+      const { activity } = req.body || {};
+      if (activity && activity.id) {
+        let existing: any[] = [];
+        if (fs.existsSync(ACTIVITIES_FILE)) {
+          try {
+            existing = JSON.parse(fs.readFileSync(ACTIVITIES_FILE, 'utf-8'));
+          } catch (e) {}
+        }
+        existing = [activity, ...existing.filter((a) => a.id !== activity.id)].slice(0, 300);
+        fs.writeFileSync(ACTIVITIES_FILE, JSON.stringify(existing, null, 2), 'utf-8');
+        return res.json({ success: true });
+      }
+      res.status(400).json({ error: 'Invalid activity' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Question Logs & Unanswered Questions Sync
+  const QUESTION_LOGS_FILE = path.join(DATA_DIR, 'persistent_question_logs.json');
+  const UNANSWERED_FILE = path.join(DATA_DIR, 'persistent_unanswered.json');
+
+  app.get('/api/sync/question-logs', (req, res) => {
+    try {
+      if (fs.existsSync(QUESTION_LOGS_FILE)) {
+        const raw = fs.readFileSync(QUESTION_LOGS_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return res.json({ logs: parsed });
+      }
+    } catch (e) {}
+    res.json({ logs: [] });
+  });
+
+  app.post('/api/sync/question-logs', (req, res) => {
+    try {
+      const { logs } = req.body || {};
+      if (Array.isArray(logs)) {
+        fs.writeFileSync(QUESTION_LOGS_FILE, JSON.stringify(logs, null, 2), 'utf-8');
+        return res.json({ success: true });
+      }
+      res.status(400).json({ error: 'Invalid logs' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/sync/unanswered', (req, res) => {
+    try {
+      if (fs.existsSync(UNANSWERED_FILE)) {
+        const raw = fs.readFileSync(UNANSWERED_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return res.json({ questions: parsed });
+      }
+    } catch (e) {}
+    res.json({ questions: [] });
+  });
+
+  app.post('/api/sync/unanswered', (req, res) => {
+    try {
+      const { questions } = req.body || {};
+      if (Array.isArray(questions)) {
+        fs.writeFileSync(UNANSWERED_FILE, JSON.stringify(questions, null, 2), 'utf-8');
+        return res.json({ success: true });
+      }
+      res.status(400).json({ error: 'Invalid questions' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // B2B Leads & Appointments Sync
+  const B2B_LEADS_FILE = path.join(DATA_DIR, 'persistent_b2b_leads.json');
+  const B2B_APPOINTMENTS_FILE = path.join(DATA_DIR, 'persistent_b2b_appointments.json');
+
+  app.get('/api/sync/b2b', (req, res) => {
+    let leads: any[] = [];
+    let appointments: any[] = [];
+    try {
+      if (fs.existsSync(B2B_LEADS_FILE)) {
+        leads = JSON.parse(fs.readFileSync(B2B_LEADS_FILE, 'utf-8'));
+      }
+      if (fs.existsSync(B2B_APPOINTMENTS_FILE)) {
+        appointments = JSON.parse(fs.readFileSync(B2B_APPOINTMENTS_FILE, 'utf-8'));
+      }
+    } catch (e) {}
+    res.json({ leads, appointments });
+  });
+
+  app.post('/api/sync/b2b', (req, res) => {
+    try {
+      const { leads, appointments } = req.body || {};
+      if (Array.isArray(leads)) {
+        fs.writeFileSync(B2B_LEADS_FILE, JSON.stringify(leads, null, 2), 'utf-8');
+      }
+      if (Array.isArray(appointments)) {
+        fs.writeFileSync(B2B_APPOINTMENTS_FILE, JSON.stringify(appointments, null, 2), 'utf-8');
+      }
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Custom Knowledge Base Items (Google Sheets sync)
+  const KNOWLEDGE_FILE = path.join(DATA_DIR, 'persistent_knowledge.json');
+
+  app.get('/api/sync/knowledge', (req, res) => {
+    try {
+      if (fs.existsSync(KNOWLEDGE_FILE)) {
+        const data = JSON.parse(fs.readFileSync(KNOWLEDGE_FILE, 'utf-8'));
+        return res.json(data);
+      }
+    } catch (e) {}
+    res.json({ items: null, sheetUrl: '', lastSynced: null });
+  });
+
+  app.post('/api/sync/knowledge', (req, res) => {
+    try {
+      const payload = req.body || {};
+      fs.writeFileSync(KNOWLEDGE_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Departments Sync
+  const DEPARTMENTS_FILE = path.join(DATA_DIR, 'persistent_departments.json');
+
+  app.get('/api/sync/departments', (req, res) => {
+    try {
+      if (fs.existsSync(DEPARTMENTS_FILE)) {
+        const raw = fs.readFileSync(DEPARTMENTS_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return res.json({ departments: parsed });
+      }
+    } catch (e) {}
+    res.json({ departments: [] });
+  });
+
+  app.post('/api/sync/departments', (req, res) => {
+    try {
+      const { departments } = req.body || {};
+      if (Array.isArray(departments)) {
+        fs.writeFileSync(DEPARTMENTS_FILE, JSON.stringify(departments, null, 2), 'utf-8');
+        return res.json({ success: true });
+      }
+      res.status(400).json({ error: 'Invalid departments' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Custom Images Sync
+  const CUSTOM_IMAGES_FILE = path.join(DATA_DIR, 'persistent_custom_images.json');
+
+  app.get('/api/sync/custom-images', (req, res) => {
+    try {
+      if (fs.existsSync(CUSTOM_IMAGES_FILE)) {
+        const raw = fs.readFileSync(CUSTOM_IMAGES_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return res.json({ images: parsed });
+      }
+    } catch (e) {}
+    res.json({ images: {} });
+  });
+
+  app.post('/api/sync/custom-images', (req, res) => {
+    try {
+      const { images } = req.body || {};
+      if (images && typeof images === 'object') {
+        fs.writeFileSync(CUSTOM_IMAGES_FILE, JSON.stringify(images, null, 2), 'utf-8');
+        return res.json({ success: true });
+      }
+      res.status(400).json({ error: 'Invalid images map' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 

@@ -245,15 +245,45 @@ export async function fetchGoogleSheet(urlOrId: string): Promise<KnowledgeItem[]
 }
 
 export function saveSyncedKnowledgeItems(items: KnowledgeItem[], sheetUrl?: string): void {
+  const lastTime = new Date().toISOString();
   try {
     localStorage.setItem(STORAGE_KEY_ITEMS, JSON.stringify(items));
     if (sheetUrl) {
       localStorage.setItem(STORAGE_KEY_URL, sheetUrl);
     }
-    localStorage.setItem(STORAGE_KEY_LAST_SYNC, new Date().toISOString());
+    localStorage.setItem(STORAGE_KEY_LAST_SYNC, lastTime);
   } catch (e) {
     console.error('Failed to save to localStorage', e);
   }
+
+  // Sync to shared backend server
+  try {
+    fetch('/api/sync/knowledge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items,
+        sheetUrl: sheetUrl || getSyncedSheetUrl(),
+        lastSynced: lastTime,
+      }),
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+export function syncKnowledgeWithServer(onLoaded?: (items: KnowledgeItem[]) => void) {
+  try {
+    fetch('/api/sync/knowledge')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && Array.isArray(data.items) && data.items.length > 0) {
+          localStorage.setItem(STORAGE_KEY_ITEMS, JSON.stringify(data.items));
+          if (data.sheetUrl) localStorage.setItem(STORAGE_KEY_URL, data.sheetUrl);
+          if (data.lastSynced) localStorage.setItem(STORAGE_KEY_LAST_SYNC, data.lastSynced);
+          if (onLoaded) onLoaded(data.items);
+        }
+      })
+      .catch(() => {});
+  } catch (e) {}
 }
 
 export function getSyncedKnowledgeItems(): KnowledgeItem[] | null {
@@ -282,6 +312,13 @@ export function clearSyncedKnowledgeItems(): void {
   } catch (e) {
     console.error('Failed to clear localStorage', e);
   }
+  try {
+    fetch('/api/sync/knowledge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: null, sheetUrl: '', lastSynced: null }),
+    }).catch(() => {});
+  } catch (e) {}
 }
 
 export function parseTSV(text: string): string[][] {

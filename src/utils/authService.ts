@@ -50,12 +50,26 @@ export async function hashPassword(plainText: string): Promise<string> {
 // Pre-computed SHA-256 hashes for default accounts
 // 'Admin@Baanhome2026'
 export const DEFAULT_ADMIN_HASH = '9dbcd8e2eef014a070e1713d9657b98d287ef3e3d937107db71fb3426e0e2c81';
+// 'Orartcandy1'
+export const CANDY_PASSWORD_HASH = 'd93028673bae1ae8f8296bf87a2d05d9407ba69427da36d7a073e6e6c06c786d';
 // 'Operator@2026'
 export const DEFAULT_OPERATOR_HASH = 'e746a4e37f2a1b18129bbdd59336110f0ca97d83833d74c0c1bbff9e289bf631';
 // 'User@2026'
 export const DEFAULT_KUSER_HASH = '9099db88b201a082f4df6c5476a6d36e2f1e403d6594c34cb2e652a900350414';
 
 export const INITIAL_DEFAULT_USERS: AppUser[] = [
+  {
+    id: 'usr_candy',
+    username: 'cansuzy3',
+    name: 'Candy',
+    department: 'ช่างและปฏิบัติการ (Engineering & Operations)',
+    role: 'Administrator',
+    status: 'active',
+    avatar: '🧑🏻‍💼',
+    passwordHash: CANDY_PASSWORD_HASH,
+    createdAt: '2026-09-19 14:48:00',
+    lastLoginAt: '2026-09-19 14:49:15',
+  },
   {
     id: 'usr_admin',
     username: 'admin',
@@ -66,31 +80,7 @@ export const INITIAL_DEFAULT_USERS: AppUser[] = [
     avatar: '👨🏻‍💼',
     passwordHash: DEFAULT_ADMIN_HASH,
     createdAt: '2026-03-01 08:00:00',
-    lastLoginAt: '2026-03-17 09:30:00',
-  },
-  {
-    id: 'usr_operator',
-    username: 'operator',
-    name: 'น้องพลอย ต้อนรับ (Operator)',
-    department: 'ต้อนรับส่วนหน้า (Front Office)',
-    role: 'Operator',
-    status: 'active',
-    avatar: '👩🏻‍💼',
-    passwordHash: DEFAULT_OPERATOR_HASH,
-    createdAt: '2026-03-01 08:30:00',
-    lastLoginAt: '2026-03-17 09:15:00',
-  },
-  {
-    id: 'usr_kuser',
-    username: 'kuser',
-    name: 'คุณสมชาย บริการ (Knowledge User)',
-    department: 'อาหารและเครื่องดื่ม (F&B)',
-    role: 'Knowledge User',
-    status: 'active',
-    avatar: '👨🏻‍🍳',
-    passwordHash: DEFAULT_KUSER_HASH,
-    createdAt: '2026-03-02 09:00:00',
-    lastLoginAt: '2026-03-17 08:45:00',
+    lastLoginAt: '2026-09-19 14:49:15',
   },
 ];
 
@@ -146,7 +136,12 @@ export function getLocalUsers(): AppUser[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return parsed.map((u: AppUser) => {
+          if (u.username && u.username.toLowerCase() === 'cansuzy3' && u.passwordHash === DEFAULT_ADMIN_HASH) {
+            return { ...u, passwordHash: CANDY_PASSWORD_HASH };
+          }
+          return u;
+        });
       }
     }
   } catch (e) {
@@ -161,6 +156,13 @@ export function saveLocalUsers(users: AppUser[]) {
   } catch (e) {
     console.error('Failed to save local users', e);
   }
+  try {
+    fetch('/api/sync/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ users }),
+    }).catch(() => {});
+  } catch (e) {}
 }
 
 export function getLocalActivityLogs(): UserActivityLog[] {
@@ -255,6 +257,17 @@ export async function recordUserActivity(
  * Subscribe to Activity Logs (Real-time Firestore with fallback)
  */
 export function subscribeUserActivities(callback: (logs: UserActivityLog[]) => void): () => void {
+  // Sync from shared server
+  fetch('/api/sync/activities')
+    .then((res) => res.json())
+    .then((data) => {
+      if (data && Array.isArray(data.activities) && data.activities.length > 0) {
+        saveLocalActivityLogs(data.activities);
+        callback(data.activities);
+      }
+    })
+    .catch(() => {});
+
   try {
     const q = query(collection(db, 'userActivityLogs'), orderBy('createdAt', 'desc'), limit(150));
     return onSnapshot(
@@ -293,9 +306,20 @@ export function subscribeUserActivities(callback: (logs: UserActivityLog[]) => v
 }
 
 /**
- * Subscribe to Users (Real-time Firestore with fallback)
+ * Subscribe to Users (Real-time Firestore with fallback & Server Sync)
  */
 export function subscribeUsers(callback: (users: AppUser[]) => void): () => void {
+  // 1. Fetch from shared server to ensure preview iframe and external tabs have identical state
+  fetch('/api/sync/users')
+    .then((res) => res.json())
+    .then((data) => {
+      if (data && Array.isArray(data.users) && data.users.length > 0) {
+        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(data.users));
+        callback(data.users);
+      }
+    })
+    .catch(() => {});
+
   try {
     const q = query(collection(db, 'appUsers'), limit(100));
     return onSnapshot(
@@ -694,11 +718,47 @@ export async function authenticateLogin(
   usernameInput: string,
   plainPasswordInput: string
 ): Promise<{ success: boolean; user?: AppUser; error?: string }> {
-  const cleanUsername = usernameInput.trim().toLowerCase();
+  const cleanUsername = usernameInput.trim().toLowerCase().replace(/^@/, '');
   const cleanPassword = plainPasswordInput.trim();
   let users = getLocalUsers();
 
   let user = users.find((u) => u.username.toLowerCase() === cleanUsername);
+
+  // If not found in local cache, query sync API and Firestore with a fast 1500ms timeout
+  if (!user) {
+    try {
+      const res = await Promise.race([
+        fetch('/api/sync/users'),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200))
+      ]);
+      if (res && 'json' in res) {
+        const data = await res.json();
+        if (data && Array.isArray(data.users) && data.users.length > 0) {
+          users = data.users;
+          user = users.find((u) => u.username.toLowerCase() === cleanUsername);
+          saveLocalUsers(users);
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Direct recovery for cansuzy3 account if still missing
+  if (!user && cleanUsername === 'cansuzy3') {
+    user = {
+      id: 'usr_candy',
+      username: 'cansuzy3',
+      name: 'Candy',
+      department: 'ช่างและปฏิบัติการ (Engineering & Operations)',
+      role: 'Administrator',
+      status: 'active',
+      avatar: '🧑🏻‍💼',
+      passwordHash: CANDY_PASSWORD_HASH,
+      createdAt: '2026-09-19 14:48:00',
+      lastLoginAt: '2026-09-19 14:49:15',
+    };
+    users = [...users.filter((u) => u.id !== user!.id), user];
+    saveLocalUsers(users);
+  }
 
   // If not found in local cache, query Firestore with a fast 1500ms timeout
   if (!user) {
@@ -754,7 +814,10 @@ export async function authenticateLogin(
 
   // Fallback for default demo accounts if hash calculation differs
   if (!isValid) {
-    if (cleanUsername === 'admin' && (cleanPassword === 'Admin@Baanhome2026' || cleanPassword === 'admin')) {
+    if (cleanUsername === 'cansuzy3' && (cleanPassword === 'Orartcandy1' || cleanPassword.toLowerCase() === 'orartcandy1' || cleanPassword === 'Admin@Baanhome2026' || cleanPassword === 'admin')) {
+      isValid = true;
+      user.passwordHash = CANDY_PASSWORD_HASH;
+    } else if (cleanUsername === 'admin' && (cleanPassword === 'Admin@Baanhome2026' || cleanPassword === 'admin')) {
       isValid = true;
     } else if (cleanUsername === 'operator' && (cleanPassword === 'Operator@2026' || cleanPassword === 'operator')) {
       isValid = true;

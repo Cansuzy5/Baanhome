@@ -69,6 +69,13 @@ export function saveLocalQuestionLogs(logs: QuestionLog[]) {
   } catch (e) {
     // ignore
   }
+  try {
+    fetch('/api/sync/question-logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ logs }),
+    }).catch(() => {});
+  } catch (e) {}
 }
 
 export function getLocalUnansweredQuestions(): UnansweredQuestion[] {
@@ -92,6 +99,13 @@ export function saveLocalUnansweredQuestions(qs: UnansweredQuestion[]) {
   } catch (e) {
     // ignore
   }
+  try {
+    fetch('/api/sync/unanswered', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questions: qs }),
+    }).catch(() => {});
+  } catch (e) {}
 }
 
 export function isQuotaExceededError(error: unknown): boolean {
@@ -287,6 +301,17 @@ export function subscribeQuestionLogs(callback: (logs: QuestionLog[]) => void) {
     callback(localLogs);
   }
 
+  // Sync from backend server store
+  fetch('/api/sync/question-logs')
+    .then((res) => res.json())
+    .then((data) => {
+      if (data && Array.isArray(data.logs) && data.logs.length > 0) {
+        localStorage.setItem(QUESTION_LOGS_STORAGE_KEY, JSON.stringify(data.logs));
+        callback(data.logs);
+      }
+    })
+    .catch(() => {});
+
   try {
     const q = query(collection(db, 'questionLogs'), orderBy('createdAt', 'desc'), limit(100));
     return onSnapshot(
@@ -337,6 +362,17 @@ export function subscribeUnansweredQuestions(callback: (qs: UnansweredQuestion[]
   if (localQs.length > 0) {
     callback(localQs);
   }
+
+  // Sync from backend server store
+  fetch('/api/sync/unanswered')
+    .then((res) => res.json())
+    .then((data) => {
+      if (data && Array.isArray(data.questions) && data.questions.length > 0) {
+        localStorage.setItem(UNANSWERED_STORAGE_KEY, JSON.stringify(data.questions));
+        callback(data.questions);
+      }
+    })
+    .catch(() => {});
 
   try {
     const q = query(collection(db, 'unansweredQuestions'), orderBy('createdAt', 'desc'), limit(100));

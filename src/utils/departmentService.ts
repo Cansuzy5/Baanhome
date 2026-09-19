@@ -116,6 +116,13 @@ export function saveLocalDepartments(departments: DepartmentItem[]): void {
   } catch (e) {
     console.warn('Failed to save departments to cache', e);
   }
+  try {
+    fetch('/api/sync/departments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ departments }),
+    }).catch(() => {});
+  } catch (e) {}
 }
 
 /**
@@ -150,6 +157,17 @@ export async function initializeDepartmentsIfNeeded(): Promise<void> {
  * Real-time subscription to departments
  */
 export function subscribeDepartments(callback: (departments: DepartmentItem[]) => void): () => void {
+  // Sync from backend server store
+  fetch('/api/sync/departments')
+    .then((res) => res.json())
+    .then((data) => {
+      if (data && Array.isArray(data.departments) && data.departments.length > 0) {
+        localStorage.setItem(DEPARTMENTS_STORAGE_KEY, JSON.stringify(data.departments));
+        callback(data.departments);
+      }
+    })
+    .catch(() => {});
+
   try {
     const q = query(collection(db, 'departments'), orderBy('name', 'asc'));
     return onSnapshot(
