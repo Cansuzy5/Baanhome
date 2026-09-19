@@ -44,10 +44,12 @@ import { getSyncedKnowledgeItems, syncKnowledgeWithServer } from './utils/google
 import { 
   GoogleSheetsDbConfig, 
   getStoredSheetsConfig, 
-  appendQuestionLogToSheet 
+  appendQuestionLogToSheet,
+  syncCentralSheetsConfig
 } from './utils/googleSheetsDatabase';
 import { getGoogleAccessToken, initGoogleAuth } from './utils/googleWorkspaceAuth';
 import { syncCustomImagesWithServer } from './utils/itemImageManager';
+import { subscribeCentralB2B, getCachedAppointments } from './utils/b2bService';
 import { 
   getActiveSessionUser, 
   setActiveSessionUser, 
@@ -106,28 +108,11 @@ export default function App() {
 
   // Cached B2B Appointments for Google Sheets sync
   const [b2bAppointments, setB2bAppointments] = useState<B2BAppointment[]>(() => {
-    try {
-      const saved = localStorage.getItem('baan_home_b2b_appointments_v2');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {
-      console.warn('Failed to load appointments from localStorage', e);
-    }
-    return INITIAL_B2B_APPOINTMENTS;
+    return getCachedAppointments();
   });
 
   const handleOpenGoogleSheetsDbModal = () => {
-    try {
-      const saved = localStorage.getItem('baan_home_b2b_appointments_v2');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) setB2bAppointments(parsed);
-      }
-    } catch (e) {
-      console.warn('Failed to refresh appointments before opening modal', e);
-    }
+    setB2bAppointments(getCachedAppointments());
     setShowGoogleSheetsDbModal(true);
   };
 
@@ -147,18 +132,15 @@ export default function App() {
     // Sync custom item images from server
     syncCustomImagesWithServer();
 
-    // Sync B2B appointments from server
-    fetch('/api/sync/b2b')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && Array.isArray(data.appointments) && data.appointments.length > 0) {
-          setB2bAppointments(data.appointments);
-          try {
-            localStorage.setItem('baan_home_b2b_appointments_v2', JSON.stringify(data.appointments));
-          } catch (e) {}
-        }
-      })
-      .catch(() => {});
+    // Subscribe to Central Sheets Config
+    const unsubSheets = syncCentralSheetsConfig((cfg) => {
+      setSheetsDbConfig(cfg);
+    });
+
+    // Subscribe to Central B2B appointments
+    const unsubB2b = subscribeCentralB2B(({ appointments: apts }) => {
+      setB2bAppointments(apts);
+    });
 
     // Seed default users if Firestore is empty
     initializeDefaultUsersIfNeeded();
@@ -210,6 +192,8 @@ export default function App() {
     });
 
     return () => {
+      unsubSheets();
+      unsubB2b();
       unsubUsers();
       unsubLogs();
       unsubQuestionLogs();
@@ -446,6 +430,7 @@ export default function App() {
                   }}
                   onOpenGoogleSheetsDbModal={handleOpenGoogleSheetsDbModal}
                   sheetsDbConfig={sheetsDbConfig}
+                  currentUser={currentStaff}
                 />
               </div>
             )}

@@ -26,7 +26,7 @@ import {
   Trash2,
   RotateCcw,
 } from 'lucide-react';
-import { B2BLead, B2BAppointment, AppointmentStatus } from '../types';
+import { B2BLead, B2BAppointment, AppointmentStatus, StaffProfile, UserRole } from '../types';
 import {
   B2B_LEADS,
   PARTNERSHIP_PIPELINE_STATS,
@@ -40,51 +40,38 @@ import { AddAppointmentModal } from './AddAppointmentModal';
 import { ExportB2BModal } from './ExportB2BModal';
 import { GoogleSheetsDbConfig, appendAppointmentToSheet } from '../utils/googleSheetsDatabase';
 import { getGoogleAccessToken } from '../utils/googleWorkspaceAuth';
+import {
+  subscribeCentralB2B,
+  saveCentralB2BLead,
+  deleteCentralB2BLead,
+  saveCentralB2BAppointment,
+  deleteCentralB2BAppointment,
+  resetCentralB2BToDefault,
+  canUserEditOperational,
+  canUserManageSystem,
+  getCachedLeads,
+  getCachedAppointments,
+} from '../utils/b2bService';
+import { getActiveSessionUser } from '../utils/authService';
 
 interface B2BPartnershipsViewProps {
   onSelectLeadForSearch?: (leadName: string) => void;
   onOpenGoogleSheetsDbModal?: () => void;
   sheetsDbConfig?: GoogleSheetsDbConfig | null;
-}
-
-const LEADS_STORAGE_KEY = 'baan_home_b2b_leads_v2';
-const APPOINTMENTS_STORAGE_KEY = 'baan_home_b2b_appointments_v2';
-
-function loadStoredLeads(): B2BLead[] {
-  try {
-    const saved = localStorage.getItem(LEADS_STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
-    }
-  } catch (e) {
-    console.error('Failed to load leads from localStorage', e);
-  }
-  return B2B_LEADS;
-}
-
-function loadStoredAppointments(): B2BAppointment[] {
-  try {
-    const saved = localStorage.getItem(APPOINTMENTS_STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
-    }
-  } catch (e) {
-    console.error('Failed to load appointments from localStorage', e);
-  }
-  return INITIAL_B2B_APPOINTMENTS;
+  currentUser?: StaffProfile | null;
 }
 
 export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   onSelectLeadForSearch,
   onOpenGoogleSheetsDbModal,
   sheetsDbConfig,
+  currentUser,
 }) => {
+  const activeUser = currentUser || getActiveSessionUser();
+  const currentRole: UserRole = activeUser?.role || 'Knowledge User';
+  const isOperatorOrAdmin = canUserEditOperational(currentRole);
+  const isAdmin = canUserManageSystem(currentRole);
+
   // Sub-tabs: directory list vs calendar schedule
   const [activeSubTab, setActiveSubTab] = useState<'directory' | 'calendar'>('directory');
 
@@ -99,9 +86,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
   const [copiedScript, setCopiedScript] = useState(false);
 
-  // Persistent leads and appointments
-  const [leadsList, setLeadsList] = useState<B2BLead[]>(loadStoredLeads);
-  const [appointments, setAppointments] = useState<B2BAppointment[]>(loadStoredAppointments);
+  // Persistent leads and appointments from central database
+  const [leadsList, setLeadsList] = useState<B2BLead[]>(getCachedLeads);
+  const [appointments, setAppointments] = useState<B2BAppointment[]>(getCachedAppointments);
 
   // Modals state
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -116,73 +103,32 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   const [appointmentToDelete, setAppointmentToDelete] = useState<B2BAppointment | null>(null);
   const [leadToDelete, setLeadToDelete] = useState<B2BLead | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
 
-  // Load and sync from shared server on mount
+  // Subscribe to Central Shared B2B Database in real-time across all users
   useEffect(() => {
-    fetch('/api/sync/b2b')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data) {
-          if (Array.isArray(data.leads) && data.leads.length > 0) {
-            setLeadsList(data.leads);
-            try {
-              localStorage.setItem(LEADS_STORAGE_KEY, JSON.stringify(data.leads));
-            } catch (e) {}
-          }
-          if (Array.isArray(data.appointments) && data.appointments.length > 0) {
-            setAppointments(data.appointments);
-            try {
-              localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(data.appointments));
-            } catch (e) {}
-          }
-        }
-      })
-      .catch(() => {});
+    const unsubscribe = subscribeCentralB2B(({ leads, appointments: apts }) => {
+      setLeadsList(leads);
+      setAppointments(apts);
+    });
+    return () => unsubscribe();
   }, []);
 
-  // Save leads to local storage and sync to server
-  const persistLeads = (newLeads: B2BLead[]) => {
-    setLeadsList(newLeads);
-    try {
-      localStorage.setItem(LEADS_STORAGE_KEY, JSON.stringify(newLeads));
-      fetch('/api/sync/b2b', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leads: newLeads, appointments }),
-      }).catch(() => {});
-    } catch (e) {
-      console.error('Failed to persist leads', e);
-    }
-  };
-
-  // Save appointments to local storage and sync to server
-  const persistAppointments = (newApts: B2BAppointment[]) => {
-    setAppointments(newApts);
-    try {
-      localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(newApts));
-      fetch('/api/sync/b2b', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leads: leadsList, appointments: newApts }),
-      }).catch(() => {});
-    } catch (e) {
-      console.error('Failed to persist appointments', e);
-    }
-  };
-
   // Handle Add or Edit Lead
-  const handleSaveLead = (
+  const handleSaveLead = async (
     lead: B2BLead,
     scheduleAppointment?: { date: string; time: string; title: string; location: string }
   ) => {
-    let updated: B2BLead[];
-    const exists = leadsList.some((l) => l.id === lead.id);
-    if (exists) {
-      updated = leadsList.map((l) => (l.id === lead.id ? lead : l));
-    } else {
-      updated = [lead, ...leadsList];
+    if (!isOperatorOrAdmin) {
+      setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Operator และ Administrator เท่านั้นที่สามารถแก้ไขข้อมูลลูกค้า B2B ได้');
+      return;
     }
-    persistLeads(updated);
+
+    const res = await saveCentralB2BLead(lead, currentRole);
+    if (!res.success) {
+      setPermissionError(res.error || 'ไม่สามารถบันทึกข้อมูลได้');
+      return;
+    }
 
     if (scheduleAppointment) {
       const newApt: B2BAppointment = {
@@ -200,27 +146,27 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         priority: lead.priority,
         createdAt: new Date().toISOString().split('T')[0],
       };
-      persistAppointments([newApt, ...appointments]);
+      await saveCentralB2BAppointment(newApt, currentRole);
     }
   };
 
   // Handle Delete Lead (opens confirmation dialog)
   const handleDeleteLead = (leadId: string) => {
+    if (!isAdmin) {
+      setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Administrator เท่านั้นที่สามารถลบข้อมูลลูกค้า B2B ได้');
+      return;
+    }
     const target = leadsList.find((l) => l.id === leadId);
     if (target) {
       setLeadToDelete(target);
-    } else {
-      const updated = leadsList.filter((l) => l.id !== leadId);
-      persistLeads(updated);
     }
   };
 
   // Execute confirmed lead deletion
-  const confirmDeleteLead = () => {
+  const confirmDeleteLead = async () => {
     if (!leadToDelete) return;
     const targetId = leadToDelete.id;
-    const updated = leadsList.filter((l) => l.id !== targetId);
-    persistLeads(updated);
+    await deleteCentralB2BLead(targetId, currentRole);
     if (activeLeadModal?.id === targetId) {
       setActiveLeadModal(null);
     }
@@ -228,15 +174,17 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   };
 
   // Handle Add or Edit Appointment
-  const handleSaveAppointment = (apt: B2BAppointment) => {
-    let updated: B2BAppointment[];
-    const exists = appointments.some((a) => a.id === apt.id);
-    if (exists) {
-      updated = appointments.map((a) => (a.id === apt.id ? apt : a));
-    } else {
-      updated = [apt, ...appointments];
+  const handleSaveAppointment = async (apt: B2BAppointment) => {
+    if (!isOperatorOrAdmin) {
+      setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Operator และ Administrator เท่านั้นที่สามารถบันทึกนัดหมายได้');
+      return;
     }
-    persistAppointments(updated);
+
+    const res = await saveCentralB2BAppointment(apt, currentRole);
+    if (!res.success) {
+      setPermissionError(res.error || 'ไม่สามารถบันทึกนัดหมายได้');
+      return;
+    }
 
     // Auto-sync appointment to connected Google Sheets if enabled
     if (sheetsDbConfig && sheetsDbConfig.autoSyncB2B && sheetsDbConfig.spreadsheetId) {
@@ -253,58 +201,69 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
     // Sync appointment date into lead if matching
     if (apt.leadId) {
-      const updatedLeads = leadsList.map((l) =>
-        l.id === apt.leadId
-          ? {
-              ...l,
-              appointmentDate: apt.date,
-              appointmentTime: apt.time,
-              pipelineStage: l.pipelineStage === 'ยังไม่ติดต่อ' ? 'นัดเข้าพบ' : l.pipelineStage,
-              contactStatus: l.contactStatus === 'ยังไม่ติดต่อ' ? 'นัดเข้าพบ' : l.contactStatus,
-            }
-          : l
-      );
-      persistLeads(updatedLeads);
+      const existingLead = leadsList.find((l) => l.id === apt.leadId);
+      if (existingLead) {
+        const updatedLead: B2BLead = {
+          ...existingLead,
+          appointmentDate: apt.date,
+          appointmentTime: apt.time,
+          pipelineStage: existingLead.pipelineStage === 'ยังไม่ติดต่อ' ? 'นัดเข้าพบ' : existingLead.pipelineStage,
+          contactStatus: existingLead.contactStatus === 'ยังไม่ติดต่อ' ? 'นัดเข้าพบ' : existingLead.contactStatus,
+        };
+        await saveCentralB2BLead(updatedLead, currentRole);
+      }
     }
   };
 
   // Handle Delete Appointment (opens confirmation dialog)
   const handleDeleteAppointment = (appointmentId: string) => {
+    if (!isAdmin) {
+      setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Administrator เท่านั้นที่สามารถลบนัดหมายได้');
+      return;
+    }
     const target = appointments.find((a) => a.id === appointmentId);
     if (target) {
       setAppointmentToDelete(target);
-    } else {
-      const updated = appointments.filter((a) => a.id !== appointmentId);
-      persistAppointments(updated);
     }
   };
 
   // Execute confirmed appointment deletion
-  const confirmDeleteAppointment = () => {
+  const confirmDeleteAppointment = async () => {
     if (!appointmentToDelete) return;
     const targetId = appointmentToDelete.id;
-    const updated = appointments.filter((a) => a.id !== targetId);
-    persistAppointments(updated);
+    await deleteCentralB2BAppointment(targetId, currentRole);
     setAppointmentToDelete(null);
   };
 
   // Handle Update Appointment Status
-  const handleUpdateAppointmentStatus = (appointmentId: string, status: AppointmentStatus) => {
-    const updated = appointments.map((a) =>
-      a.id === appointmentId ? { ...a, status, updatedAt: new Date().toISOString().split('T')[0] } : a
-    );
-    persistAppointments(updated);
+  const handleUpdateAppointmentStatus = async (appointmentId: string, status: AppointmentStatus) => {
+    if (!isOperatorOrAdmin) {
+      setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Operator และ Administrator เท่านั้นที่สามารถเปลี่ยนสถานะนัดหมายได้');
+      return;
+    }
+    const target = appointments.find((a) => a.id === appointmentId);
+    if (target) {
+      const updated: B2BAppointment = {
+        ...target,
+        status,
+        updatedAt: new Date().toISOString().split('T')[0],
+      };
+      await saveCentralB2BAppointment(updated, currentRole);
+    }
   };
 
   // Reset to original 101 leads (opens confirmation dialog)
   const handleResetLeads = () => {
+    if (!isAdmin) {
+      setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Administrator เท่านั้นที่สามารถรีเซ็ตข้อมูลได้');
+      return;
+    }
     setIsResetConfirmOpen(true);
   };
 
   // Execute confirmed reset
-  const confirmResetData = () => {
-    persistLeads(B2B_LEADS);
-    persistAppointments(INITIAL_B2B_APPOINTMENTS);
+  const confirmResetData = async () => {
+    await resetCentralB2BToDefault(currentRole);
     setIsResetConfirmOpen(false);
   };
 
@@ -340,20 +299,23 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     });
   }, [leadsList, searchTerm, selectedPriority, selectedStage, selectedOrgType]);
 
-  const handleUpdateLeadStage = (leadId: string, newStage: string) => {
-    const updated = leadsList.map((item) =>
-      item.id === leadId
-        ? { ...item, pipelineStage: newStage, contactStatus: newStage, updatedAt: new Date().toISOString().split('T')[0] }
-        : item
-    );
-    persistLeads(updated);
-
-    if (activeLeadModal && activeLeadModal.id === leadId) {
-      setActiveLeadModal({
-        ...activeLeadModal,
+  const handleUpdateLeadStage = async (leadId: string, newStage: string) => {
+    if (!isOperatorOrAdmin) {
+      setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Operator และ Administrator เท่านั้นที่สามารถเปลี่ยนสถานะติดตามงานได้');
+      return;
+    }
+    const target = leadsList.find((l) => l.id === leadId);
+    if (target) {
+      const updatedLead: B2BLead = {
+        ...target,
         pipelineStage: newStage,
         contactStatus: newStage,
-      });
+        updatedAt: new Date().toISOString().split('T')[0],
+      };
+      await saveCentralB2BLead(updatedLead, currentRole);
+      if (activeLeadModal && activeLeadModal.id === leadId) {
+        setActiveLeadModal(updatedLead);
+      }
     }
   };
 
@@ -387,6 +349,22 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
+      {/* Role Notice Banner if Permission Error */}
+      {permissionError && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-2xl flex items-center justify-between text-sm shadow-xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            <span>{permissionError}</span>
+          </div>
+          <button
+            onClick={() => setPermissionError(null)}
+            className="text-rose-600 hover:text-rose-800 text-xs font-bold px-2 py-1 rounded-lg hover:bg-rose-100 transition-colors"
+          >
+            ปิด
+          </button>
+        </div>
+      )}
+
       {/* 1. Header Banner with Action Buttons */}
       <div className="bg-gradient-to-r from-[#173826] via-[#214D35] to-[#173826] rounded-3xl p-5 sm:p-8 text-white shadow-md relative overflow-hidden">
         <div className="absolute right-0 top-0 w-80 h-full opacity-10 pointer-events-none flex items-center justify-end pr-6">

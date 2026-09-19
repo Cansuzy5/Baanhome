@@ -30,7 +30,46 @@ export const saveStoredSheetsConfig = (config: GoogleSheetsDbConfig | null): voi
   } else {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
   }
+  
+  // Trigger local event
+  window.dispatchEvent(new CustomEvent('baanhome_sheets_config_updated', { detail: config }));
+
+  // Central server synchronization for shared team access
+  try {
+    fetch('/api/sync/sheets-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config }),
+    }).catch(() => {});
+  } catch (e) {}
 };
+
+/**
+ * Fetch and subscribe to central Google Sheets configuration across all users
+ */
+export function syncCentralSheetsConfig(onLoaded?: (config: GoogleSheetsDbConfig | null) => void): () => void {
+  // Sync immediately from central server
+  fetch('/api/sync/sheets-config')
+    .then((res) => res.json())
+    .then((data) => {
+      if (data && 'config' in data) {
+        if (data.config) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.config));
+        } else {
+          localStorage.removeItem(STORAGE_KEY);
+        }
+        if (onLoaded) onLoaded(data.config);
+      }
+    })
+    .catch(() => {});
+
+  const listener = (event: Event) => {
+    const custom = event as CustomEvent<GoogleSheetsDbConfig | null>;
+    if (onLoaded) onLoaded(custom.detail);
+  };
+  window.addEventListener('baanhome_sheets_config_updated', listener);
+  return () => window.removeEventListener('baanhome_sheets_config_updated', listener);
+}
 
 const QUESTION_HEADERS = [
   'รหัสคำถาม (Log ID)',

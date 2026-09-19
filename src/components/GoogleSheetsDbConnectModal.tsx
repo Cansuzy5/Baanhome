@@ -84,6 +84,19 @@ export const GoogleSheetsDbConnectModal: React.FC<GoogleSheetsDbConnectModalProp
       setGoogleUser(getCachedGoogleUser());
       setConfig(getStoredSheetsConfig());
       setStatusMessage(null);
+
+      // Fetch central sheets config from server
+      fetch('/api/sync/sheets-config')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && 'config' in data) {
+            setConfig(data.config);
+            if (data.config) {
+              localStorage.setItem('baanhome_google_sheets_db_config', JSON.stringify(data.config));
+            }
+          }
+        })
+        .catch(() => {});
     }
   }, [isOpen]);
 
@@ -490,7 +503,7 @@ export const GoogleSheetsDbConnectModal: React.FC<GoogleSheetsDbConnectModalProp
                 2
               </span>
               <h3 className="font-bold text-sm text-[#1B3D2F]">
-                การกำหนด Google Sheets ฐานข้อมูล
+                การกำหนด Google Sheets ฐานข้อมูลกลาง (Shared Resort Database)
               </h3>
             </div>
             {config ? (

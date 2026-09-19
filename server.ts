@@ -448,6 +448,39 @@ ${contextText}
     }
   });
 
+  // Central Google Sheets Database Configuration Sync
+  const SHEETS_CONFIG_FILE = path.join(DATA_DIR, 'persistent_sheets_db_config.json');
+
+  app.get('/api/sync/sheets-config', (req, res) => {
+    try {
+      if (fs.existsSync(SHEETS_CONFIG_FILE)) {
+        const raw = fs.readFileSync(SHEETS_CONFIG_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return res.json({ config: parsed });
+      }
+    } catch (e) {}
+    res.json({ config: null });
+  });
+
+  app.post('/api/sync/sheets-config', (req, res) => {
+    try {
+      const { config } = req.body || {};
+      if (config === null) {
+        if (fs.existsSync(SHEETS_CONFIG_FILE)) {
+          fs.unlinkSync(SHEETS_CONFIG_FILE);
+        }
+        return res.json({ success: true, config: null });
+      }
+      if (config && typeof config === 'object') {
+        fs.writeFileSync(SHEETS_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+        return res.json({ success: true, config });
+      }
+      res.status(400).json({ error: 'Invalid config' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
