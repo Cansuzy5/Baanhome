@@ -32,40 +32,26 @@ export function getCachedAppointments(): B2BAppointment[] {
   return cached(APPOINTMENTS_STORAGE_KEY, INITIAL_B2B_APPOINTMENTS);
 }
 function publish(data: B2BData) {
-  if (!Array.isArray(data.leads) || !Array.isArray(data.appointments)) throw new Error('รูปแบบข้อมูล B2B ไม่ถูกต้อง');
+  if (!Array.isArray(data.leads) || !Array.isArray(data.appointments)) {
+    throw new Error('รูปแบบข้อมูล B2B ไม่ถูกต้อง');
+  }
 
-  // Merge appointments with local cache so newly created appointments aren't dropped
-  const localApts = getCachedAppointments();
-  const aptMap = new Map<string, B2BAppointment>();
-  data.appointments.forEach((a) => aptMap.set(a.id, a));
-  localApts.forEach((a) => {
-    if (!aptMap.has(a.id)) {
-      aptMap.set(a.id, a);
-    }
-  });
-  const mergedAppointments = Array.from(aptMap.values());
-
-  // Merge leads with local cache
-  const localLeads = getCachedLeads();
-  const leadMap = new Map<string, B2BLead>();
-  data.leads.forEach((l) => leadMap.set(l.id, l));
-  localLeads.forEach((l) => {
-    if (!leadMap.has(l.id)) {
-      leadMap.set(l.id, l);
-    }
-  });
-  const mergedLeads = Array.from(leadMap.values());
-
-  const mergedData: B2BData = {
-    leads: mergedLeads.length > 0 ? mergedLeads : (data.leads.length > 0 ? data.leads : B2B_LEADS),
-    appointments: mergedAppointments,
+  // IMPORTANT: Central server/Firestore is authoritative.
+  // Never merge stale local cache back into server results, because doing so
+  // resurrects records that were intentionally deleted on another write/device.
+  const centralData: B2BData = {
+    leads: data.leads,
+    appointments: data.appointments,
   };
 
   try {
-    localStorage.setItem(LEADS_STORAGE_KEY, JSON.stringify(mergedData.leads));
-    localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(mergedData.appointments));
-  } catch { /* Cache failure must not undo a durable save. */ }
-  for (const listener of listeners) listener(mergedData);
+    localStorage.setItem(LEADS_STORAGE_KEY, JSON.stringify(centralData.leads));
+    localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(centralData.appointments));
+  } catch {
+    /* Cache failure must not undo a durable save. */
+  }
+
+  for (const listener of listeners) listener(centralData);
 }
 async function request(body?: unknown): Promise<any> {
   const controller = new AbortController();
