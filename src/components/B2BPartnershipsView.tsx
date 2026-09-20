@@ -11,12 +11,10 @@ import {
   Target,
   Sparkles,
   ArrowRight,
-  ExternalLink,
   Copy,
   Check,
   Award,
   ChevronRight,
-  FileSpreadsheet,
   AlertCircle,
   HelpCircle,
   Calendar,
@@ -63,7 +61,6 @@ interface B2BPartnershipsViewProps {
 
 export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   onSelectLeadForSearch,
-  onOpenGoogleSheetsDbModal,
   sheetsDbConfig,
   currentUser,
 }) => {
@@ -396,35 +393,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
             {/* Quick Export & Add Action Buttons */}
             <div className="flex items-center gap-2 flex-wrap">
-              {onOpenGoogleSheetsDbModal && (
-                <button
-                  onClick={onOpenGoogleSheetsDbModal}
-                  className="px-3.5 py-1.5 rounded-xl bg-[#107C41] hover:bg-[#0D6535] text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm border border-emerald-400/30 cursor-pointer"
-                  title="เชื่อมต่อและซิงค์ฐานข้อมูลนัดหมาย B2B กับ Google Sheets"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>ฐานข้อมูล Google Sheets</span>
-                  {sheetsDbConfig ? (
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20 text-white font-mono">
-                      เชื่อมต่อแล้ว
-                    </span>
-                  ) : null}
-                </button>
-              )}
-
-              {sheetsDbConfig && (
-                <a
-                  href={sheetsDbConfig.spreadsheetUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-medium transition-all flex items-center gap-1 border border-white/20 shadow-sm"
-                  title="เปิดดูชีตการนัดหมาย B2B ใน Google Sheets"
-                >
-                  <span>เปิด Google Sheets</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
-
               <button
                 onClick={() => setIsExportModalOpen(true)}
                 className="px-3.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-all flex items-center gap-1.5 border border-white/20 shadow-sm"
