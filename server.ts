@@ -201,6 +201,18 @@ ${contextText}
 
   const INITIAL_SHARED_USERS = [
     {
+      id: 'usr_best',
+      username: 'best',
+      name: 'best',
+      department: 'ช่างและปฏิบัติการ (Engineering & Operations)',
+      role: 'Administrator',
+      status: 'active',
+      avatar: '🧑🏻‍💼',
+      passwordHash: 'e32e70df43cf2288920a3555652178fc758c60a5e686e0615e95cb18df617c4e',
+      createdAt: '2026-09-20 14:50:00',
+      lastLoginAt: null,
+    },
+    {
       id: 'usr_candy',
       username: 'cansuzy3',
       name: 'Candy',

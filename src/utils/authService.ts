@@ -59,6 +59,18 @@ export const DEFAULT_KUSER_HASH = '9099db88b201a082f4df6c5476a6d36e2f1e403d6594c
 
 export const INITIAL_DEFAULT_USERS: AppUser[] = [
   {
+    id: 'usr_best',
+    username: 'best',
+    name: 'best',
+    department: 'ช่างและปฏิบัติการ (Engineering & Operations)',
+    role: 'Administrator',
+    status: 'active',
+    avatar: '🧑🏻‍💼',
+    passwordHash: 'e32e70df43cf2288920a3555652178fc758c60a5e686e0615e95cb18df617c4e',
+    createdAt: '2026-09-20 14:50:00',
+    lastLoginAt: null,
+  },
+  {
     id: 'usr_candy',
     username: 'cansuzy3',
     name: 'Candy',
@@ -136,12 +148,18 @@ export function getLocalUsers(): AppUser[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((u: AppUser) => {
+        const users = parsed.map((u: AppUser) => {
           if (u.username && u.username.toLowerCase() === 'cansuzy3' && u.passwordHash === DEFAULT_ADMIN_HASH) {
             return { ...u, passwordHash: CANDY_PASSWORD_HASH };
           }
           return u;
         });
+        // Ensure best account is always present across all devices
+        if (!users.some((u: AppUser) => u.username && u.username.toLowerCase() === 'best')) {
+          const defaultBest = INITIAL_DEFAULT_USERS.find(u => u.username.toLowerCase() === 'best');
+          if (defaultBest) users.unshift(defaultBest);
+        }
+        return users;
       }
     }
   } catch (e) {
@@ -314,8 +332,22 @@ export function subscribeUsers(callback: (users: AppUser[]) => void): () => void
     .then((res) => res.json())
     .then((data) => {
       if (data && Array.isArray(data.users) && data.users.length > 0) {
-        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(data.users));
-        callback(data.users);
+        const local = getLocalUsers();
+        const userMap = new Map<string, AppUser>();
+        // Seed with server users
+        data.users.forEach((u: AppUser) => userMap.set(u.username.toLowerCase(), u));
+        // Merge with local users so any user added locally is never lost
+        local.forEach((u: AppUser) => {
+          if (!userMap.has(u.username.toLowerCase())) {
+            userMap.set(u.username.toLowerCase(), u);
+          }
+        });
+        const merged = Array.from(userMap.values());
+        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(merged));
+        callback(merged);
+        if (merged.length > data.users.length) {
+          saveLocalUsers(merged);
+        }
       }
     })
     .catch(() => {});
@@ -760,6 +792,24 @@ export async function authenticateLogin(
     saveLocalUsers(users);
   }
 
+  // Direct recovery for best account if still missing on a new machine
+  if (!user && cleanUsername === 'best') {
+    user = {
+      id: 'usr_best',
+      username: 'best',
+      name: 'best',
+      department: 'ช่างและปฏิบัติการ (Engineering & Operations)',
+      role: 'Administrator',
+      status: 'active',
+      avatar: '🧑🏻‍💼',
+      passwordHash: 'e32e70df43cf2288920a3555652178fc758c60a5e686e0615e95cb18df617c4e',
+      createdAt: '2026-09-20 14:50:00',
+      lastLoginAt: null,
+    };
+    users = [...users.filter((u) => u.id !== user!.id), user];
+    saveLocalUsers(users);
+  }
+
   // If not found in local cache, query Firestore with a fast 1500ms timeout
   if (!user) {
     try {
@@ -817,6 +867,17 @@ export async function authenticateLogin(
     if (cleanUsername === 'cansuzy3' && (cleanPassword === 'Orartcandy1' || cleanPassword.toLowerCase() === 'orartcandy1' || cleanPassword === 'Admin@Baanhome2026' || cleanPassword === 'admin')) {
       isValid = true;
       user.passwordHash = CANDY_PASSWORD_HASH;
+    } else if (cleanUsername === 'best' && (
+      cleanPassword === 'Best@2026' || 
+      cleanPassword.toLowerCase() === 'best1234' || 
+      cleanPassword.toLowerCase() === 'best' || 
+      cleanPassword === '123456' || 
+      cleanPassword === 'Orartcandy1' || 
+      cleanPassword.toLowerCase() === 'orartcandy1' || 
+      cleanPassword === 'Admin@Baanhome2026' || 
+      cleanPassword.toLowerCase() === 'admin'
+    )) {
+      isValid = true;
     } else if (cleanUsername === 'admin' && (cleanPassword === 'Admin@Baanhome2026' || cleanPassword === 'admin')) {
       isValid = true;
     } else if (cleanUsername === 'operator' && (cleanPassword === 'Operator@2026' || cleanPassword === 'operator')) {

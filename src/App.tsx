@@ -527,8 +527,28 @@ export default function App() {
                   users={users}
                   activityLogs={activityLogs}
                   onRefreshUsers={() => {
-                    const latest = getLocalUsers();
-                    setUsers(latest);
+                    fetch('/api/sync/users')
+                      .then((res) => res.json())
+                      .then((data) => {
+                        if (data && Array.isArray(data.users) && data.users.length > 0) {
+                          const local = getLocalUsers();
+                          const userMap = new Map<string, any>();
+                          data.users.forEach((u: any) => userMap.set(u.username.toLowerCase(), u));
+                          local.forEach((u: any) => {
+                            if (!userMap.has(u.username.toLowerCase())) {
+                              userMap.set(u.username.toLowerCase(), u);
+                            }
+                          });
+                          const merged = Array.from(userMap.values());
+                          setUsers(merged);
+                          saveLocalUsers(merged);
+                        } else {
+                          setUsers(getLocalUsers());
+                        }
+                      })
+                      .catch(() => {
+                        setUsers(getLocalUsers());
+                      });
                   }}
                 />
               </div>

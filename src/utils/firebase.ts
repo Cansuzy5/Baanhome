@@ -19,8 +19,8 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { QuestionLog, UnansweredQuestion, FeedbackType, KnowledgeCategory } from '../types';
 
 const app = initializeApp(firebaseConfig);
-const firestoreDbId = (firebaseConfig as Record<string, any>).firestoreDatabaseId || 'ai-studio-1982e74e-9ff9-469a-9cec-64e98f787d0b';
-export const db = getFirestore(app, firestoreDbId);
+const firestoreDbId = (firebaseConfig as Record<string, any>).firestoreDatabaseId;
+export const db = firestoreDbId && firestoreDbId !== '(default)' ? getFirestore(app, firestoreDbId) : getFirestore(app);
 export const auth = getAuth(app);
 
 export enum OperationType {
