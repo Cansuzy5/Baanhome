@@ -387,3 +387,56 @@ export async function verifySpreadsheetAccess(
     sheetNames,
   };
 }
+
+/**
+ * Extract clean spreadsheet ID from URL or raw ID
+ */
+export function extractSpreadsheetId(input: string): string | null {
+  if (!input) return null;
+  const trimmed = input.trim();
+  const match = trimmed.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (match && match[1]) return match[1];
+  // If user pasted just the ID (alphanumeric, dash, underscore, at least 15 chars)
+  if (/^[a-zA-Z0-9-_]{15,}$/.test(trimmed)) return trimmed;
+  return null;
+}
+
+/**
+ * Export Question Logs as CSV for direct import to Google Sheets or Excel
+ */
+export function exportQuestionLogsToCSV(logs: QuestionLog[]): void {
+  const headers = QUESTION_HEADERS.join(',');
+  const rows = logs.map((log) => {
+    const r = formatQuestionLogRow(log);
+    return r.map((field) => `"${String(field).replace(/"/g, '""')}"`).join(',');
+  });
+  const csvContent = '\uFEFF' + [headers, ...rows].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', `ประวัติคำถามพนักงาน_บ้านโฮม_${new Date().toISOString().slice(0, 10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+/**
+ * Export B2B Appointments as CSV for direct import to Google Sheets or Excel
+ */
+export function exportAppointmentsToCSV(appointments: B2BAppointment[]): void {
+  const headers = B2B_HEADERS.join(',');
+  const rows = appointments.map((apt) => {
+    const r = formatAppointmentRow(apt);
+    return r.map((field) => `"${String(field).replace(/"/g, '""')}"`).join(',');
+  });
+  const csvContent = '\uFEFF' + [headers, ...rows].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', `ตารางนัดหมาย_B2B_บ้านโฮม_${new Date().toISOString().slice(0, 10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}

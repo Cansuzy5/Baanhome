@@ -604,6 +604,7 @@ export default function App() {
           setIsUsingCustomSheet(fromSheet);
         }}
         isUsingCustomSheet={isUsingCustomSheet}
+        currentUser={currentStaff}
       />
 
       {/* Google Sheets Live Database Connection & Management Modal */}
@@ -613,6 +614,7 @@ export default function App() {
         questionLogs={questionLogs}
         appointments={b2bAppointments}
         onConfigChange={(newConfig) => setSheetsDbConfig(newConfig)}
+        currentUser={currentStaff}
       />
 
       {/* Authentication & User Login / Role Switcher Gate */}

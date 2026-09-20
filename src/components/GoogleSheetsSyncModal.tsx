@@ -15,7 +15,9 @@ import {
   RotateCcw,
   Sparkles,
 } from 'lucide-react';
-import { KnowledgeItem } from '../types';
+import { KnowledgeItem, StaffProfile, UserRole } from '../types';
+import { getActiveSessionUser } from '../utils/authService';
+import { canUserManageSystem } from '../utils/b2bService';
 import {
   fetchGoogleSheet,
   parseTSV,
@@ -34,6 +36,7 @@ interface GoogleSheetsSyncModalProps {
   currentActiveItems: KnowledgeItem[];
   onApplySyncedItems: (items: KnowledgeItem[], isFromSheet: boolean) => void;
   isUsingCustomSheet: boolean;
+  currentUser?: StaffProfile | null;
 }
 
 export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
@@ -42,7 +45,12 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
   currentActiveItems,
   onApplySyncedItems,
   isUsingCustomSheet,
+  currentUser,
 }) => {
+  const activeUser = currentUser || getActiveSessionUser();
+  const currentRole: UserRole = activeUser?.role || 'Knowledge User';
+  const isAdmin = canUserManageSystem(currentRole);
+
   const [activeTab, setActiveTab] = useState<'link' | 'paste' | 'template'>('link');
   const [sheetUrl, setSheetUrl] = useState(getSyncedSheetUrl() || '');
   const [pastedText, setPastedText] = useState('');
@@ -55,6 +63,10 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
 
   // Handle Sync by URL
   const handleSyncByUrl = async () => {
+    if (!isAdmin) {
+      setStatusMessage({ type: 'error', text: 'สิทธิ์ไม่เพียงพอ: เฉพาะ Administrator เท่านั้นที่สามารถเปลี่ยนลิงก์ฐานความรู้ได้' });
+      return;
+    }
     if (!sheetUrl.trim()) {
       setStatusMessage({ type: 'error', text: 'กรุณากรอกลิงก์ Google Sheets ก่อนกดซิงค์' });
       return;
@@ -109,6 +121,10 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
 
   // Apply preview items as active knowledge base
   const handleConfirmApply = () => {
+    if (!isAdmin) {
+      setStatusMessage({ type: 'error', text: 'สิทธิ์ไม่เพียงพอ: เฉพาะ Administrator เท่านั้นที่สามารถบันทึกข้อมูลทับฐานข้อมูลกลางได้' });
+      return;
+    }
     if (!previewItems || previewItems.length === 0) return;
     saveSyncedKnowledgeItems(previewItems, sheetUrl);
     onApplySyncedItems(previewItems, true);
@@ -124,6 +140,10 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
 
   // Reset to default Baan Home knowledge base
   const handleResetToDefault = () => {
+    if (!isAdmin) {
+      setStatusMessage({ type: 'error', text: 'สิทธิ์ไม่เพียงพอ: เฉพาะ Administrator เท่านั้นที่สามารถรีเซ็ตฐานข้อมูลได้' });
+      return;
+    }
     clearSyncedKnowledgeItems();
     onApplySyncedItems(KNOWLEDGE_BASE_ITEMS, false);
     setPreviewItems(null);
