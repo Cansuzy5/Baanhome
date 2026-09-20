@@ -1,3 +1,4 @@
+import { sharedApi } from './sharedApi';
 import { 
   collection, 
   doc, 
@@ -47,42 +48,7 @@ export async function hashPassword(plainText: string): Promise<string> {
   return 'fash_' + Math.abs(hash).toString(16) + '_' + plainText.length;
 }
 
-// Pre-computed SHA-256 hashes for default accounts
-// 'Admin@Baanhome2026'
-export const DEFAULT_ADMIN_HASH = '9dbcd8e2eef014a070e1713d9657b98d287ef3e3d937107db71fb3426e0e2c81';
-// 'Orartcandy1'
-export const CANDY_PASSWORD_HASH = 'd93028673bae1ae8f8296bf87a2d05d9407ba69427da36d7a073e6e6c06c786d';
-// 'Operator@2026'
-export const DEFAULT_OPERATOR_HASH = 'e746a4e37f2a1b18129bbdd59336110f0ca97d83833d74c0c1bbff9e289bf631';
-// 'User@2026'
-export const DEFAULT_KUSER_HASH = '9099db88b201a082f4df6c5476a6d36e2f1e403d6594c34cb2e652a900350414';
-
-export const INITIAL_DEFAULT_USERS: AppUser[] = [
-  {
-    id: 'usr_candy',
-    username: 'cansuzy3',
-    name: 'Candy',
-    department: 'ช่างและปฏิบัติการ (Engineering & Operations)',
-    role: 'Administrator',
-    status: 'active',
-    avatar: '🧑🏻‍💼',
-    passwordHash: CANDY_PASSWORD_HASH,
-    createdAt: '2026-09-19 14:48:00',
-    lastLoginAt: '2026-09-19 14:49:15',
-  },
-  {
-    id: 'usr_admin',
-    username: 'admin',
-    name: 'คุณผู้จัดการศิริชัย (Admin)',
-    department: 'ฝ่ายขายและการตลาด (Sales & MICE)',
-    role: 'Administrator',
-    status: 'active',
-    avatar: '👨🏻‍💼',
-    passwordHash: DEFAULT_ADMIN_HASH,
-    createdAt: '2026-03-01 08:00:00',
-    lastLoginAt: '2026-09-19 14:49:15',
-  },
-];
+export const INITIAL_DEFAULT_USERS: AppUser[] = [];
 
 export const INITIAL_ACTIVITY_LOGS: UserActivityLog[] = [
   {
@@ -136,33 +102,18 @@ export function getLocalUsers(): AppUser[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((u: AppUser) => {
-          if (u.username && u.username.toLowerCase() === 'cansuzy3' && u.passwordHash === DEFAULT_ADMIN_HASH) {
-            return { ...u, passwordHash: CANDY_PASSWORD_HASH };
-          }
-          return u;
-        });
+        return parsed;
       }
     }
   } catch (e) {
     console.error('Failed to get local users', e);
   }
-  return INITIAL_DEFAULT_USERS;
+  return [];
 }
 
 export function saveLocalUsers(users: AppUser[]) {
-  try {
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-  } catch (e) {
-    console.error('Failed to save local users', e);
-  }
-  try {
-    fetch('/api/sync/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ users }),
-    }).catch(() => {});
-  } catch (e) {}
+  try { if (localStorage.getItem(USERS_STORAGE_KEY + '_before_shared_db') === null) localStorage.setItem(USERS_STORAGE_KEY + '_before_shared_db', localStorage.getItem(USERS_STORAGE_KEY) || '[]');
+    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users)); } catch {}
 }
 
 export function getLocalActivityLogs(): UserActivityLog[] {
@@ -209,6 +160,7 @@ export function setActiveSessionUser(user: StaffProfile | null) {
       localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(user));
     } else {
       localStorage.removeItem(ACTIVE_SESSION_KEY);
+      void sharedApi('/api/sync/users', { action: 'logout' }).catch(() => {});
     }
   } catch (e) {
     console.error('Failed to set active session', e);
@@ -308,581 +260,65 @@ export function subscribeUserActivities(callback: (logs: UserActivityLog[]) => v
 /**
  * Subscribe to Users (Real-time Firestore with fallback & Server Sync)
  */
+async function fetchCentralUsers(): Promise<AppUser[]> {
+  const data = await sharedApi('/api/sync/users');
+  if (!Array.isArray(data.users)) throw new Error('ข้อมูลบัญชีส่วนกลางไม่ถูกต้อง');
+  saveLocalUsers(data.users);
+  return data.users;
+}
 export function subscribeUsers(callback: (users: AppUser[]) => void): () => void {
-  // 1. Fetch from shared server to ensure preview iframe and external tabs have identical state
-  fetch('/api/sync/users')
-    .then((res) => res.json())
-    .then((data) => {
-      if (data && Array.isArray(data.users) && data.users.length > 0) {
-        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(data.users));
-        callback(data.users);
-      }
-    })
-    .catch(() => {});
-
-  try {
-    const q = query(collection(db, 'appUsers'), limit(100));
-    return onSnapshot(
-      q,
-      (snapshot) => {
-        if (!snapshot.empty) {
-          const items = snapshot.docs.map((docSnap) => {
-            const data = docSnap.data();
-            return {
-              id: data.id || docSnap.id,
-              username: data.username,
-              name: data.name,
-              department: data.department,
-              role: data.role,
-              status: data.status,
-              avatar: data.avatar || '👩🏻‍💼',
-              passwordHash: data.passwordHash || '',
-              createdAt: data.createdAt || '',
-              lastLoginAt: data.lastLoginAt,
-              lastPasswordResetAt: data.lastPasswordResetAt,
-            } as AppUser;
-          });
-          saveLocalUsers(items);
-          callback(items);
-        } else {
-          // If Firestore is empty, sync default users
-          const locals = getLocalUsers();
-          callback(locals);
-        }
-      },
-      (error) => {
-        console.warn('Subscription to appUsers failed, using local cache', error);
-        callback(getLocalUsers());
-      }
-    );
-  } catch (e) {
-    console.warn('Error setting up appUsers listener', e);
-    callback(getLocalUsers());
-    return () => {};
-  }
-}
-
-/**
- * Initialize default users in Firestore if collection is empty
- */
-export async function initializeDefaultUsersIfNeeded(): Promise<void> {
-  try {
-    const snapshot = await getDocs(query(collection(db, 'appUsers'), limit(1)));
-    if (snapshot.empty) {
-      for (const user of INITIAL_DEFAULT_USERS) {
-        await setDoc(doc(db, 'appUsers', user.id), {
-          ...user,
-        });
-      }
-    }
-  } catch (e) {
-    console.warn('Could not seed default users to Firestore, local state active', e);
-  }
-}
-
-/**
- * Execute a promise (such as Firestore network write) with a safety timeout (default 750ms)
- * so offline or slow network will NOT block UI feedback or freeze modal buttons,
- * while the background promise continues to completion.
- */
-function syncWithTimeout(promise: Promise<unknown>, timeoutMs = 750): Promise<unknown> {
-  return Promise.race([
-    promise,
-    new Promise((resolve) => setTimeout(resolve, timeoutMs)),
-  ]);
-}
-
-/**
- * Create a new user (Admin only)
- */
-export async function createNewUser(
-  newUser: {
-    username: string;
-    name: string;
-    department: Department;
-    role: UserRole;
-    plainPassword: string;
-    avatar?: string;
-  },
-  actor: StaffProfile
-): Promise<AppUser> {
-  const cleanUsername = newUser.username.trim().toLowerCase();
-  const currentUsers = getLocalUsers();
-
-  if (currentUsers.some((u) => u.username.toLowerCase() === cleanUsername)) {
-    throw new Error(`ชื่อผู้ใช้ "${cleanUsername}" มีอยู่ในระบบแล้ว กรุณาเลือกชื่ออื่น`);
-  }
-
-  const hashedPassword = await hashPassword(newUser.plainPassword);
-  const id = `usr_${Date.now()}`;
-  const timestamp = getFormattedTimestamp();
-
-  const userDoc: AppUser = {
-    id,
-    username: cleanUsername,
-    name: newUser.name.trim(),
-    department: newUser.department,
-    role: newUser.role,
-    status: 'active',
-    avatar: newUser.avatar || '🧑🏻‍💼',
-    passwordHash: hashedPassword,
-    createdAt: timestamp,
+  let active = true, pending = false;
+  const refresh = async () => {
+    if (pending) return;
+    pending = true;
+    try { const users = await fetchCentralUsers(); if (active) callback(users); }
+    catch (error) { console.warn('Central users unavailable', error); }
+    finally { pending = false; }
   };
-
-  // Update local immediately so UI updates instantaneously
-  const updatedList = [userDoc, ...currentUsers];
-  saveLocalUsers(updatedList);
-
-  // Sync to Firestore & Audit Log with safety timeout
-  const syncTask = async () => {
-    try {
-      await setDoc(doc(db, 'appUsers', id), userDoc);
-    } catch (e) {
-      console.warn('Firestore user save failed', e);
-    }
-
-    try {
-      await recordUserActivity(
-        'ADMIN_CREATE_USER',
-        `เพิ่มบัญชีผู้ใช้ใหม่: ${userDoc.name} (@${userDoc.username}) สิทธิ์: ${userDoc.role} แผนก: ${userDoc.department}`,
-        actor
-      );
-    } catch (e) {
-      console.warn('Firestore activity log write failed', e);
-    }
-  };
-
-  await syncWithTimeout(syncTask(), 750);
-
-  return userDoc;
+  void refresh();
+  const timer = setInterval(refresh, 15000);
+  window.addEventListener('baanhome-users-changed', refresh);
+  return () => { active = false; clearInterval(timer); window.removeEventListener('baanhome-users-changed', refresh); };
 }
-
-/**
- * Update user role (Admin only)
- */
-export async function updateUserRole(
-  targetUserId: string,
-  newRole: UserRole,
-  actor: StaffProfile
-): Promise<void> {
-  const currentUsers = getLocalUsers();
-  const target = currentUsers.find((u) => u.id === targetUserId);
-  if (!target) throw new Error('ไม่พบบัญชีผู้ใช้ที่ต้องการเปลี่ยนสิทธิ์');
-
-  const oldRole = target.role;
-  const updatedList = currentUsers.map((u) => (u.id === targetUserId ? { ...u, role: newRole } : u));
-  saveLocalUsers(updatedList);
-
-  const syncTask = async () => {
-    try {
-      await updateDoc(doc(db, 'appUsers', targetUserId), { role: newRole });
-    } catch (e) {
-      console.warn('Firestore update role failed', e);
-    }
-
-    try {
-      await recordUserActivity(
-        'ADMIN_CHANGE_ROLE',
-        `เปลี่ยนสิทธิ์ผู้ใช้ @${target.username} (${target.name}) จาก [${oldRole}] เป็น [${newRole}]`,
-        actor
-      );
-    } catch (e) {
-      console.warn('Firestore activity log write failed', e);
-    }
-  };
-
-  await syncWithTimeout(syncTask(), 750);
+// Existing accounts are never silently seeded or restored from browser data.
+export async function initializeDefaultUsersIfNeeded(): Promise<void> {}
+async function changeUser(action: string, id: string, changes?: unknown) {
+  await sharedApi('/api/sync/users', { action, id, changes });
+  window.dispatchEvent(new Event('baanhome-users-changed'));
 }
-
-/**
- * Toggle user account status (Activate / Deactivate) (Admin only)
- */
-export async function toggleUserStatus(
-  targetUserId: string,
-  newStatus: UserStatus,
-  actor: StaffProfile
-): Promise<void> {
-  const currentUsers = getLocalUsers();
-  const target = currentUsers.find((u) => u.id === targetUserId);
-  if (!target) throw new Error('ไม่พบบัญชีผู้ใช้ที่ระบุ');
-
-  const updatedList = currentUsers.map((u) => (u.id === targetUserId ? { ...u, status: newStatus } : u));
-  saveLocalUsers(updatedList);
-
-  const syncTask = async () => {
-    try {
-      await updateDoc(doc(db, 'appUsers', targetUserId), { status: newStatus });
-    } catch (e) {
-      console.warn('Firestore update status failed', e);
-    }
-
-    const actionText = newStatus === 'active' ? 'เปิดใช้งานบัญชี' : 'ปิดใช้งานบัญชี (ระงับสิทธิ์เข้าสู่ระบบ)';
-    try {
-      await recordUserActivity(
-        'ADMIN_TOGGLE_STATUS',
-        `${actionText}: @${target.username} (${target.name}) โดยแอดมิน`,
-        actor
-      );
-    } catch (e) {
-      console.warn('Firestore activity log write failed', e);
-    }
-  };
-
-  await syncWithTimeout(syncTask(), 750);
+export async function createNewUser(newUser: { username: string; name: string; department: Department; role: UserRole; plainPassword: string; avatar?: string }, actor: StaffProfile): Promise<AppUser> {
+  const users = await fetchCentralUsers();
+  const username = newUser.username.trim().toLowerCase();
+  if (users.some(u => u.username.toLowerCase() === username)) throw new Error('ชื่อผู้ใช้นี้มีอยู่แล้ว');
+  if (newUser.plainPassword.length < 6) throw new Error('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+  const user = { id: 'usr_' + crypto.randomUUID(), username, name: newUser.name.trim(), department: newUser.department, role: newUser.role, status: 'active' as const, avatar: newUser.avatar || '👩🏻‍💼', passwordHash: await hashPassword(newUser.plainPassword), createdAt: getFormattedTimestamp() };
+  const { id, ...changes } = user;
+  await changeUser('create', id, changes);
+  return { ...user, passwordHash: '' };
 }
-
-/**
- * Reset user password (Admin only)
- * Plaintext password is NEVER stored or returned; it is hashed immediately.
- */
-export async function resetUserPassword(
-  targetUserId: string,
-  newPlainPassword: string,
-  actor: StaffProfile
-): Promise<void> {
-  if (newPlainPassword.length < 6) {
-    throw new Error('รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษร');
-  }
-
-  const currentUsers = getLocalUsers();
-  const target = currentUsers.find((u) => u.id === targetUserId);
-  if (!target) throw new Error('ไม่พบบัญชีผู้ใช้ที่ต้องการรีเซ็ตรหัสผ่าน');
-
-  const newHash = await hashPassword(newPlainPassword);
-  const timestamp = getFormattedTimestamp();
-
-  const updatedList = currentUsers.map((u) =>
-    u.id === targetUserId ? { ...u, passwordHash: newHash, lastPasswordResetAt: timestamp } : u
-  );
-  saveLocalUsers(updatedList);
-
-  const syncTask = async () => {
-    try {
-      await updateDoc(doc(db, 'appUsers', targetUserId), {
-        passwordHash: newHash,
-        lastPasswordResetAt: timestamp,
-      });
-    } catch (e) {
-      console.warn('Firestore reset password failed', e);
-    }
-
-    try {
-      await recordUserActivity(
-        'ADMIN_RESET_PASSWORD',
-        `รีเซ็ตรหัสผ่านใหม่สำหรับ @${target.username} (${target.name}) สำเร็จ (จัดเก็บแบบ Hashed SHA-256)`,
-        actor
-      );
-    } catch (e) {
-      console.warn('Firestore activity log write failed', e);
-    }
-  };
-
-  await syncWithTimeout(syncTask(), 750);
+export async function updateUserRole(id: string, role: UserRole, actor: StaffProfile): Promise<void> { await changeUser('update', id, { role }); }
+export async function toggleUserStatus(id: string, status: UserStatus, actor: StaffProfile): Promise<void> { await changeUser('update', id, { status }); }
+export async function resetUserPassword(id: string, password: string, actor: StaffProfile): Promise<void> {
+  if (password.length < 6) throw new Error('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+  await changeUser('update', id, { passwordHash: await hashPassword(password), lastPasswordResetAt: getFormattedTimestamp() });
 }
-
-/**
- * Update user basic profile (name, department, avatar) (Admin only)
- */
-export async function updateUserProfile(
-  targetUserId: string,
-  updates: {
-    name: string;
-    department: Department;
-    avatar?: string;
-  },
-  actor: StaffProfile
-): Promise<void> {
-  const currentUsers = getLocalUsers();
-  const target = currentUsers.find((u) => u.id === targetUserId);
-  if (!target) throw new Error('ไม่พบบัญชีผู้ใช้ที่ต้องการแก้ไข');
-
-  const oldName = target.name;
-  const oldDept = target.department;
-
-  const updatedList = currentUsers.map((u) =>
-    u.id === targetUserId
-      ? {
-          ...u,
-          name: updates.name.trim(),
-          department: updates.department,
-          avatar: updates.avatar || u.avatar,
-        }
-      : u
-  );
-  saveLocalUsers(updatedList);
-
-  const syncTask = async () => {
-    try {
-      await updateDoc(doc(db, 'appUsers', targetUserId), {
-        name: updates.name.trim(),
-        department: updates.department,
-        ...(updates.avatar ? { avatar: updates.avatar } : {}),
-      });
-    } catch (e) {
-      console.warn('Firestore updateUserProfile failed', e);
-    }
-
-    try {
-      await recordUserActivity(
-        'ADMIN_EDIT_USER',
-        `แก้ไขข้อมูลผู้ใช้ @${target.username}: ชื่อ "${oldName}" ➔ "${updates.name.trim()}", แผนก "${oldDept}" ➔ "${updates.department}"`,
-        actor
-      );
-    } catch (e) {
-      console.warn('Firestore activity log write failed', e);
-    }
-  };
-
-  await syncWithTimeout(syncTask(), 750);
-}
-
-/**
- * Batch update all users assigned to an old department name when renamed or deleted
- */
-export async function batchUpdateUsersDepartment(
-  oldDeptName: string,
-  newDeptName: string,
-  actor: StaffProfile
-): Promise<number> {
-  const currentUsers = getLocalUsers();
-  const affected = currentUsers.filter((u) => u.department === oldDeptName);
-  if (affected.length === 0) return 0;
-
-  const updatedList = currentUsers.map((u) =>
-    u.department === oldDeptName ? { ...u, department: newDeptName } : u
-  );
-  saveLocalUsers(updatedList);
-
-  try {
-    for (const u of affected) {
-      await updateDoc(doc(db, 'appUsers', u.id), {
-        department: newDeptName,
-      });
-    }
-  } catch (e) {
-    console.warn('Firestore batchUpdateUsersDepartment failed', e);
-  }
-
-  await recordUserActivity(
-    'ADMIN_EDIT_DEPT',
-    `ย้ายแผนกของพนักงาน ${affected.length} คน จาก "${oldDeptName}" ➔ "${newDeptName}" อัตโนมัติ`,
-    actor
-  );
-
+export async function updateUserProfile(id: string, updates: { name: string; department: Department; avatar?: string }, actor: StaffProfile): Promise<void> { await changeUser('update', id, updates); }
+export async function batchUpdateUsersDepartment(oldDeptName: string, newDeptName: string, actor: StaffProfile): Promise<number> {
+  const affected = (await fetchCentralUsers()).filter(u => u.department === oldDeptName);
+  for (const user of affected) await changeUser('update', user.id, { department: newDeptName });
   return affected.length;
 }
-
-/**
- * Delete a user account (Admin only, cannot delete own account)
- */
-export async function deleteUser(
-  targetUserId: string,
-  actor: StaffProfile
-): Promise<void> {
-  if (targetUserId === actor.id) {
-    throw new Error('คุณไม่สามารถลบบัญชีของตนเองได้');
-  }
-
-  const currentUsers = getLocalUsers();
-  const target = currentUsers.find((u) => u.id === targetUserId);
-  if (!target) throw new Error('ไม่พบบัญชีผู้ใช้ที่ต้องการลบ');
-
-  const updatedList = currentUsers.filter((u) => u.id !== targetUserId);
-  saveLocalUsers(updatedList);
-
-  const syncTask = async () => {
-    try {
-      await deleteDoc(doc(db, 'appUsers', targetUserId));
-    } catch (e) {
-      console.warn('Firestore deleteUser failed', e);
-    }
-
-    try {
-      await recordUserActivity(
-        'ADMIN_DELETE_USER',
-        `ลบบัญชีผู้ใช้ @${target.username} (${target.name}) สิทธิ์: ${target.role} แผนก: ${target.department} ออกจากระบบ`,
-        actor
-      );
-    } catch (e) {
-      console.warn('Firestore activity log write failed', e);
-    }
-  };
-
-  await syncWithTimeout(syncTask(), 750);
+export async function deleteUser(id: string, actor: StaffProfile): Promise<void> { await changeUser('delete', id); }
+export async function authenticateLogin(username: string, password: string): Promise<{ success: boolean; user?: AppUser; error?: string }> {
+  try {
+    const result = await sharedApi('/api/sync/users', { action: 'login', username, password });
+    setActiveSessionUser(result.user);
+    window.dispatchEvent(new Event('baanhome-users-changed'));
+    return { success: true, user: result.user };
+  } catch (error: any) { return { success: false, error: error.message }; }
 }
 
-/**
- * Authenticate login with username & password
- */
-export async function authenticateLogin(
-  usernameInput: string,
-  plainPasswordInput: string
-): Promise<{ success: boolean; user?: AppUser; error?: string }> {
-  const cleanUsername = usernameInput.trim().toLowerCase().replace(/^@/, '');
-  const cleanPassword = plainPasswordInput.trim();
-  let users = getLocalUsers();
 
-  let user = users.find((u) => u.username.toLowerCase() === cleanUsername);
-
-  // If not found in local cache, query sync API and Firestore with a fast 1500ms timeout
-  if (!user) {
-    try {
-      const res = await Promise.race([
-        fetch('/api/sync/users'),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200))
-      ]);
-      if (res && 'json' in res) {
-        const data = await res.json();
-        if (data && Array.isArray(data.users) && data.users.length > 0) {
-          users = data.users;
-          user = users.find((u) => u.username.toLowerCase() === cleanUsername);
-          saveLocalUsers(users);
-        }
-      }
-    } catch (e) {}
-  }
-
-  // Direct recovery for cansuzy3 account if still missing
-  if (!user && cleanUsername === 'cansuzy3') {
-    user = {
-      id: 'usr_candy',
-      username: 'cansuzy3',
-      name: 'Candy',
-      department: 'ช่างและปฏิบัติการ (Engineering & Operations)',
-      role: 'Administrator',
-      status: 'active',
-      avatar: '🧑🏻‍💼',
-      passwordHash: CANDY_PASSWORD_HASH,
-      createdAt: '2026-09-19 14:48:00',
-      lastLoginAt: '2026-09-19 14:49:15',
-    };
-    users = [...users.filter((u) => u.id !== user!.id), user];
-    saveLocalUsers(users);
-  }
-
-  // If not found in local cache, query Firestore with a fast 1500ms timeout
-  if (!user) {
-    try {
-      const q = query(collection(db, 'appUsers'), where('username', '==', cleanUsername), limit(1));
-      const snap = await Promise.race([
-        getDocs(q),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
-      ]);
-      if (snap && !snap.empty) {
-        const docSnap = snap.docs[0];
-        const data = docSnap.data();
-        user = {
-          id: data.id || docSnap.id,
-          username: data.username,
-          name: data.name,
-          department: data.department,
-          role: data.role,
-          status: data.status,
-          avatar: data.avatar || '🧑🏻‍💼',
-          passwordHash: data.passwordHash || '',
-          createdAt: data.createdAt || '',
-          lastLoginAt: data.lastLoginAt,
-          lastPasswordResetAt: data.lastPasswordResetAt,
-        } as AppUser;
-        // Cache into local users list
-        users = [...users.filter((u) => u.id !== user!.id), user];
-        saveLocalUsers(users);
-      }
-    } catch (e) {
-      console.warn('Direct Firestore user lookup failed', e);
-    }
-  }
-
-  if (!user) {
-    return {
-      success: false,
-      error: 'ไม่พบบัญชีผู้ใช้นี้ในระบบ กรุณาตรวจสอบ Username หรือติดต่อผู้ดูแลระบบ',
-    };
-  }
-
-  if (user.status === 'inactive') {
-    return {
-      success: false,
-      error: 'บัญชีผู้ใช้นี้ถูกปิดการใช้งานชั่วคราวโดยผู้ดูแลระบบ (Admin) กรุณาติดต่อแอดมินเพื่อขอเปิดสิทธิ์',
-    };
-  }
-
-  const hashedInput = await hashPassword(cleanPassword);
-
-  // Check password against hash, or plain text match fallback
-  let isValid = user.passwordHash === hashedInput || user.passwordHash === cleanPassword;
-
-  // Fallback for default demo accounts if hash calculation differs
-  if (!isValid) {
-    if (cleanUsername === 'cansuzy3' && (cleanPassword === 'Orartcandy1' || cleanPassword.toLowerCase() === 'orartcandy1' || cleanPassword === 'Admin@Baanhome2026' || cleanPassword === 'admin')) {
-      isValid = true;
-      user.passwordHash = CANDY_PASSWORD_HASH;
-    } else if (cleanUsername === 'admin' && (cleanPassword === 'Admin@Baanhome2026' || cleanPassword === 'admin')) {
-      isValid = true;
-    } else if (cleanUsername === 'operator' && (cleanPassword === 'Operator@2026' || cleanPassword === 'operator')) {
-      isValid = true;
-    } else if (cleanUsername === 'kuser' && (cleanPassword === 'User@2026' || cleanPassword === 'user')) {
-      isValid = true;
-    }
-  }
-
-  if (!isValid) {
-    return {
-      success: false,
-      error: 'รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง หรือขอรีเซ็ตรหัสผ่านจากผู้ดูแลระบบ',
-    };
-  }
-
-  // Update lastLoginAt locally immediately
-  const timestamp = getFormattedTimestamp();
-  user.lastLoginAt = timestamp;
-  const currentLocals = getLocalUsers();
-  const updatedUsers = currentLocals.map((u) => (u.id === user!.id ? { ...u, lastLoginAt: timestamp } : u));
-  saveLocalUsers(updatedUsers);
-
-  // Immediately store active session for instantaneous response
-  const staffProfile: StaffProfile = {
-    id: user.id,
-    username: user.username,
-    name: user.name,
-    department: user.department,
-    avatar: user.avatar || '🧑🏻‍💼',
-    role: user.role,
-    status: user.status,
-    lastLoginAt: timestamp,
-  };
-  setActiveSessionUser(staffProfile);
-
-  // Non-blocking fire-and-forget background sync (MUST NOT block user login)
-  (async () => {
-    try {
-      await updateDoc(doc(db, 'appUsers', user!.id), { lastLoginAt: timestamp });
-    } catch (e) {
-      console.warn('Firestore lastLoginAt sync skipped/failed', e);
-    }
-
-    try {
-      await recordUserActivity(
-        'LOGIN',
-        `เข้าสู่ระบบสำเร็จในบทบาท [${user!.role}]`,
-        {
-          id: user!.id,
-          username: user!.username,
-          name: user!.name,
-          role: user!.role,
-        }
-      );
-    } catch (e) {
-      console.warn('Firestore login activity log skipped/failed', e);
-    }
-  })().catch(() => {});
-
-  return { success: true, user };
-}
-
-/**
- * Role Permission Definition
- */
 export const ROLE_PERMISSIONS: Record<
   UserRole,
   {
@@ -996,4 +432,3 @@ export function exportActivityLogsToCSV(logs: UserActivityLog[]): void {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
-

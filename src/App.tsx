@@ -66,6 +66,17 @@ import {
 import { Sparkles, ShieldAlert, Lock, ArrowRight } from 'lucide-react';
 
 export default function App() {
+  const [syncErrors, setSyncErrors] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const status = (event: Event) => {
+      const { path, error } = (event as CustomEvent).detail;
+      setSyncErrors(previous => { const next = { ...previous }; if (error) next[path] = error; else delete next[path]; return next; });
+    };
+    const invalid = () => { setActiveSessionUser(null); setCurrentStaff(null); setShowWelcomeGate(true); setAllowWelcomeGateCancel(false); };
+    window.addEventListener('baanhome-sync-status', status);
+    window.addEventListener('baanhome-session-invalid', invalid);
+    return () => { window.removeEventListener('baanhome-sync-status', status); window.removeEventListener('baanhome-session-invalid', invalid); };
+  }, []);
   // Current Authenticated User (Strict Login Required: anyone opening the link must log in first)
   const [currentStaff, setCurrentStaff] = useState<StaffProfile | null>(() => {
     return getActiveSessionUser();
@@ -79,7 +90,7 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<KnowledgeCategory | 'all'>('all');
   
   // Users & Activity Logs state (Real-time Firebase Firestore + Local Cache)
-  const [users, setUsers] = useState<AppUser[]>(INITIAL_DEFAULT_USERS);
+  const [users, setUsers] = useState<AppUser[]>([]);
   const [activityLogs, setActivityLogs] = useState<UserActivityLog[]>(INITIAL_ACTIVITY_LOGS);
 
   // Active Knowledge Base Items (loaded from Google Sheets sync or default)
@@ -93,11 +104,11 @@ export default function App() {
 
   const [questionLogs, setQuestionLogs] = useState<QuestionLog[]>(() => {
     const cached = getLocalQuestionLogs();
-    return cached.length > 0 ? cached : INITIAL_QUESTION_LOGS;
+    return cached;
   });
   const [unansweredQuestions, setUnansweredQuestions] = useState<UnansweredQuestion[]>(() => {
     const cached = getLocalUnansweredQuestions();
-    return cached.length > 0 ? cached : INITIAL_UNANSWERED_QUESTIONS;
+    return cached;
   });
 
   // Google Sheets Live Database Connection state
@@ -121,6 +132,7 @@ export default function App() {
   // Initialize and subscribe to Firestore
   useEffect(() => {
     // Initialize Google Workspace OAuth auth listener
+    if (!currentStaff) return;
     initGoogleAuth();
 
     // Sync custom knowledge from server if uploaded by any staff/admin
@@ -147,7 +159,7 @@ export default function App() {
 
     // Subscribe to users
     const unsubUsers = subscribeUsers((loadedUsers) => {
-      if (loadedUsers && loadedUsers.length > 0) {
+      if (Array.isArray(loadedUsers)) {
         setUsers(loadedUsers);
         // If current staff status or role was updated by admin in real-time, sync it
         if (currentStaff) {
@@ -167,6 +179,7 @@ export default function App() {
               } : null));
             }
           }
+          else { setActiveSessionUser(null); setCurrentStaff(null); setShowWelcomeGate(true); }
         }
       }
     });
@@ -180,15 +193,11 @@ export default function App() {
 
     // Subscribe to question logs & unanswered questions
     const unsubQuestionLogs = subscribeQuestionLogs((logs) => {
-      if (logs.length > 0) {
-        setQuestionLogs(logs);
-      }
+      setQuestionLogs(logs);
     });
 
     const unsubUnanswered = subscribeUnansweredQuestions((qs) => {
-      if (qs.length > 0) {
-        setUnansweredQuestions(qs);
-      }
+      setUnansweredQuestions(qs);
     });
 
     return () => {
@@ -235,29 +244,25 @@ export default function App() {
     status: 'pending' | 'assigned' | 'resolved',
     notes?: string
   ) => {
-    updateUnansweredStatus(id, status, notes);
+    void updateUnansweredStatus(id, status, notes).catch(() => {});
   };
 
   const handleDeleteUnansweredQuestion = async (id: string) => {
-    setUnansweredQuestions((prev) => prev.filter((q) => q.id !== id));
-    await deleteUnansweredQuestion(id);
+    try { await deleteUnansweredQuestion(id); setUnansweredQuestions(prev => prev.filter(q => q.id !== id)); } catch {}
   };
 
   const handleClearResolvedUnanswered = async () => {
     const resolvedIds = unansweredQuestions.filter((q) => q.status === 'resolved').map((q) => q.id);
-    setUnansweredQuestions((prev) => prev.filter((q) => q.status !== 'resolved'));
-    await Promise.all(resolvedIds.map((id) => deleteUnansweredQuestion(id)));
+    for (const id of resolvedIds) { try { await deleteUnansweredQuestion(id); } catch { break; } }
   };
 
   const handleDeleteQuestionLog = async (id: string) => {
-    setQuestionLogs((prev) => prev.filter((log) => log.id !== id));
-    await deleteQuestionLog(id);
+    try { await deleteQuestionLog(id); setQuestionLogs(prev => prev.filter(log => log.id !== id)); } catch {}
   };
 
   const handleClearAllLogs = async () => {
     const logIds = questionLogs.map((log) => log.id);
-    setQuestionLogs([]);
-    await Promise.all(logIds.map((id) => deleteQuestionLog(id)));
+    for (const id of logIds) { try { await deleteQuestionLog(id); } catch { break; } }
   };
 
   const handleSaveUserProfile = (profile: StaffProfile) => {
@@ -307,6 +312,7 @@ export default function App() {
       <div className="fixed top-80 left-0 w-[450px] h-[450px] bg-[#2D5A43]/5 rounded-full blur-3xl pointer-events-none -z-10" />
 
       {/* Header with identity & sleek navigation */}
+      {Object.keys(syncErrors).length > 0 && <div role="alert" className="bg-red-50 text-red-800 border border-red-200 p-3 text-sm">{Array.from(new Set(Object.values(syncErrors))).join(' • ')} — ข้อมูลที่แสดงอาจเป็นข้อมูลที่โหลดไว้ก่อนหน้า</div>}
       <Header
         currentStaff={currentStaff}
         onSelectStaff={handleSelectStaff}
@@ -377,20 +383,7 @@ export default function App() {
                       sourceDoc: result.item.sourceDoc,
                       found: true,
                     };
-                    createQuestionLog(newLog);
-
-                    // Auto-sync question log to connected Google Sheets if enabled
-                    if (sheetsDbConfig && sheetsDbConfig.autoSyncQuestions && sheetsDbConfig.spreadsheetId) {
-                      getGoogleAccessToken()
-                        .then((token) => {
-                          if (token) {
-                            appendQuestionLogToSheet(token, sheetsDbConfig.spreadsheetId, newLog).catch((err) => {
-                              console.warn('Auto-append question log to Google Sheets failed:', err);
-                            });
-                          }
-                        })
-                        .catch((err) => console.warn('Google Access token error:', err));
-                    }
+                    void createQuestionLog(newLog).catch(() => {});
 
                     // User activity log
                     recordUserActivity(
@@ -414,7 +407,7 @@ export default function App() {
                     question: query,
                     status: 'pending' as const,
                   };
-                  createUnansweredQuestion(u);
+                  void createUnansweredQuestion(u).catch(() => {});
                   setActiveTab('unanswered');
                 }}
               />

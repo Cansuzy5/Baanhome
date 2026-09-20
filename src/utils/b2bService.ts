@@ -1,3 +1,4 @@
+import { sharedApi } from './sharedApi';
 import { B2BLead, B2BAppointment, UserRole } from '../types';
 import { B2B_LEADS } from '../data/b2bPartnerships';
 import { INITIAL_B2B_APPOINTMENTS } from '../data/b2bAppointments';
@@ -34,31 +35,14 @@ export function getCachedAppointments(): B2BAppointment[] {
 function publish(data: B2BData) {
   if (!Array.isArray(data.leads) || !Array.isArray(data.appointments)) throw new Error('รูปแบบข้อมูล B2B ไม่ถูกต้อง');
   try {
+    for (const key of [LEADS_STORAGE_KEY, APPOINTMENTS_STORAGE_KEY]) { if (localStorage.getItem(key + '_before_shared_db') === null) localStorage.setItem(key + '_before_shared_db', localStorage.getItem(key) || '[]'); }
     localStorage.setItem(LEADS_STORAGE_KEY, JSON.stringify(data.leads));
     localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(data.appointments));
   } catch { /* Cache failure must not undo a durable save. */ }
   for (const listener of listeners) listener(data);
 }
-async function request(body?: unknown): Promise<any> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
-  try {
-    const response = await fetch('/api/sync/b2b', {
-      method: body === undefined ? 'GET' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: controller.signal,
-    });
-    const data = await response.json();
-    if (!response.ok || (body !== undefined && data.success !== true)) {
-      throw new Error(data.error || 'บันทึกไม่สำเร็จ กรุณาลองใหม่');
-    }
-    return data;
-  } catch (error: any) {
-    if (error.name === 'AbortError') throw new Error('การเชื่อมต่อใช้เวลานาน กรุณารีเฟรชตรวจสอบผลก่อนลองอีกครั้ง');
-    throw error;
-  } finally { clearTimeout(timer); }
-}
+async function request(body?: unknown): Promise<any> { return sharedApi('/api/sync/b2b', body); }
+
 export function subscribeCentralB2B(onUpdate: (data: B2BData) => void): () => void {
   let active = true;
   let fetching = false;

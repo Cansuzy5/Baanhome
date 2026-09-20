@@ -1,3 +1,4 @@
+import { sharedApi } from './sharedApi';
 import { QuestionLog, B2BAppointment } from '../types';
 
 export interface GoogleSheetsDbConfig {
@@ -12,64 +13,16 @@ export interface GoogleSheetsDbConfig {
 
 const STORAGE_KEY = 'baanhome_google_sheets_db_config';
 
-export const getStoredSheetsConfig = (): GoogleSheetsDbConfig | null => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      return JSON.parse(raw);
-    }
-  } catch (e) {
-    console.error('Failed to parse sheets config', e);
-  }
-  return null;
+export const getStoredSheetsConfig = (): GoogleSheetsDbConfig | null => null;
+export const saveStoredSheetsConfig = (_config: GoogleSheetsDbConfig | null): void => {
+  // Database target is configured on the server, never per browser.
 };
-
-export const saveStoredSheetsConfig = (config: GoogleSheetsDbConfig | null): void => {
-  if (!config) {
-    localStorage.removeItem(STORAGE_KEY);
-  } else {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-  }
-  
-  // Trigger local event
-  window.dispatchEvent(new CustomEvent('baanhome_sheets_config_updated', { detail: config }));
-
-  // Central server synchronization for shared team access
-  try {
-    fetch('/api/sync/sheets-config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config }),
-    }).catch(() => {});
-  } catch (e) {}
-};
-
-/**
- * Fetch and subscribe to central Google Sheets configuration across all users
- */
 export function syncCentralSheetsConfig(onLoaded?: (config: GoogleSheetsDbConfig | null) => void): () => void {
-  // Sync immediately from central server
-  fetch('/api/sync/sheets-config')
-    .then((res) => res.json())
-    .then((data) => {
-      if (data && 'config' in data) {
-        if (data.config) {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.config));
-        } else {
-          localStorage.removeItem(STORAGE_KEY);
-        }
-        if (onLoaded) onLoaded(data.config);
-      }
-    })
-    .catch(() => {});
-
-  const listener = (event: Event) => {
-    const custom = event as CustomEvent<GoogleSheetsDbConfig | null>;
-    if (onLoaded) onLoaded(custom.detail);
-  };
-  window.addEventListener('baanhome_sheets_config_updated', listener);
-  return () => window.removeEventListener('baanhome_sheets_config_updated', listener);
+  let active = true;
+  sharedApi('/api/sync/sheets-config').then(data => { if (active) onLoaded?.(data.config); }).catch(() => { if (active) onLoaded?.(null); });
+  return () => { active = false; };
 }
+
 
 const QUESTION_HEADERS = [
   'รหัสคำถาม (Log ID)',

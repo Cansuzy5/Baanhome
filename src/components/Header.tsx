@@ -194,7 +194,7 @@ export const Header: React.FC<HeaderProps> = ({
                   setShowMenu(false);
                 }}
                 className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer shadow-2xs active:scale-95 shrink-0 whitespace-nowrap border ${
-                  sheetsDbConfig || isUsingCustomSheet
+                  sheetsDbConfig
                     ? 'bg-[#EBF7EE] text-[#136C36] border-[#B7E2BF] hover:bg-[#DCF3E2]'
                     : 'bg-[#FAF8F3] text-[#425547] border-[#DDD7C8] hover:bg-[#F2ECE0]'
                 }`}
@@ -202,7 +202,7 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <FileSpreadsheet className="w-3.5 h-3.5 text-[#107C41] shrink-0" />
                 <span className="hidden lg:inline text-xs font-semibold">Sheets DB</span>
-                {(sheetsDbConfig || isUsingCustomSheet) ? (
+                {(sheetsDbConfig) ? (
                   <span className="w-2 h-2 rounded-full bg-[#107C41] shrink-0 ring-2 ring-[#EBF7EE]" />
                 ) : (
                   <span className="w-1.5 h-1.5 rounded-full bg-[#A8B2A6] shrink-0" />

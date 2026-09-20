@@ -1,3 +1,8 @@
+import unansweredHandler from './api/sync/unanswered.js';
+import sheetsConfigHandler from './api/sync/sheets-config.js';
+import usersHandler from './api/sync/users.js';
+import questionsHandler from './api/sync/question-logs.js';
+import b2bHandler from './api/sync/b2b.js';
 import { applyB2BMutation } from './lib/b2bMutation.js';
 import express from 'express';
 import path from 'path';
@@ -82,6 +87,11 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
+  app.all('/api/sync/users', usersHandler);
+  app.all('/api/sync/unanswered', unansweredHandler);
+  app.all('/api/sync/sheets-config', sheetsConfigHandler);
+  app.all('/api/sync/question-logs', questionsHandler);
+  app.all('/api/sync/b2b', b2bHandler);
 
   // AI API Route
   app.post('/api/ask', async (req, res) => {

@@ -112,13 +112,12 @@ export async function getCentralConfig<T>(configId: string, fallbackFileName: st
       }
     }
   } catch (err) {
-    // In case of Firestore read issues or quota limitations, fall back gracefully to local/memory
+    throw err;
   }
-  return readLocalFallback(fallbackFileName, defaultValue);
+  return defaultValue;
 }
 
 export async function setCentralConfig<T>(configId: string, fallbackFileName: string, payload: T): Promise<void> {
-  writeLocalFallback(fallbackFileName, payload);
   try {
     const database = getDb();
     if (database) {
@@ -126,9 +125,12 @@ export async function setCentralConfig<T>(configId: string, fallbackFileName: st
         payload,
         updatedAt: new Date().toISOString()
       });
+      writeLocalFallback(fallbackFileName, payload);
+    } else {
+      throw new Error('Central database unavailable');
     }
   } catch (err) {
-    // ignore
+    throw err;
   }
 }
 
