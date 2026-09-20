@@ -5,7 +5,7 @@ import { B2BAppointment, B2BLead, AppointmentStatus } from '../types';
 interface AddAppointmentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (appointment: B2BAppointment) => void;
+  onSave: (appointment: B2BAppointment) => Promise<boolean>;
   leads: B2BLead[];
   editAppointment?: B2BAppointment | null;
   defaultDate?: string;
@@ -89,14 +89,16 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
     }
   }, [selectedLeadId, leads]);
 
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!leadName.trim() || !date) return;
+    if (!leadName.trim() || !date || isSaving) return;
 
     const apt: B2BAppointment = {
-      id: editAppointment?.id || `APT-2026-${String(Math.floor(10 + Math.random() * 990)).padStart(3, '0')}`,
+      id: editAppointment?.id || `APT-${crypto.randomUUID()}`,
       leadId: selectedLeadId || undefined,
       leadName: leadName.trim(),
       date,
@@ -115,8 +117,13 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
       updatedAt: new Date().toISOString().split('T')[0],
     };
 
-    onSave(apt);
-    onClose();
+    setIsSaving(true);
+    setSaveError('');
+    try {
+      if (await onSave(apt)) onClose();
+      else setSaveError('บันทึกไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่');
+    } catch { setSaveError('บันทึกไม่สำเร็จ กรุณาลองใหม่'); }
+    finally { setIsSaving(false); }
   };
 
   return (
@@ -138,7 +145,8 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            disabled={isSaving}
+              onClick={onClose}
             className="p-2 rounded-xl hover:bg-white/20 transition-colors text-white/80 hover:text-white"
           >
             <X className="w-5 h-5" />
@@ -385,12 +393,15 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
           <div className="pt-3 border-t border-[#E3ECE1] flex items-center justify-end gap-2.5">
             <button
               type="button"
+              disabled={isSaving}
               onClick={onClose}
               className="px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-[#5B7967] hover:bg-[#F2F6F1]"
             >
               ยกเลิก
             </button>
+            {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
             <button
+              disabled={isSaving}
               type="submit"
               className="px-5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-[#1B3E2D] hover:bg-[#25503B] text-white shadow-md flex items-center gap-1.5"
             >
