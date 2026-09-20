@@ -103,6 +103,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   const [appointmentToDelete, setAppointmentToDelete] = useState<B2BAppointment | null>(null);
   const [leadToDelete, setLeadToDelete] = useState<B2BLead | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
   // Subscribe to Central Shared B2B Database in real-time across all users
@@ -132,7 +134,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
     if (scheduleAppointment) {
       const newApt: B2BAppointment = {
-        id: `APT-${Date.now().toString().slice(-6)}`,
+        id: `APT-${crypto.randomUUID()}`,
         leadId: lead.id,
         leadName: lead.name,
         date: scheduleAppointment.date,
@@ -158,32 +160,36 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     }
     const target = leadsList.find((l) => l.id === leadId);
     if (target) {
+      setDeleteError(null);
       setLeadToDelete(target);
     }
   };
 
   // Execute confirmed lead deletion
   const confirmDeleteLead = async () => {
-    if (!leadToDelete) return;
-    const targetId = leadToDelete.id;
-    await deleteCentralB2BLead(targetId, currentRole);
-    if (activeLeadModal?.id === targetId) {
-      setActiveLeadModal(null);
-    }
-    setLeadToDelete(null);
+    if (!leadToDelete || isDeleting) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const result = await deleteCentralB2BLead(leadToDelete.id, currentRole);
+      if (!result.success) { setDeleteError(result.error || 'ลบไม่สำเร็จ'); return; }
+      if (activeLeadModal?.id === leadToDelete.id) setActiveLeadModal(null);
+      setLeadToDelete(null);
+    } catch { setDeleteError('ลบไม่สำเร็จ กรุณาลองใหม่'); }
+    finally { setIsDeleting(false); }
   };
 
   // Handle Add or Edit Appointment
   const handleSaveAppointment = async (apt: B2BAppointment) => {
     if (!isOperatorOrAdmin) {
       setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Operator และ Administrator เท่านั้นที่สามารถบันทึกนัดหมายได้');
-      return;
+      return false;
     }
 
     const res = await saveCentralB2BAppointment(apt, currentRole);
     if (!res.success) {
       setPermissionError(res.error || 'ไม่สามารถบันทึกนัดหมายได้');
-      return;
+      return false;
     }
 
     // Auto-sync appointment to connected Google Sheets if enabled
@@ -213,6 +219,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         await saveCentralB2BLead(updatedLead, currentRole);
       }
     }
+    return true;
   };
 
   // Handle Delete Appointment (opens confirmation dialog)
@@ -223,16 +230,23 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     }
     const target = appointments.find((a) => a.id === appointmentId);
     if (target) {
+      setDeleteError(null);
       setAppointmentToDelete(target);
     }
   };
 
   // Execute confirmed appointment deletion
   const confirmDeleteAppointment = async () => {
-    if (!appointmentToDelete) return;
-    const targetId = appointmentToDelete.id;
-    await deleteCentralB2BAppointment(targetId, currentRole);
-    setAppointmentToDelete(null);
+    if (!appointmentToDelete || isDeleting) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const result = await deleteCentralB2BAppointment(appointmentToDelete.id, currentRole);
+      if (!result.success) { setDeleteError(result.error || 'ลบไม่สำเร็จ'); return; }
+      
+      setAppointmentToDelete(null);
+    } catch { setDeleteError('ลบไม่สำเร็จ กรุณาลองใหม่'); }
+    finally { setIsDeleting(false); }
   };
 
   // Handle Update Appointment Status
@@ -248,7 +262,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         status,
         updatedAt: new Date().toISOString().split('T')[0],
       };
-      await saveCentralB2BAppointment(updated, currentRole);
+      const result = await saveCentralB2BAppointment(updated, currentRole);
+      if (!result.success) setPermissionError(result.error || 'เปลี่ยนสถานะไม่สำเร็จ');
     }
   };
 
@@ -263,7 +278,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
   // Execute confirmed reset
   const confirmResetData = async () => {
-    await resetCentralB2BToDefault(currentRole);
+    const result = await resetCentralB2BToDefault(currentRole);
+    if (!result.success) { setPermissionError(result.error || 'รีเซ็ตไม่สำเร็จ'); return; }
     setIsResetConfirmOpen(false);
   };
 
@@ -1129,6 +1145,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       />
 
       <AddAppointmentModal
+        key={isAddAptModalOpen ? (editingApt?.id || aptDefaultDate || 'new') : 'closed'}
         isOpen={isAddAptModalOpen}
         onClose={() => setIsAddAptModalOpen(false)}
         onSave={handleSaveAppointment}
@@ -1180,6 +1197,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             <div className="flex items-center gap-2.5 pt-2">
               <button
                 type="button"
+                disabled={isDeleting}
                 onClick={() => setAppointmentToDelete(null)}
                 className="flex-1 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-bold transition-all cursor-pointer"
               >
@@ -1187,13 +1205,15 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               </button>
               <button
                 type="button"
+                disabled={isDeleting}
                 onClick={confirmDeleteAppointment}
                 className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Trash2 className="w-4 h-4" />
-                <span>ยืนยันลบนัดหมาย</span>
+                <span>{isDeleting ? 'กำลังลบ…' : 'ยืนยันลบนัดหมาย'}</span>
               </button>
             </div>
+            {deleteError && <p role="alert" className="text-sm text-red-600">{deleteError}</p>}
           </div>
         </div>
       )}
@@ -1228,6 +1248,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             <div className="flex items-center gap-2.5 pt-2">
               <button
                 type="button"
+                disabled={isDeleting}
                 onClick={() => setLeadToDelete(null)}
                 className="flex-1 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-bold transition-all cursor-pointer"
               >
@@ -1235,13 +1256,15 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               </button>
               <button
                 type="button"
+                disabled={isDeleting}
                 onClick={confirmDeleteLead}
                 className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Trash2 className="w-4 h-4" />
-                <span>ยืนยันการลบ</span>
+                <span>{isDeleting ? 'กำลังลบ…' : 'ยืนยันการลบ'}</span>
               </button>
             </div>
+            {deleteError && <p role="alert" className="text-sm text-red-600">{deleteError}</p>}
           </div>
         </div>
       )}

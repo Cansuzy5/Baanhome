@@ -1,3 +1,4 @@
+import { applyB2BMutation } from './lib/b2bMutation.js';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -358,14 +359,14 @@ ${contextText}
 
   app.post('/api/sync/b2b', (req, res) => {
     try {
-      const { leads, appointments } = req.body || {};
-      if (Array.isArray(leads)) {
-        fs.writeFileSync(B2B_LEADS_FILE, JSON.stringify(leads, null, 2), 'utf-8');
-      }
-      if (Array.isArray(appointments)) {
-        fs.writeFileSync(B2B_APPOINTMENTS_FILE, JSON.stringify(appointments, null, 2), 'utf-8');
-      }
-      res.json({ success: true });
+      const current = {
+        leads: fs.existsSync(B2B_LEADS_FILE) ? JSON.parse(fs.readFileSync(B2B_LEADS_FILE, 'utf-8')) : [],
+        appointments: fs.existsSync(B2B_APPOINTMENTS_FILE) ? JSON.parse(fs.readFileSync(B2B_APPOINTMENTS_FILE, 'utf-8')) : [],
+      };
+      const updated = applyB2BMutation(current, req.body);
+      fs.writeFileSync(B2B_LEADS_FILE, JSON.stringify(updated.leads, null, 2), 'utf-8');
+      fs.writeFileSync(B2B_APPOINTMENTS_FILE, JSON.stringify(updated.appointments, null, 2), 'utf-8');
+      res.json({ success: true, ...updated });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
