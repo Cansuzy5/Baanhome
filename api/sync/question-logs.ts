@@ -1,4 +1,4 @@
-import { setCorsHeaders, getCentralConfig, setCentralConfig } from '../_db';
+import { setCorsHeaders, getCentralConfig, setCentralConfig } from '../_db.js';
 
 const CONFIG_ID = 'questionLogs';
 const FALLBACK_FILE = 'persistent_question_logs.json';

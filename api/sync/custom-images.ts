@@ -1,4 +1,4 @@
-import { setCorsHeaders, getCentralConfig, setCentralConfig } from '../_db';
+import { setCorsHeaders, getCentralConfig, setCentralConfig } from '../_db.js';
 
 const CONFIG_ID = 'customImages';
 const FALLBACK_FILE = 'persistent_custom_images.json';
