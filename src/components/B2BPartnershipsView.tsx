@@ -355,13 +355,91 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     if (!appointmentToDelete || isDeleting) return;
     setIsDeleting(true);
     setDeleteError(null);
+
     try {
-      const result = await deleteCentralB2BAppointment(appointmentToDelete.id, currentRole);
-      if (!result.success) { setDeleteError(result.error || 'ลบไม่สำเร็จ'); return; }
-      
+      const deletingAppointment = appointmentToDelete;
+      const result = await deleteCentralB2BAppointment(deletingAppointment.id, currentRole);
+      if (!result.success) {
+        setDeleteError(result.error || 'ลบไม่สำเร็จ');
+        return;
+      }
+
+      // Keep the organization master record consistent with the calendar.
+      // Appointment documents remain the source of truth for schedule data.
+      const linkedLead = leadsList.find(
+        (lead) =>
+          (deletingAppointment.leadId && lead.id === deletingAppointment.leadId) ||
+          lead.name === deletingAppointment.leadName
+      );
+
+      if (linkedLead) {
+        const remainingAppointments = appointments
+          .filter((apt) => apt.id !== deletingAppointment.id)
+          .filter(
+            (apt) =>
+              (apt.leadId && apt.leadId === linkedLead.id) ||
+              apt.leadName === linkedLead.name
+          )
+          .sort((a, b) =>
+            `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)
+          );
+
+        const nextAppointment = remainingAppointments[0];
+        const currentStage =
+          linkedLead.pipelineStage || linkedLead.contactStatus || 'ยังไม่ติดต่อ';
+
+        const updatedLead: B2BLead = {
+          ...linkedLead,
+          // Legacy denormalized appointment fields are refreshed/cleared so
+          // the directory never shows a deleted calendar appointment.
+          appointmentDate: nextAppointment?.date || undefined,
+          appointmentTime: nextAppointment?.time || undefined,
+          updatedAt: new Date().toISOString().split('T')[0],
+        };
+
+        // Only step back when the master status is explicitly "นัดเข้าพบ" and
+        // there are no appointments left. Later manual pipeline stages must
+        // never be downgraded by deleting a calendar event.
+        const changes: string[] = [
+          `ลบนัดหมายวันที่ ${deletingAppointment.date} เวลา ${deletingAppointment.time}`,
+        ];
+
+        if (!nextAppointment && currentStage === 'นัดเข้าพบ') {
+          updatedLead.pipelineStage = 'ติดต่อแล้ว';
+          updatedLead.contactStatus = 'ติดต่อแล้ว';
+          changes.push('สถานะการติดตาม: "นัดเข้าพบ" → "ติดต่อแล้ว"');
+        }
+
+        updatedLead.history = [
+          {
+            id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            timestamp: new Date().toISOString(),
+            actorId,
+            actorName,
+            action: 'ลบนัดหมาย',
+            changes,
+          },
+          ...(linkedLead.history || []),
+        ].slice(0, 100);
+
+        const leadResult = await saveCentralB2BLead(updatedLead, currentRole);
+        if (!leadResult.success) {
+          setPermissionError(
+            'ลบนัดหมายสำเร็จ แต่ข้อมูลสรุปขององค์กรยังซิงก์ไม่สำเร็จ กรุณารีเฟรชตรวจสอบอีกครั้ง'
+          );
+        }
+
+        if (activeLeadModal?.id === linkedLead.id) {
+          setActiveLeadModal(updatedLead);
+        }
+      }
+
       setAppointmentToDelete(null);
-    } catch { setDeleteError('ลบไม่สำเร็จ กรุณาลองใหม่'); }
-    finally { setIsDeleting(false); }
+    } catch {
+      setDeleteError('ลบไม่สำเร็จ กรุณาลองใหม่');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   // Handle Update Appointment Status
