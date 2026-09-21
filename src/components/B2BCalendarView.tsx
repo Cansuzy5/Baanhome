@@ -183,64 +183,57 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   }, [appointments, year, month]);
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner & Quick Stats */}
-      <div className="bg-gradient-to-r from-[#173827] via-[#24523B] to-[#1E4330] rounded-3xl p-5 sm:p-6 text-white shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-[#8FD6A9] mb-1">
-            <CalendarCheck className="w-4 h-4" />
-            <span>ระบบนัดหมาย & กำหนดการเข้าพบ B2B CORPORATE</span>
-          </div>
-          <h2 className="text-xl sm:text-2xl font-bold">
-            ปฏิทินนัดหมายเข้าพบ & Site Visit
-          </h2>
-          <p className="text-xs sm:text-sm text-[#C4E2CF] mt-1 max-w-xl leading-relaxed">
-            ติดตามคิวนำเสนอแพ็กเกจห้องประชุม ชิมอาหารว่าง และนัดหมายเซ็นสัญญาคู่ค้าองค์กรทั่วกาฬสินธุ์
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-2 text-center border border-white/15">
-            <span className="text-[10px] text-[#A7D7B9] block">นัดหมายเดือนนี้</span>
-            <span className="text-lg font-bold text-white">{stats.totalThisMonth} ครั้ง</span>
-          </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-2 text-center border border-white/15">
-            <span className="text-[10px] text-[#A7D7B9] block">พบลูกค้าแล้ว</span>
-            <span className="text-lg font-bold text-[#A3E635]">{stats.completed} นัด</span>
-          </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-2 text-center border border-white/15">
-            <span className="text-[10px] text-[#A7D7B9] block">ไม่ได้เข้าพบ</span>
-            <span className="text-lg font-bold text-[#FF9D9D]">{stats.notMet} นัด</span>
-          </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-2 text-center border border-white/15">
-            <span className="text-[10px] text-[#A7D7B9] block">อัตราเข้าพบสำเร็จ</span>
-            <span className="text-lg font-bold text-[#FDE68A]">{stats.successRate}%</span>
+    <div className="space-y-3">
+      {/* Compact calendar controls: keep the calendar visible in the first viewport */}
+      <div className="bg-white rounded-2xl border border-[#DDE7DC] shadow-sm p-3 sm:p-4">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-bold text-[#2D5A43]">
+              <CalendarCheck className="w-4 h-4" />
+              <span>ปฏิทินนัดหมายเข้าพบ</span>
+            </div>
+            <p className="text-[11px] text-[#789084] mt-0.5">กดวันว่างเพื่อลงนัด หรือกดนัดเดิมเพื่อดูรายละเอียดและบันทึกผล</p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="px-3 py-1.5 rounded-xl bg-[#F3F7F1] border border-[#E0E8DD] text-center">
+              <span className="text-[9px] text-[#789084] block">เดือนนี้</span>
+              <span className="text-sm font-bold text-[#173827]">{stats.totalThisMonth}</span>
+            </div>
+            <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-100 text-center">
+              <span className="text-[9px] text-emerald-700 block">พบแล้ว</span>
+              <span className="text-sm font-bold text-emerald-700">{stats.completed}</span>
+            </div>
+            <div className="px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-100 text-center">
+              <span className="text-[9px] text-rose-700 block">ไม่ได้เข้าพบ</span>
+              <span className="text-sm font-bold text-rose-700">{stats.notMet}</span>
+            </div>
+            <div className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-100 text-center">
+              <span className="text-[9px] text-amber-700 block">สำเร็จ</span>
+              <span className="text-sm font-bold text-amber-700">{stats.successRate}%</span>
+            </div>
+
             <button
               onClick={() => exportAppointmentsToCsv(appointments)}
-              className="px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-all flex items-center gap-1.5 border border-white/20"
+              className="px-3 py-2 rounded-xl border border-[#D9E3D7] text-[#496655] text-xs font-bold flex items-center gap-1.5 hover:bg-[#F6F9F5]"
               title="ส่งออกตารางนัดหมายเป็น CSV"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Export นัดหมาย</span>
+              <Download className="w-3.5 h-3.5" /> Export
             </button>
             <button
               onClick={() => onAddAppointment(selectedDateStr)}
-              className="px-4 py-2 rounded-xl bg-[#C89B3C] hover:bg-[#B3872E] text-[#1E3A29] text-xs font-bold transition-all flex items-center gap-1.5 shadow-md"
+              className="px-3.5 py-2 rounded-xl bg-[#C89B3C] hover:bg-[#B3872E] text-[#1E3A29] text-xs font-bold flex items-center gap-1.5 shadow-sm"
             >
-              <Plus className="w-4 h-4" />
-              <span>+ เพิ่มนัดหมาย</span>
+              <Plus className="w-4 h-4" /> เพิ่มนัดหมาย
             </button>
           </div>
         </div>
       </div>
 
       {/* Main Grid: Calendar on Left, Selected Day & Agenda on Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Calendar Section (7 Cols) */}
-        <div className="lg:col-span-7 bg-white rounded-3xl p-5 sm:p-6 border border-[#E3ECE1] shadow-sm flex flex-col">
+        <div className="lg:col-span-8 bg-white rounded-2xl p-4 sm:p-5 border border-[#E3ECE1] shadow-sm flex flex-col">
           {/* Calendar Header Navigation */}
           <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#EEF4ED]">
             <div className="flex items-center gap-2">
@@ -384,7 +377,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
         </div>
 
         {/* Right Section: Day Schedule & Upcoming Agenda (5 Cols) */}
-        <div className="lg:col-span-5 space-y-4">
+        <div className="lg:col-span-4 space-y-3">
           {/* Selected Date Focus Card */}
           <div className="bg-[#FAFBF9] rounded-3xl p-5 border border-[#E3ECE1] shadow-sm">
             <div className="flex items-center justify-between mb-3">
