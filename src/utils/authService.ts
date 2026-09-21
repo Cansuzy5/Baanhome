@@ -145,42 +145,22 @@ export function getFormattedTimestamp(): string {
 export function getLocalUsers(): AppUser[] {
   try {
     const raw = localStorage.getItem(USERS_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const users = parsed.map((u: AppUser) => {
-          if (u.username && u.username.toLowerCase() === 'cansuzy3' && u.passwordHash === DEFAULT_ADMIN_HASH) {
-            return { ...u, passwordHash: CANDY_PASSWORD_HASH };
-          }
-          return u;
-        });
-        // Ensure best account is always present across all devices
-        if (!users.some((u: AppUser) => u.username && u.username.toLowerCase() === 'best')) {
-          const defaultBest = INITIAL_DEFAULT_USERS.find(u => u.username.toLowerCase() === 'best');
-          if (defaultBest) users.unshift(defaultBest);
-        }
-        return users;
-      }
-    }
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
-    console.error('Failed to get local users', e);
+    console.error('Failed to get local users cache', e);
+    return [];
   }
-  return INITIAL_DEFAULT_USERS;
 }
 
 export function saveLocalUsers(users: AppUser[]) {
+  // Browser storage is cache only. Firestore appUsers is the shared source of truth.
   try {
     localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
   } catch (e) {
-    console.error('Failed to save local users', e);
+    console.error('Failed to save local users cache', e);
   }
-  try {
-    fetch('/api/sync/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ users }),
-    }).catch(() => {});
-  } catch (e) {}
 }
 
 export function getLocalActivityLogs(): UserActivityLog[] {
@@ -327,63 +307,35 @@ export function subscribeUserActivities(callback: (logs: UserActivityLog[]) => v
  * Subscribe to Users (Real-time Firestore with fallback & Server Sync)
  */
 export function subscribeUsers(callback: (users: AppUser[]) => void): () => void {
-  // 1. Fetch from shared server to ensure preview iframe and external tabs have identical state
-  fetch('/api/sync/users')
-    .then((res) => res.json())
-    .then((data) => {
-      if (data && Array.isArray(data.users) && data.users.length > 0) {
-        const local = getLocalUsers();
-        const userMap = new Map<string, AppUser>();
-        // Seed with server users
-        data.users.forEach((u: AppUser) => userMap.set(u.username.toLowerCase(), u));
-        // Merge with local users so any user added locally is never lost
-        local.forEach((u: AppUser) => {
-          if (!userMap.has(u.username.toLowerCase())) {
-            userMap.set(u.username.toLowerCase(), u);
-          }
-        });
-        const merged = Array.from(userMap.values());
-        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(merged));
-        callback(merged);
-        if (merged.length > data.users.length) {
-          saveLocalUsers(merged);
-        }
-      }
-    })
-    .catch(() => {});
+  const cached = getLocalUsers();
+  if (cached.length > 0) callback(cached);
 
   try {
     const q = query(collection(db, 'appUsers'), limit(100));
     return onSnapshot(
       q,
       (snapshot) => {
-        if (!snapshot.empty) {
-          const items = snapshot.docs.map((docSnap) => {
-            const data = docSnap.data();
-            return {
-              id: data.id || docSnap.id,
-              username: data.username,
-              name: data.name,
-              department: data.department,
-              role: data.role,
-              status: data.status,
-              avatar: data.avatar || '👩🏻‍💼',
-              passwordHash: data.passwordHash || '',
-              createdAt: data.createdAt || '',
-              lastLoginAt: data.lastLoginAt,
-              lastPasswordResetAt: data.lastPasswordResetAt,
-            } as AppUser;
-          });
-          saveLocalUsers(items);
-          callback(items);
-        } else {
-          // If Firestore is empty, sync default users
-          const locals = getLocalUsers();
-          callback(locals);
-        }
+        const items = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          return {
+            id: data.id || docSnap.id,
+            username: data.username,
+            name: data.name,
+            department: data.department,
+            role: data.role,
+            status: data.status,
+            avatar: data.avatar || '👩🏻‍💼',
+            passwordHash: data.passwordHash || '',
+            createdAt: data.createdAt || '',
+            lastLoginAt: data.lastLoginAt,
+            lastPasswordResetAt: data.lastPasswordResetAt,
+          } as AppUser;
+        });
+        saveLocalUsers(items);
+        callback(items);
       },
       (error) => {
-        console.warn('Subscription to appUsers failed, using local cache', error);
+        console.warn('Subscription to appUsers failed; using local cache only', error);
         callback(getLocalUsers());
       }
     );
@@ -439,9 +391,11 @@ export async function createNewUser(
   actor: StaffProfile
 ): Promise<AppUser> {
   const cleanUsername = newUser.username.trim().toLowerCase();
-  const currentUsers = getLocalUsers();
 
-  if (currentUsers.some((u) => u.username.toLowerCase() === cleanUsername)) {
+  const duplicateSnap = await getDocs(
+    query(collection(db, 'appUsers'), where('username', '==', cleanUsername), limit(1))
+  );
+  if (!duplicateSnap.empty) {
     throw new Error(`ชื่อผู้ใช้ "${cleanUsername}" มีอยู่ในระบบแล้ว กรุณาเลือกชื่ออื่น`);
   }
 
@@ -461,30 +415,25 @@ export async function createNewUser(
     createdAt: timestamp,
   };
 
-  // Update local immediately so UI updates instantaneously
-  const updatedList = [userDoc, ...currentUsers];
-  saveLocalUsers(updatedList);
+  try {
+    await setDoc(doc(db, 'appUsers', id), userDoc);
+  } catch (e) {
+    console.error('Firestore user save failed', e);
+    throw new Error('เพิ่มผู้ใช้ไม่สำเร็จ: ไม่สามารถบันทึกบัญชีลงฐานข้อมูลกลางได้');
+  }
 
-  // Sync to Firestore & Audit Log with safety timeout
-  const syncTask = async () => {
-    try {
-      await setDoc(doc(db, 'appUsers', id), userDoc);
-    } catch (e) {
-      console.warn('Firestore user save failed', e);
-    }
+  const currentUsers = getLocalUsers();
+  saveLocalUsers([userDoc, ...currentUsers.filter((u) => u.id !== id)]);
 
-    try {
-      await recordUserActivity(
-        'ADMIN_CREATE_USER',
-        `เพิ่มบัญชีผู้ใช้ใหม่: ${userDoc.name} (@${userDoc.username}) สิทธิ์: ${userDoc.role} แผนก: ${userDoc.department}`,
-        actor
-      );
-    } catch (e) {
-      console.warn('Firestore activity log write failed', e);
-    }
-  };
-
-  await syncWithTimeout(syncTask(), 750);
+  try {
+    await recordUserActivity(
+      'ADMIN_CREATE_USER',
+      `เพิ่มบัญชีผู้ใช้ใหม่: ${userDoc.name} (@${userDoc.username}) สิทธิ์: ${userDoc.role} แผนก: ${userDoc.department}`,
+      actor
+    );
+  } catch (e) {
+    console.warn('Activity log write failed after user creation', e);
+  }
 
   return userDoc;
 }
@@ -502,28 +451,24 @@ export async function updateUserRole(
   if (!target) throw new Error('ไม่พบบัญชีผู้ใช้ที่ต้องการเปลี่ยนสิทธิ์');
 
   const oldRole = target.role;
-  const updatedList = currentUsers.map((u) => (u.id === targetUserId ? { ...u, role: newRole } : u));
-  saveLocalUsers(updatedList);
+  try {
+    await updateDoc(doc(db, 'appUsers', targetUserId), { role: newRole });
+  } catch (e) {
+    console.error('Firestore update role failed', e);
+    throw new Error('เปลี่ยนสิทธิ์ไม่สำเร็จ: ไม่สามารถบันทึกลงฐานข้อมูลกลางได้');
+  }
 
-  const syncTask = async () => {
-    try {
-      await updateDoc(doc(db, 'appUsers', targetUserId), { role: newRole });
-    } catch (e) {
-      console.warn('Firestore update role failed', e);
-    }
+  saveLocalUsers(currentUsers.map((u) => (u.id === targetUserId ? { ...u, role: newRole } : u)));
 
-    try {
-      await recordUserActivity(
-        'ADMIN_CHANGE_ROLE',
-        `เปลี่ยนสิทธิ์ผู้ใช้ @${target.username} (${target.name}) จาก [${oldRole}] เป็น [${newRole}]`,
-        actor
-      );
-    } catch (e) {
-      console.warn('Firestore activity log write failed', e);
-    }
-  };
-
-  await syncWithTimeout(syncTask(), 750);
+  try {
+    await recordUserActivity(
+      'ADMIN_CHANGE_ROLE',
+      `เปลี่ยนสิทธิ์ผู้ใช้ @${target.username} (${target.name}) จาก [${oldRole}] เป็น [${newRole}]`,
+      actor
+    );
+  } catch (e) {
+    console.warn('Activity log write failed after role change', e);
+  }
 }
 
 /**
@@ -538,29 +483,25 @@ export async function toggleUserStatus(
   const target = currentUsers.find((u) => u.id === targetUserId);
   if (!target) throw new Error('ไม่พบบัญชีผู้ใช้ที่ระบุ');
 
-  const updatedList = currentUsers.map((u) => (u.id === targetUserId ? { ...u, status: newStatus } : u));
-  saveLocalUsers(updatedList);
+  try {
+    await updateDoc(doc(db, 'appUsers', targetUserId), { status: newStatus });
+  } catch (e) {
+    console.error('Firestore update status failed', e);
+    throw new Error('เปลี่ยนสถานะบัญชีไม่สำเร็จ: ไม่สามารถบันทึกลงฐานข้อมูลกลางได้');
+  }
 
-  const syncTask = async () => {
-    try {
-      await updateDoc(doc(db, 'appUsers', targetUserId), { status: newStatus });
-    } catch (e) {
-      console.warn('Firestore update status failed', e);
-    }
+  saveLocalUsers(currentUsers.map((u) => (u.id === targetUserId ? { ...u, status: newStatus } : u)));
 
-    const actionText = newStatus === 'active' ? 'เปิดใช้งานบัญชี' : 'ปิดใช้งานบัญชี (ระงับสิทธิ์เข้าสู่ระบบ)';
-    try {
-      await recordUserActivity(
-        'ADMIN_TOGGLE_STATUS',
-        `${actionText}: @${target.username} (${target.name}) โดยแอดมิน`,
-        actor
-      );
-    } catch (e) {
-      console.warn('Firestore activity log write failed', e);
-    }
-  };
-
-  await syncWithTimeout(syncTask(), 750);
+  const actionText = newStatus === 'active' ? 'เปิดใช้งานบัญชี' : 'ปิดใช้งานบัญชี (ระงับสิทธิ์เข้าสู่ระบบ)';
+  try {
+    await recordUserActivity(
+      'ADMIN_TOGGLE_STATUS',
+      `${actionText}: @${target.username} (${target.name}) โดยแอดมิน`,
+      actor
+    );
+  } catch (e) {
+    console.warn('Activity log write failed after status change', e);
+  }
 }
 
 /**
@@ -583,33 +524,31 @@ export async function resetUserPassword(
   const newHash = await hashPassword(newPlainPassword);
   const timestamp = getFormattedTimestamp();
 
-  const updatedList = currentUsers.map((u) =>
-    u.id === targetUserId ? { ...u, passwordHash: newHash, lastPasswordResetAt: timestamp } : u
+  try {
+    await updateDoc(doc(db, 'appUsers', targetUserId), {
+      passwordHash: newHash,
+      lastPasswordResetAt: timestamp,
+    });
+  } catch (e) {
+    console.error('Firestore reset password failed', e);
+    throw new Error('รีเซ็ตรหัสผ่านไม่สำเร็จ: ไม่สามารถบันทึกลงฐานข้อมูลกลางได้');
+  }
+
+  saveLocalUsers(
+    currentUsers.map((u) =>
+      u.id === targetUserId ? { ...u, passwordHash: newHash, lastPasswordResetAt: timestamp } : u
+    )
   );
-  saveLocalUsers(updatedList);
 
-  const syncTask = async () => {
-    try {
-      await updateDoc(doc(db, 'appUsers', targetUserId), {
-        passwordHash: newHash,
-        lastPasswordResetAt: timestamp,
-      });
-    } catch (e) {
-      console.warn('Firestore reset password failed', e);
-    }
-
-    try {
-      await recordUserActivity(
-        'ADMIN_RESET_PASSWORD',
-        `รีเซ็ตรหัสผ่านใหม่สำหรับ @${target.username} (${target.name}) สำเร็จ (จัดเก็บแบบ Hashed SHA-256)`,
-        actor
-      );
-    } catch (e) {
-      console.warn('Firestore activity log write failed', e);
-    }
-  };
-
-  await syncWithTimeout(syncTask(), 750);
+  try {
+    await recordUserActivity(
+      'ADMIN_RESET_PASSWORD',
+      `รีเซ็ตรหัสผ่านใหม่สำหรับ @${target.username} (${target.name}) สำเร็จ (จัดเก็บแบบ Hashed SHA-256)`,
+      actor
+    );
+  } catch (e) {
+    console.warn('Activity log write failed after password reset', e);
+  }
 }
 
 /**
@@ -631,41 +570,39 @@ export async function updateUserProfile(
   const oldName = target.name;
   const oldDept = target.department;
 
-  const updatedList = currentUsers.map((u) =>
-    u.id === targetUserId
-      ? {
-          ...u,
-          name: updates.name.trim(),
-          department: updates.department,
-          avatar: updates.avatar || u.avatar,
-        }
-      : u
+  try {
+    await updateDoc(doc(db, 'appUsers', targetUserId), {
+      name: updates.name.trim(),
+      department: updates.department,
+      ...(updates.avatar ? { avatar: updates.avatar } : {}),
+    });
+  } catch (e) {
+    console.error('Firestore updateUserProfile failed', e);
+    throw new Error('แก้ไขผู้ใช้ไม่สำเร็จ: ไม่สามารถบันทึกลงฐานข้อมูลกลางได้');
+  }
+
+  saveLocalUsers(
+    currentUsers.map((u) =>
+      u.id === targetUserId
+        ? {
+            ...u,
+            name: updates.name.trim(),
+            department: updates.department,
+            avatar: updates.avatar || u.avatar,
+          }
+        : u
+    )
   );
-  saveLocalUsers(updatedList);
 
-  const syncTask = async () => {
-    try {
-      await updateDoc(doc(db, 'appUsers', targetUserId), {
-        name: updates.name.trim(),
-        department: updates.department,
-        ...(updates.avatar ? { avatar: updates.avatar } : {}),
-      });
-    } catch (e) {
-      console.warn('Firestore updateUserProfile failed', e);
-    }
-
-    try {
-      await recordUserActivity(
-        'ADMIN_EDIT_USER',
-        `แก้ไขข้อมูลผู้ใช้ @${target.username}: ชื่อ "${oldName}" ➔ "${updates.name.trim()}", แผนก "${oldDept}" ➔ "${updates.department}"`,
-        actor
-      );
-    } catch (e) {
-      console.warn('Firestore activity log write failed', e);
-    }
-  };
-
-  await syncWithTimeout(syncTask(), 750);
+  try {
+    await recordUserActivity(
+      'ADMIN_EDIT_USER',
+      `แก้ไขข้อมูลผู้ใช้ @${target.username}: ชื่อ "${oldName}" ➔ "${updates.name.trim()}", แผนก "${oldDept}" ➔ "${updates.department}"`,
+      actor
+    );
+  } catch (e) {
+    console.warn('Activity log write failed after profile update', e);
+  }
 }
 
 /**
@@ -680,20 +617,20 @@ export async function batchUpdateUsersDepartment(
   const affected = currentUsers.filter((u) => u.department === oldDeptName);
   if (affected.length === 0) return 0;
 
-  const updatedList = currentUsers.map((u) =>
-    u.department === oldDeptName ? { ...u, department: newDeptName } : u
-  );
-  saveLocalUsers(updatedList);
-
   try {
     for (const u of affected) {
-      await updateDoc(doc(db, 'appUsers', u.id), {
-        department: newDeptName,
-      });
+      await updateDoc(doc(db, 'appUsers', u.id), { department: newDeptName });
     }
   } catch (e) {
-    console.warn('Firestore batchUpdateUsersDepartment failed', e);
+    console.error('Firestore batchUpdateUsersDepartment failed', e);
+    throw new Error('ย้ายแผนกผู้ใช้ไม่สำเร็จ: ไม่สามารถบันทึกลงฐานข้อมูลกลางได้');
   }
+
+  saveLocalUsers(
+    currentUsers.map((u) =>
+      u.department === oldDeptName ? { ...u, department: newDeptName } : u
+    )
+  );
 
   await recordUserActivity(
     'ADMIN_EDIT_DEPT',
@@ -719,28 +656,24 @@ export async function deleteUser(
   const target = currentUsers.find((u) => u.id === targetUserId);
   if (!target) throw new Error('ไม่พบบัญชีผู้ใช้ที่ต้องการลบ');
 
-  const updatedList = currentUsers.filter((u) => u.id !== targetUserId);
-  saveLocalUsers(updatedList);
+  try {
+    await deleteDoc(doc(db, 'appUsers', targetUserId));
+  } catch (e) {
+    console.error('Firestore deleteUser failed', e);
+    throw new Error('ลบบัญชีไม่สำเร็จ: ไม่สามารถบันทึกการเปลี่ยนแปลงลงฐานข้อมูลกลางได้');
+  }
 
-  const syncTask = async () => {
-    try {
-      await deleteDoc(doc(db, 'appUsers', targetUserId));
-    } catch (e) {
-      console.warn('Firestore deleteUser failed', e);
-    }
+  saveLocalUsers(currentUsers.filter((u) => u.id !== targetUserId));
 
-    try {
-      await recordUserActivity(
-        'ADMIN_DELETE_USER',
-        `ลบบัญชีผู้ใช้ @${target.username} (${target.name}) สิทธิ์: ${target.role} แผนก: ${target.department} ออกจากระบบ`,
-        actor
-      );
-    } catch (e) {
-      console.warn('Firestore activity log write failed', e);
-    }
-  };
-
-  await syncWithTimeout(syncTask(), 750);
+  try {
+    await recordUserActivity(
+      'ADMIN_DELETE_USER',
+      `ลบบัญชีผู้ใช้ @${target.username} (${target.name}) สิทธิ์: ${target.role} แผนก: ${target.department} ออกจากระบบ`,
+      actor
+    );
+  } catch (e) {
+    console.warn('Activity log write failed after user deletion', e);
+  }
 }
 
 /**
@@ -752,95 +685,39 @@ export async function authenticateLogin(
 ): Promise<{ success: boolean; user?: AppUser; error?: string }> {
   const cleanUsername = usernameInput.trim().toLowerCase().replace(/^@/, '');
   const cleanPassword = plainPasswordInput.trim();
-  let users = getLocalUsers();
 
-  let user = users.find((u) => u.username.toLowerCase() === cleanUsername);
+  let user: AppUser | undefined;
+  let firestoreLookupFailed = false;
 
-  // If not found in local cache, query sync API and Firestore with a fast 1500ms timeout
-  if (!user) {
-    try {
-      const res = await Promise.race([
-        fetch('/api/sync/users'),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200))
-      ]);
-      if (res && 'json' in res) {
-        const data = await res.json();
-        if (data && Array.isArray(data.users) && data.users.length > 0) {
-          users = data.users;
-          user = users.find((u) => u.username.toLowerCase() === cleanUsername);
-          saveLocalUsers(users);
-        }
-      }
-    } catch (e) {}
-  }
-
-  // Direct recovery for cansuzy3 account if still missing
-  if (!user && cleanUsername === 'cansuzy3') {
-    user = {
-      id: 'usr_candy',
-      username: 'cansuzy3',
-      name: 'Candy',
-      department: 'ช่างและปฏิบัติการ (Engineering & Operations)',
-      role: 'Administrator',
-      status: 'active',
-      avatar: '🧑🏻‍💼',
-      passwordHash: CANDY_PASSWORD_HASH,
-      createdAt: '2026-09-19 14:48:00',
-      lastLoginAt: '2026-09-19 14:49:15',
-    };
-    users = [...users.filter((u) => u.id !== user!.id), user];
-    saveLocalUsers(users);
-  }
-
-  // Direct recovery for best account if still missing on a new machine
-  if (!user && cleanUsername === 'best') {
-    user = {
-      id: 'usr_best',
-      username: 'best',
-      name: 'best',
-      department: 'ช่างและปฏิบัติการ (Engineering & Operations)',
-      role: 'Administrator',
-      status: 'active',
-      avatar: '🧑🏻‍💼',
-      passwordHash: 'e32e70df43cf2288920a3555652178fc758c60a5e686e0615e95cb18df617c4e',
-      createdAt: '2026-09-20 14:50:00',
-      lastLoginAt: null,
-    };
-    users = [...users.filter((u) => u.id !== user!.id), user];
-    saveLocalUsers(users);
-  }
-
-  // If not found in local cache, query Firestore with a fast 1500ms timeout
-  if (!user) {
-    try {
-      const q = query(collection(db, 'appUsers'), where('username', '==', cleanUsername), limit(1));
-      const snap = await Promise.race([
-        getDocs(q),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
-      ]);
-      if (snap && !snap.empty) {
-        const docSnap = snap.docs[0];
-        const data = docSnap.data();
-        user = {
-          id: data.id || docSnap.id,
-          username: data.username,
-          name: data.name,
-          department: data.department,
-          role: data.role,
-          status: data.status,
-          avatar: data.avatar || '🧑🏻‍💼',
-          passwordHash: data.passwordHash || '',
-          createdAt: data.createdAt || '',
-          lastLoginAt: data.lastLoginAt,
-          lastPasswordResetAt: data.lastPasswordResetAt,
-        } as AppUser;
-        // Cache into local users list
-        users = [...users.filter((u) => u.id !== user!.id), user];
-        saveLocalUsers(users);
-      }
-    } catch (e) {
-      console.warn('Direct Firestore user lookup failed', e);
+  try {
+    const q = query(collection(db, 'appUsers'), where('username', '==', cleanUsername), limit(1));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const docSnap = snap.docs[0];
+      const data = docSnap.data();
+      user = {
+        id: data.id || docSnap.id,
+        username: data.username,
+        name: data.name,
+        department: data.department,
+        role: data.role,
+        status: data.status,
+        avatar: data.avatar || '🧑🏻‍💼',
+        passwordHash: data.passwordHash || '',
+        createdAt: data.createdAt || '',
+        lastLoginAt: data.lastLoginAt,
+        lastPasswordResetAt: data.lastPasswordResetAt,
+      } as AppUser;
     }
+  } catch (e) {
+    firestoreLookupFailed = true;
+    console.warn('Firestore login lookup failed; local cache fallback enabled', e);
+  }
+
+  // Offline/network fallback only. A successful Firestore lookup that finds no user
+  // must NOT resurrect a deleted account from this browser's cache.
+  if (!user && firestoreLookupFailed) {
+    user = getLocalUsers().find((u) => u.username.toLowerCase() === cleanUsername);
   }
 
   if (!user) {
@@ -858,34 +735,7 @@ export async function authenticateLogin(
   }
 
   const hashedInput = await hashPassword(cleanPassword);
-
-  // Check password against hash, or plain text match fallback
-  let isValid = user.passwordHash === hashedInput || user.passwordHash === cleanPassword;
-
-  // Fallback for default demo accounts if hash calculation differs
-  if (!isValid) {
-    if (cleanUsername === 'cansuzy3' && (cleanPassword === 'Orartcandy1' || cleanPassword.toLowerCase() === 'orartcandy1' || cleanPassword === 'Admin@Baanhome2026' || cleanPassword === 'admin')) {
-      isValid = true;
-      user.passwordHash = CANDY_PASSWORD_HASH;
-    } else if (cleanUsername === 'best' && (
-      cleanPassword === 'Best@2026' || 
-      cleanPassword.toLowerCase() === 'best1234' || 
-      cleanPassword.toLowerCase() === 'best' || 
-      cleanPassword === '123456' || 
-      cleanPassword === 'Orartcandy1' || 
-      cleanPassword.toLowerCase() === 'orartcandy1' || 
-      cleanPassword === 'Admin@Baanhome2026' || 
-      cleanPassword.toLowerCase() === 'admin'
-    )) {
-      isValid = true;
-    } else if (cleanUsername === 'admin' && (cleanPassword === 'Admin@Baanhome2026' || cleanPassword === 'admin')) {
-      isValid = true;
-    } else if (cleanUsername === 'operator' && (cleanPassword === 'Operator@2026' || cleanPassword === 'operator')) {
-      isValid = true;
-    } else if (cleanUsername === 'kuser' && (cleanPassword === 'User@2026' || cleanPassword === 'user')) {
-      isValid = true;
-    }
-  }
+  const isValid = user.passwordHash === hashedInput;
 
   if (!isValid) {
     return {
@@ -894,14 +744,12 @@ export async function authenticateLogin(
     };
   }
 
-  // Update lastLoginAt locally immediately
   const timestamp = getFormattedTimestamp();
-  user.lastLoginAt = timestamp;
-  const currentLocals = getLocalUsers();
-  const updatedUsers = currentLocals.map((u) => (u.id === user!.id ? { ...u, lastLoginAt: timestamp } : u));
-  saveLocalUsers(updatedUsers);
+  user = { ...user, lastLoginAt: timestamp };
 
-  // Immediately store active session for instantaneous response
+  const cached = getLocalUsers();
+  saveLocalUsers([user, ...cached.filter((u) => u.id !== user!.id)]);
+
   const staffProfile: StaffProfile = {
     id: user.id,
     username: user.username,
@@ -914,12 +762,12 @@ export async function authenticateLogin(
   };
   setActiveSessionUser(staffProfile);
 
-  // Non-blocking fire-and-forget background sync (MUST NOT block user login)
+  // Login should remain responsive; these two writes are non-blocking follow-up operations.
   (async () => {
     try {
       await updateDoc(doc(db, 'appUsers', user!.id), { lastLoginAt: timestamp });
     } catch (e) {
-      console.warn('Firestore lastLoginAt sync skipped/failed', e);
+      console.warn('Firestore lastLoginAt update failed', e);
     }
 
     try {
@@ -934,7 +782,7 @@ export async function authenticateLogin(
         }
       );
     } catch (e) {
-      console.warn('Firestore login activity log skipped/failed', e);
+      console.warn('Login activity log write failed', e);
     }
   })().catch(() => {});
 
