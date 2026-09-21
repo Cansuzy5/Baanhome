@@ -428,15 +428,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 text-xs text-[#E3EEE6] pt-1">
-            <div className="bg-black/20 px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#52D273]" />
-              <span>เป้าหมายระยะแรก: 20 Target → ติดต่อ 15 → เข้าพบ 10 → ตกลง 5 ราย</span>
-            </div>
-            <div className="bg-black/20 px-3 py-1.5 rounded-xl border border-white/10">
-              Sweet Spot: <strong>ทีม 5–50 คน (ค่าห้องรายชั่วโมง + สวนอาหาร)</strong>
-            </div>
-          </div>
         </div>
       </div>
 
