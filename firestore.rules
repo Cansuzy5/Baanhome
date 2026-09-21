@@ -130,6 +130,12 @@ service cloud.firestore {
       allow create, update, delete: if isValidId(aptId);
     }
 
+    match /b2bCoordinators/{coordinatorId} {
+      allow read, list: if true;
+      allow create, update: if isValidId(coordinatorId);
+      allow delete: if false;
+    }
+
     match /systemConfig/{configId} {
       allow read, list: if true;
       allow write: if isValidId(configId);
