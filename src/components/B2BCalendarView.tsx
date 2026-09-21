@@ -164,10 +164,21 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   const stats = useMemo(() => {
     const currentMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
     const thisMonthApts = appointments.filter((a) => a.date.startsWith(currentMonthPrefix));
+    const completed = thisMonthApts.filter((a) => a.status === 'completed').length;
+    const upcoming = thisMonthApts.filter((a) => a.status === 'scheduled').length;
+    const notMet = thisMonthApts.filter((a) => a.status === 'not_met').length;
+    const rescheduled = thisMonthApts.filter((a) => a.status === 'rescheduled').length;
+    const cancelled = thisMonthApts.filter((a) => a.status === 'cancelled').length;
+    const outcomeBase = completed + notMet;
+    const successRate = outcomeBase > 0 ? Math.round((completed / outcomeBase) * 100) : 0;
     return {
       totalThisMonth: thisMonthApts.length,
-      completed: thisMonthApts.filter((a) => a.status === 'completed').length,
-      upcoming: thisMonthApts.filter((a) => a.status === 'scheduled').length,
+      completed,
+      upcoming,
+      notMet,
+      rescheduled,
+      cancelled,
+      successRate,
     };
   }, [appointments, year, month]);
 
@@ -194,12 +205,16 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
             <span className="text-lg font-bold text-white">{stats.totalThisMonth} ครั้ง</span>
           </div>
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-2 text-center border border-white/15">
-            <span className="text-[10px] text-[#A7D7B9] block">รอเข้าพบ</span>
-            <span className="text-lg font-bold text-[#FFD666]">{stats.upcoming} รายการ</span>
+            <span className="text-[10px] text-[#A7D7B9] block">พบลูกค้าแล้ว</span>
+            <span className="text-lg font-bold text-[#A3E635]">{stats.completed} นัด</span>
           </div>
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-2 text-center border border-white/15">
-            <span className="text-[10px] text-[#A7D7B9] block">พบเสร็จสิ้น</span>
-            <span className="text-lg font-bold text-[#A3E635]">{stats.completed} องค์กร</span>
+            <span className="text-[10px] text-[#A7D7B9] block">ไม่ได้เข้าพบ</span>
+            <span className="text-lg font-bold text-[#FF9D9D]">{stats.notMet} นัด</span>
+          </div>
+          <div className="bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-2 text-center border border-white/15">
+            <span className="text-[10px] text-[#A7D7B9] block">อัตราเข้าพบสำเร็จ</span>
+            <span className="text-lg font-bold text-[#FDE68A]">{stats.successRate}%</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -325,6 +340,10 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                         className={`text-[9px] px-1 py-0.5 rounded truncate font-medium ${
                           apt.status === 'completed'
                             ? 'bg-emerald-100 text-emerald-800'
+                            : apt.status === 'not_met' || apt.status === 'cancelled'
+                            ? 'bg-rose-100 text-rose-800'
+                            : apt.status === 'rescheduled'
+                            ? 'bg-amber-100 text-amber-800'
                             : apt.priority === 'A'
                             ? 'bg-red-50 text-red-700 border-l-2 border-red-500'
                             : 'bg-amber-50 text-amber-800 border-l-2 border-amber-500'
@@ -481,10 +500,11 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                         }
                         className="text-[11px] px-2 py-0.5 rounded-lg border border-[#D5E2D2] bg-[#FAFBF9] text-[#1B3E2D] font-semibold"
                       >
-                        <option value="scheduled">🟢 นัดหมายแล้ว</option>
-                        <option value="completed">✅ พบเสร็จสิ้น</option>
-                        <option value="rescheduled">🟡 เลื่อนวันนัด</option>
-                        <option value="cancelled">🔴 ยกเลิก</option>
+                        <option value="scheduled">🟢 รอเข้าพบ</option>
+                        <option value="completed">✅ พบแล้ว</option>
+                        <option value="not_met">🔴 ไม่ได้เข้าพบ</option>
+                        <option value="rescheduled">🟡 เลื่อนนัด</option>
+                        <option value="cancelled">⚫ ยกเลิกนัด</option>
                       </select>
                     </div>
                   </div>
@@ -508,9 +528,11 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                 className="text-xs px-2.5 py-1 rounded-xl border border-[#D5E2D2] bg-[#FAFBF9] text-[#345945]"
               >
                 <option value="all">ทุกสถานะ</option>
-                <option value="scheduled">🟢 รอเข้าพบ (Scheduled)</option>
-                <option value="completed">✅ เสร็จสิ้น (Completed)</option>
+                <option value="scheduled">🟢 รอเข้าพบ</option>
+                <option value="completed">✅ พบแล้ว</option>
+                <option value="not_met">🔴 ไม่ได้เข้าพบ</option>
                 <option value="rescheduled">🟡 เลื่อนนัด</option>
+                <option value="cancelled">⚫ ยกเลิกนัด</option>
               </select>
             </div>
 
@@ -534,15 +556,23 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                         className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                           apt.status === 'completed'
                             ? 'bg-emerald-100 text-emerald-800'
+                            : apt.status === 'not_met'
+                            ? 'bg-rose-100 text-rose-800'
                             : apt.status === 'rescheduled'
                             ? 'bg-amber-100 text-amber-800'
+                            : apt.status === 'cancelled'
+                            ? 'bg-slate-200 text-slate-700'
                             : 'bg-blue-100 text-blue-800'
                         }`}
                       >
                         {apt.status === 'completed'
-                          ? 'พบเสร็จสิ้น'
+                          ? 'พบแล้ว'
+                          : apt.status === 'not_met'
+                          ? 'ไม่ได้เข้าพบ'
                           : apt.status === 'rescheduled'
                           ? 'เลื่อนนัด'
+                          : apt.status === 'cancelled'
+                          ? 'ยกเลิกนัด'
                           : 'รอเข้าพบ'}
                       </span>
                       <button
@@ -579,7 +609,6 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
 
                   <div className="flex items-center justify-between text-[10px] text-[#7E9989] mt-1.5 pt-1 border-t border-[#EEF4ED]">
                     <span>📍 {apt.location.slice(0, 24)}...</span>
-                    {apt.assignedStaff && <span>👤 {apt.assignedStaff.split(' ')[0]}</span>}
                   </div>
                 </div>
               ))}
