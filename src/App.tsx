@@ -53,7 +53,8 @@ import { subscribeCentralB2B, getCachedAppointments } from './utils/b2bService';
 import { 
   getActiveSessionUser, 
   setActiveSessionUser, 
-  subscribeUsers, 
+  subscribeUsers,
+  refreshCentralUsers, 
   subscribeUserActivities, 
   recordUserActivity, 
   initializeDefaultUsersIfNeeded,
@@ -79,8 +80,8 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<KnowledgeCategory | 'all'>('all');
   
   // Users & Activity Logs state (Real-time Firebase Firestore + Local Cache)
-  const [users, setUsers] = useState<AppUser[]>(INITIAL_DEFAULT_USERS);
-  const [activityLogs, setActivityLogs] = useState<UserActivityLog[]>(INITIAL_ACTIVITY_LOGS);
+  const [users, setUsers] = useState<AppUser[]>([]);
+  const [activityLogs, setActivityLogs] = useState<UserActivityLog[]>([]);
 
   // Active Knowledge Base Items (loaded from Google Sheets sync or default)
   const [activeKnowledgeItems, setActiveKnowledgeItems] = useState<KnowledgeItem[]>(
@@ -93,11 +94,11 @@ export default function App() {
 
   const [questionLogs, setQuestionLogs] = useState<QuestionLog[]>(() => {
     const cached = getLocalQuestionLogs();
-    return cached.length > 0 ? cached : INITIAL_QUESTION_LOGS;
+    return cached;
   });
   const [unansweredQuestions, setUnansweredQuestions] = useState<UnansweredQuestion[]>(() => {
     const cached = getLocalUnansweredQuestions();
-    return cached.length > 0 ? cached : INITIAL_UNANSWERED_QUESTIONS;
+    return cached;
   });
 
   // Google Sheets Live Database Connection state
@@ -118,7 +119,14 @@ export default function App() {
 
   const [previewDocCategory, setPreviewDocCategory] = useState<CategoryMeta | null>(null);
 
+  const [syncError,setSyncError]=useState<string|null>(null);
   // Initialize and subscribe to Firestore
+  useEffect(() => {
+    const handler=(event:Event)=>setSyncError((event as CustomEvent).detail);
+    window.addEventListener('baanhome-sync-error',handler);
+    return ()=>window.removeEventListener('baanhome-sync-error',handler);
+  },[]);
+
   useEffect(() => {
     // Initialize Google Workspace OAuth auth listener
     initGoogleAuth();
@@ -147,20 +155,15 @@ export default function App() {
 
     // Subscribe to users
     const unsubUsers = subscribeUsers((loadedUsers) => {
-      if (loadedUsers && loadedUsers.length > 0) {
+      if (Array.isArray(loadedUsers)) {
         setUsers(loadedUsers);
         // If current staff status or role was updated by admin in real-time, sync it
         if (currentStaff) {
           const matchingCurrent = loadedUsers.find((u) => u.id === currentStaff.id);
-          if (matchingCurrent) {
-            if (matchingCurrent.status === 'inactive') {
-              // Account deactivated! Force sign out
-              alert('บัญชีของคุณถูกระงับการใช้งานโดยผู้ดูแลระบบ');
-              setActiveSessionUser(null);
-              setCurrentStaff(null);
-              setShowWelcomeGate(true);
-              setAllowWelcomeGateCancel(false);
-            } else if (matchingCurrent.role !== currentStaff.role) {
+          if (!matchingCurrent || matchingCurrent.status === 'inactive') {
+              setActiveSessionUser(null);setCurrentStaff(null);setShowWelcomeGate(true);setAllowWelcomeGateCancel(false);
+            } else {
+            if (matchingCurrent.role !== currentStaff.role) {
               setCurrentStaff((prev) => (prev ? {
                 ...prev,
                 role: matchingCurrent.role,
@@ -173,20 +176,20 @@ export default function App() {
 
     // Subscribe to activity logs
     const unsubLogs = subscribeUserActivities((loadedLogs) => {
-      if (loadedLogs && loadedLogs.length > 0) {
+      if (Array.isArray(loadedLogs)) {
         setActivityLogs(loadedLogs);
       }
     });
 
     // Subscribe to question logs & unanswered questions
     const unsubQuestionLogs = subscribeQuestionLogs((logs) => {
-      if (logs.length > 0) {
+      if (Array.isArray(logs)) {
         setQuestionLogs(logs);
       }
     });
 
     const unsubUnanswered = subscribeUnansweredQuestions((qs) => {
-      if (qs.length > 0) {
+      if (Array.isArray(qs)) {
         setUnansweredQuestions(qs);
       }
     });
@@ -230,33 +233,29 @@ export default function App() {
     );
   };
 
-  const handleUpdateUnansweredStatus = (
+  const handleUpdateUnansweredStatus = async (
     id: string,
     status: 'pending' | 'assigned' | 'resolved',
     notes?: string
   ) => {
-    updateUnansweredStatus(id, status, notes);
+    await updateUnansweredStatus(id, status, notes);
   };
 
   const handleDeleteUnansweredQuestion = async (id: string) => {
-    setUnansweredQuestions((prev) => prev.filter((q) => q.id !== id));
     await deleteUnansweredQuestion(id);
   };
 
   const handleClearResolvedUnanswered = async () => {
     const resolvedIds = unansweredQuestions.filter((q) => q.status === 'resolved').map((q) => q.id);
-    setUnansweredQuestions((prev) => prev.filter((q) => q.status !== 'resolved'));
     await Promise.all(resolvedIds.map((id) => deleteUnansweredQuestion(id)));
   };
 
   const handleDeleteQuestionLog = async (id: string) => {
-    setQuestionLogs((prev) => prev.filter((log) => log.id !== id));
     await deleteQuestionLog(id);
   };
 
   const handleClearAllLogs = async () => {
     const logIds = questionLogs.map((log) => log.id);
-    setQuestionLogs([]);
     await Promise.all(logIds.map((id) => deleteQuestionLog(id)));
   };
 
@@ -283,6 +282,7 @@ export default function App() {
   if (!currentStaff) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#143224] via-[#1B3D2F] to-[#0A1A12] flex items-center justify-center p-3 sm:p-5 relative overflow-hidden">
+      {syncError && <div role="alert" className="bg-amber-50 text-amber-900 p-3 text-sm">{syncError}<button className="ml-3 underline" onClick={()=>window.location.reload()}>ลองเชื่อมต่อใหม่</button></div>}
         {/* Ambient luxury background glow */}
         <div className="fixed top-0 right-0 w-[550px] h-[550px] bg-[#E8C57D]/10 rounded-full blur-3xl pointer-events-none -z-10" />
         <div className="fixed bottom-0 left-0 w-[450px] h-[450px] bg-[#2D5A43]/20 rounded-full blur-3xl pointer-events-none -z-10" />
@@ -324,6 +324,7 @@ export default function App() {
         onLogout={handleLogout}
       />
 
+      {syncError && <div role="alert" className="bg-amber-50 text-amber-900 p-3 text-sm">{syncError}<button className="ml-3 underline" onClick={()=>window.location.reload()}>ลองเชื่อมต่อใหม่</button></div>}
       {/* Main Container */}
       <main className="flex-1 pb-24 md:pb-16">
         {/* ACCESS RESTRICTION BANNER IF TAB IS UNAUTHORIZED */}
@@ -377,20 +378,7 @@ export default function App() {
                       sourceDoc: result.item.sourceDoc,
                       found: true,
                     };
-                    createQuestionLog(newLog);
-
-                    // Auto-sync question log to connected Google Sheets if enabled
-                    if (sheetsDbConfig && sheetsDbConfig.autoSyncQuestions && sheetsDbConfig.spreadsheetId) {
-                      getGoogleAccessToken()
-                        .then((token) => {
-                          if (token) {
-                            appendQuestionLogToSheet(token, sheetsDbConfig.spreadsheetId, newLog).catch((err) => {
-                              console.warn('Auto-append question log to Google Sheets failed:', err);
-                            });
-                          }
-                        })
-                        .catch((err) => console.warn('Google Access token error:', err));
-                    }
+                    void createQuestionLog(newLog).catch(()=>{});
 
                     // User activity log
                     recordUserActivity(
@@ -414,7 +402,7 @@ export default function App() {
                     question: query,
                     status: 'pending' as const,
                   };
-                  createUnansweredQuestion(u);
+                  void createUnansweredQuestion(u).catch(()=>{});
                   setActiveTab('unanswered');
                 }}
               />
@@ -527,28 +515,7 @@ export default function App() {
                   users={users}
                   activityLogs={activityLogs}
                   onRefreshUsers={() => {
-                    fetch('/api/sync/users')
-                      .then((res) => res.json())
-                      .then((data) => {
-                        if (data && Array.isArray(data.users) && data.users.length > 0) {
-                          const local = getLocalUsers();
-                          const userMap = new Map<string, any>();
-                          data.users.forEach((u: any) => userMap.set(u.username.toLowerCase(), u));
-                          local.forEach((u: any) => {
-                            if (!userMap.has(u.username.toLowerCase())) {
-                              userMap.set(u.username.toLowerCase(), u);
-                            }
-                          });
-                          const merged = Array.from(userMap.values());
-                          setUsers(merged);
-                          saveLocalUsers(merged);
-                        } else {
-                          setUsers(getLocalUsers());
-                        }
-                      })
-                      .catch(() => {
-                        setUsers(getLocalUsers());
-                      });
+                    refreshCentralUsers().then(setUsers).catch(()=>alert('อ่านบัญชีจากฐานข้อมูลกลางไม่สำเร็จ กรุณาลองใหม่'));
                   }}
                 />
               </div>

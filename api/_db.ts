@@ -4,15 +4,7 @@ import fs from 'fs';
 import path from 'path';
 
 // Firebase configuration for Baanhome Resort centralized database
-const firebaseConfig = {
-  projectId: "gen-lang-client-0051881339",
-  appId: "1:236671287595:web:68c9cbe1ff5a917238456e",
-  apiKey: "AIzaSyCuoP2tvd2nJC-3u4OYCwnck72mMNUyOKc",
-  authDomain: "gen-lang-client-0051881339.firebaseapp.com",
-  storageBucket: "gen-lang-client-0051881339.firebasestorage.app",
-  messagingSenderId: "236671287595",
-  firestoreDatabaseId: "ai-studio-1982e74e-9ff9-469a-9cec-64e98f787d0b"
-};
+import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' };
 
 // Reuse Firestore instance across serverless invocations
 let dbInstance: Firestore | null = null;
@@ -21,15 +13,20 @@ export function getDb(): Firestore {
   if (!dbInstance) {
     try {
       const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-      // Use the same named Firestore database as the browser app.
-      // Without this, Vercel APIs silently read/write the (default) database
-      // while the frontend reads/writes ai-studio-1982e74e-9ff9-469a-9cec-64e98f787d0b.
-      dbInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+      dbInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
     } catch (e) {
-      console.warn('[Firebase DB] Could not initialize Firestore client, falling back to local/memory store:', e);
+      throw e;
     }
   }
   return dbInstance as Firestore;
+}
+
+// All current routes share the named database already selected on main.
+export function getOperationalDb(): Firestore { return getDb(); }
+// Only the guarded, non-destructive legacy B2B copy uses the default database.
+export function getLegacyDb(): Firestore {
+ const app=getApps().length>0?getApp():initializeApp(firebaseConfig);
+ return getFirestore(app);
 }
 
 export const db: Firestore = getDb();

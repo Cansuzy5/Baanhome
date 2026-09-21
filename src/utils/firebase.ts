@@ -69,13 +69,7 @@ export function saveLocalQuestionLogs(logs: QuestionLog[]) {
   } catch (e) {
     // ignore
   }
-  try {
-    fetch('/api/sync/question-logs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ logs }),
-    }).catch(() => {});
-  } catch (e) {}
+
 }
 
 export function getLocalUnansweredQuestions(): UnansweredQuestion[] {
@@ -99,13 +93,7 @@ export function saveLocalUnansweredQuestions(qs: UnansweredQuestion[]) {
   } catch (e) {
     // ignore
   }
-  try {
-    fetch('/api/sync/unanswered', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ questions: qs }),
-    }).catch(() => {});
-  } catch (e) {}
+
 }
 
 export function isQuotaExceededError(error: unknown): boolean {
@@ -122,9 +110,9 @@ export function isQuotaExceededError(error: unknown): boolean {
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errorMessage = error instanceof Error ? error.message : String(error);
 
-  // If daily read/write quota is exceeded, switch seamlessly to local storage without throwing fatal console error
+  // Report quota errors; local cache must never be treated as a successful write.
   if (isQuotaExceededError(error)) {
-    console.warn(`[Firestore Quota] Daily quota reached for ${operationType} on ${path}. Seamless fallback to local storage active.`);
+    console.warn(`[Firestore Quota] Daily quota reached for ${operationType} on ${path}. Central operation was not confirmed.`);
     return;
   }
 
@@ -153,137 +141,27 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   }
 }
 
-// Log a new successful or unsuccessful question
-export async function createQuestionLog(log: Omit<QuestionLog, 'feedback' | 'feedbackNote'>) {
-  // Update local storage first (Optimistic / Offline fallback)
-  const current = getLocalQuestionLogs();
-  const existingIdx = current.findIndex(item => item.id === log.id);
-  const newLogItem: QuestionLog = { ...log, feedback: undefined, feedbackNote: undefined };
-  if (existingIdx >= 0) {
-    current[existingIdx] = newLogItem;
-  } else {
-    current.unshift(newLogItem);
-  }
-  saveLocalQuestionLogs(current);
-
-  const path = `questionLogs/${log.id}`;
-  try {
-    const data = {
-      id: log.id,
-      timestamp: log.timestamp,
-      staffName: log.staffName,
-      department: log.department,
-      question: log.question,
-      answerSummary: log.answerSummary,
-      category: log.category,
-      sourceDoc: log.sourceDoc,
-      found: log.found,
-      createdAt: serverTimestamp()
-    };
-    await setDoc(doc(db, 'questionLogs', log.id), data);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
-  }
+function syncError(error:unknown):never {
+ handleFirestoreError(error,OperationType.WRITE,null);
+ window.dispatchEvent(new CustomEvent('baanhome-sync-error',{detail:'บันทึก Firestore ไม่สำเร็จ ยังยืนยันข้อมูลไม่ได้ กรุณาลองใหม่'}));throw error;
 }
-
-// Update feedback for an existing log
-export async function updateQuestionLogFeedback(id: string, feedback: FeedbackType, note?: string) {
-  const current = getLocalQuestionLogs();
-  const item = current.find(l => l.id === id);
-  if (item) {
-    item.feedback = feedback;
-    if (note !== undefined) item.feedbackNote = note;
-    saveLocalQuestionLogs(current);
-  }
-
-  const path = `questionLogs/${id}`;
-  try {
-    const updates: any = { feedback };
-    if (note !== undefined) {
-      updates.feedbackNote = note;
-    }
-    await updateDoc(doc(db, 'questionLogs', id), updates);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
+export async function createQuestionLog(log:Omit<QuestionLog,'feedback'|'feedbackNote'>) {
+ try {await setDoc(doc(db,'questionLogs',log.id),{...JSON.parse(JSON.stringify(log)),createdAt:serverTimestamp()});}catch(error){syncError(error);}
 }
-
-// Log a new unanswered question
-export async function createUnansweredQuestion(q: UnansweredQuestion) {
-  const current = getLocalUnansweredQuestions();
-  const existingIdx = current.findIndex(item => item.id === q.id);
-  if (existingIdx >= 0) {
-    current[existingIdx] = q;
-  } else {
-    current.unshift(q);
-  }
-  saveLocalUnansweredQuestions(current);
-
-  const path = `unansweredQuestions/${q.id}`;
-  try {
-    const data: any = {
-      id: q.id,
-      timestamp: q.timestamp,
-      staffName: q.staffName,
-      department: q.department,
-      question: q.question,
-      status: q.status,
-      createdAt: serverTimestamp()
-    };
-    if (q.suggestedCategory) data.suggestedCategory = q.suggestedCategory;
-    if (q.targetDoc) data.targetDoc = q.targetDoc;
-    if (q.adminNotes) data.adminNotes = q.adminNotes;
-
-    await setDoc(doc(db, 'unansweredQuestions', q.id), data);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
-  }
+export async function updateQuestionLogFeedback(id:string,feedback:FeedbackType,note?:string) {
+ try {await updateDoc(doc(db,'questionLogs',id),{feedback,...(note!==undefined?{feedbackNote:note}:{})});}catch(error){syncError(error);}
 }
-
-// Update status of an unanswered question
-export async function updateUnansweredStatus(id: string, status: 'pending' | 'assigned' | 'resolved', notes?: string) {
-  const current = getLocalUnansweredQuestions();
-  const item = current.find(q => q.id === id);
-  if (item) {
-    item.status = status;
-    if (notes !== undefined) item.adminNotes = notes;
-    saveLocalUnansweredQuestions(current);
-  }
-
-  const path = `unansweredQuestions/${id}`;
-  try {
-    const updates: any = { status };
-    if (notes !== undefined) {
-      updates.adminNotes = notes;
-    }
-    await updateDoc(doc(db, 'unansweredQuestions', id), updates);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
+export async function createUnansweredQuestion(q:UnansweredQuestion) {
+ try {await setDoc(doc(db,'unansweredQuestions',q.id),{...JSON.parse(JSON.stringify(q)),createdAt:serverTimestamp()});}catch(error){syncError(error);}
 }
-
-export async function deleteUnansweredQuestion(id: string) {
-  const current = getLocalUnansweredQuestions().filter(q => q.id !== id);
-  saveLocalUnansweredQuestions(current);
-
-  const path = `unansweredQuestions/${id}`;
-  try {
-    await deleteDoc(doc(db, 'unansweredQuestions', id));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
-  }
+export async function updateUnansweredStatus(id:string,status:'pending'|'assigned'|'resolved',notes?:string) {
+ try {await updateDoc(doc(db,'unansweredQuestions',id),{status,...(notes!==undefined?{adminNotes:notes}:{})});}catch(error){syncError(error);}
 }
-
-export async function deleteQuestionLog(id: string) {
-  const current = getLocalQuestionLogs().filter(l => l.id !== id);
-  saveLocalQuestionLogs(current);
-
-  const path = `questionLogs/${id}`;
-  try {
-    await deleteDoc(doc(db, 'questionLogs', id));
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
-  }
+export async function deleteUnansweredQuestion(id:string) {
+ try {await deleteDoc(doc(db,'unansweredQuestions',id));}catch(error){syncError(error);}
+}
+export async function deleteQuestionLog(id:string) {
+ try {await deleteDoc(doc(db,'questionLogs',id));}catch(error){syncError(error);}
 }
 
 export async function checkConnection() {
@@ -294,125 +172,12 @@ export async function checkConnection() {
   }
 }
 
-export function subscribeQuestionLogs(callback: (logs: QuestionLog[]) => void) {
-  // Feed local cache immediately to prevent blank / loading delay
-  const localLogs = getLocalQuestionLogs();
-  if (localLogs.length > 0) {
-    callback(localLogs);
-  }
-
-  // Sync from backend server store
-  fetch('/api/sync/question-logs')
-    .then((res) => res.json())
-    .then((data) => {
-      if (data && Array.isArray(data.logs) && data.logs.length > 0) {
-        localStorage.setItem(QUESTION_LOGS_STORAGE_KEY, JSON.stringify(data.logs));
-        callback(data.logs);
-      }
-    })
-    .catch(() => {});
-
-  try {
-    const q = query(collection(db, 'questionLogs'), orderBy('createdAt', 'desc'), limit(100));
-    return onSnapshot(
-      q,
-      (snapshot) => {
-        const logs: QuestionLog[] = [];
-        snapshot.forEach((doc) => {
-          const data = doc.data();
-          logs.push({
-            id: data.id,
-            timestamp: data.timestamp,
-            staffName: data.staffName,
-            department: data.department,
-            question: data.question,
-            answerSummary: data.answerSummary,
-            category: data.category,
-            sourceDoc: data.sourceDoc,
-            found: data.found,
-            feedback: data.feedback,
-            feedbackNote: data.feedbackNote
-          });
-        });
-        if (logs.length > 0) {
-          saveLocalQuestionLogs(logs);
-          callback(logs);
-        }
-      },
-      (error) => {
-        if (isQuotaExceededError(error)) {
-          console.warn('[Firestore] Quota limit reached for daily reads. Using local storage fallback seamlessly.');
-          const fallback = getLocalQuestionLogs();
-          if (fallback.length > 0) callback(fallback);
-          return;
-        }
-        handleFirestoreError(error, OperationType.GET, 'questionLogs');
-      }
-    );
-  } catch (err) {
-    if (!isQuotaExceededError(err)) {
-      handleFirestoreError(err, OperationType.GET, 'questionLogs');
-    }
-    return () => {};
-  }
+function subscribeCentralCollection<T>(name:string,cache:(items:T[])=>void,callback:(items:T[])=>void) {
+ return onSnapshot(collection(db,name),{includeMetadataChanges:true},snapshot=>{
+  if(snapshot.metadata.fromCache||snapshot.metadata.hasPendingWrites)return;
+  const items=snapshot.docs.map(d=>({...d.data(),id:d.id})).sort((a:any,b:any)=>String(b.timestamp||'').localeCompare(String(a.timestamp||''))) as T[];
+  cache(items);callback(items);
+ },error=>{handleFirestoreError(error,OperationType.LIST,name);window.dispatchEvent(new CustomEvent('baanhome-sync-error',{detail:'อ่านประวัติจาก Firestore ไม่สำเร็จ ข้อมูลอาจยังไม่ล่าสุด'}));});
 }
-
-export function subscribeUnansweredQuestions(callback: (qs: UnansweredQuestion[]) => void) {
-  const localQs = getLocalUnansweredQuestions();
-  if (localQs.length > 0) {
-    callback(localQs);
-  }
-
-  // Sync from backend server store
-  fetch('/api/sync/unanswered')
-    .then((res) => res.json())
-    .then((data) => {
-      if (data && Array.isArray(data.questions) && data.questions.length > 0) {
-        localStorage.setItem(UNANSWERED_STORAGE_KEY, JSON.stringify(data.questions));
-        callback(data.questions);
-      }
-    })
-    .catch(() => {});
-
-  try {
-    const q = query(collection(db, 'unansweredQuestions'), orderBy('createdAt', 'desc'), limit(100));
-    return onSnapshot(
-      q,
-      (snapshot) => {
-        const qs: UnansweredQuestion[] = [];
-        snapshot.forEach((doc) => {
-          const data = doc.data();
-          qs.push({
-            id: data.id,
-            timestamp: data.timestamp,
-            staffName: data.staffName,
-            department: data.department,
-            question: data.question,
-            status: data.status,
-            suggestedCategory: data.suggestedCategory,
-            targetDoc: data.targetDoc,
-            adminNotes: data.adminNotes
-          });
-        });
-        if (qs.length > 0) {
-          saveLocalUnansweredQuestions(qs);
-          callback(qs);
-        }
-      },
-      (error) => {
-        if (isQuotaExceededError(error)) {
-          console.warn('[Firestore] Quota limit reached for daily reads. Using local storage fallback seamlessly.');
-          const fallback = getLocalUnansweredQuestions();
-          if (fallback.length > 0) callback(fallback);
-          return;
-        }
-        handleFirestoreError(error, OperationType.GET, 'unansweredQuestions');
-      }
-    );
-  } catch (err) {
-    if (!isQuotaExceededError(err)) {
-      handleFirestoreError(err, OperationType.GET, 'unansweredQuestions');
-    }
-    return () => {};
-  }
-}
+export function subscribeQuestionLogs(callback:(logs:QuestionLog[])=>void) {return subscribeCentralCollection('questionLogs',saveLocalQuestionLogs,callback);}
+export function subscribeUnansweredQuestions(callback:(items:UnansweredQuestion[])=>void) {return subscribeCentralCollection('unansweredQuestions',saveLocalUnansweredQuestions,callback);}

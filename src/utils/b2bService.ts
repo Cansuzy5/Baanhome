@@ -1,3 +1,5 @@
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from './firebase';
 import { B2BLead, B2BAppointment, UserRole } from '../types';
 import { B2B_LEADS } from '../data/b2bPartnerships';
 import { INITIAL_B2B_APPOINTMENTS } from '../data/b2bAppointments';
@@ -26,10 +28,10 @@ function cached<T>(key: string, defaults: T[]): T[] {
   return defaults;
 }
 export function getCachedLeads(): B2BLead[] {
-  return cached(LEADS_STORAGE_KEY, B2B_LEADS);
+  return cached(LEADS_STORAGE_KEY, []);
 }
 export function getCachedAppointments(): B2BAppointment[] {
-  return cached(APPOINTMENTS_STORAGE_KEY, INITIAL_B2B_APPOINTMENTS);
+  return cached(APPOINTMENTS_STORAGE_KEY, []);
 }
 function publish(data: B2BData) {
   if (!Array.isArray(data.leads) || !Array.isArray(data.appointments)) {
@@ -59,6 +61,7 @@ async function request(body?: unknown): Promise<any> {
   try {
     const response = await fetch('/api/sync/b2b', {
       method: body === undefined ? 'GET' : 'POST',
+      cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: controller.signal,
@@ -73,24 +76,17 @@ async function request(body?: unknown): Promise<any> {
     throw error;
   } finally { clearTimeout(timer); }
 }
-export function subscribeCentralB2B(onUpdate: (data: B2BData) => void): () => void {
-  let active = true;
-  let fetching = false;
-  listeners.add(onUpdate);
-  onUpdate({ leads: getCachedLeads(), appointments: getCachedAppointments() });
-  const refresh = async () => {
-    if (fetching || writes) return;
-    fetching = true;
-    const startedAt = revision;
-    try {
-      const data = await request();
-      if (active && !writes && startedAt === revision) publish(data);
-    } catch (error) { console.warn('B2B sync failed:', error); }
-    finally { fetching = false; }
-  };
-  void refresh();
-  const timer = setInterval(refresh, 10000);
-  return () => { active = false; clearInterval(timer); listeners.delete(onUpdate); };
+export function subscribeCentralB2B(onUpdate:(data:B2BData)=>void):()=>void {
+ listeners.add(onUpdate);
+ // Initialize the canonical document from durable legacy storage, if necessary.
+ void request().catch(()=>window.dispatchEvent(new CustomEvent('baanhome-sync-error',{detail:'ตรวจสอบฐานนัดหมายกลางไม่สำเร็จ กรุณาลองใหม่'})));
+
+ const unsubscribe=onSnapshot(doc(db,'systemConfig','b2b'),{includeMetadataChanges:true},snapshot=>{
+  if(snapshot.metadata.fromCache||snapshot.metadata.hasPendingWrites)return;
+  const value=snapshot.exists()?snapshot.data().payload:null;
+  publish({leads:Array.isArray(value?.leads)?value.leads:[],appointments:Array.isArray(value?.appointments)?value.appointments:[]});
+ },()=>window.dispatchEvent(new CustomEvent('baanhome-sync-error',{detail:'อ่านข้อมูลนัดหมายจาก Firestore ไม่สำเร็จ ข้อมูลอาจยังไม่ล่าสุด'})));
+ return ()=>{unsubscribe();listeners.delete(onUpdate);};
 }
 let queue: Promise<unknown> = Promise.resolve();
 function mutate(body: unknown, allowed: boolean): Promise<{ success: boolean; error?: string }> {
@@ -99,7 +95,7 @@ function mutate(body: unknown, allowed: boolean): Promise<{ success: boolean; er
     writes++; revision++;
     try {
       const result = await request(body);
-      publish(result);
+      // onSnapshot supplies authoritative current data after the transaction.
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message || 'บันทึกไม่สำเร็จ' };
@@ -122,5 +118,5 @@ export function deleteCentralB2BAppointment(id: string, role?: UserRole) {
   return mutate({ action: 'delete', collection: 'appointments', id }, canUserManageSystem(role));
 }
 export function resetCentralB2BToDefault(role?: UserRole) {
-  return mutate({ leads: B2B_LEADS, appointments: INITIAL_B2B_APPOINTMENTS }, canUserManageSystem(role));
+  return Promise.resolve({success:false,error:'ปิดการรีเซ็ตข้อมูลตัวอย่าง เพื่อป้องกันการทับฐานข้อมูลกลาง กรุณาจัดการรายการที่ต้องการเป็นรายรายการ'});
 }

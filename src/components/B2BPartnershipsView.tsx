@@ -36,7 +36,7 @@ import { B2BCalendarView } from './B2BCalendarView';
 import { AddLeadModal } from './AddLeadModal';
 import { AddAppointmentModal } from './AddAppointmentModal';
 import { ExportB2BModal } from './ExportB2BModal';
-import { GoogleSheetsDbConfig, appendAppointmentToSheet } from '../utils/googleSheetsDatabase';
+import { GoogleSheetsDbConfig } from '../utils/googleSheetsDatabase';
 import { getGoogleAccessToken } from '../utils/googleWorkspaceAuth';
 import {
   subscribeCentralB2B,
@@ -187,19 +187,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     if (!res.success) {
       setPermissionError(res.error || 'ไม่สามารถบันทึกนัดหมายได้');
       return false;
-    }
-
-    // Auto-sync appointment to connected Google Sheets if enabled
-    if (sheetsDbConfig && sheetsDbConfig.autoSyncB2B && sheetsDbConfig.spreadsheetId) {
-      getGoogleAccessToken()
-        .then((token) => {
-          if (token) {
-            appendAppointmentToSheet(token, sheetsDbConfig.spreadsheetId, apt).catch((err) => {
-              console.warn('Auto-append appointment to Google Sheets failed:', err);
-            });
-          }
-        })
-        .catch((err) => console.warn('Could not get Google access token for sync:', err));
     }
 
     // Sync appointment date into lead if matching
