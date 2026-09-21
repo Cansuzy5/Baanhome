@@ -122,6 +122,56 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     ].slice(0, 100);
   };
 
+  const getLeadStage = (lead: B2BLead) =>
+    lead.pipelineStage || lead.contactStatus || 'ยังไม่ติดต่อ';
+
+  const getLatestLeadActivity = (lead: B2BLead) => {
+    const latestHistory = lead.history?.[0];
+    const rawDate = latestHistory?.timestamp || lead.updatedAt || '';
+    if (!rawDate) return null;
+
+    const parsed = new Date(rawDate);
+    if (Number.isNaN(parsed.getTime())) return null;
+
+    return {
+      date: parsed,
+      actorName: latestHistory?.actorName || '',
+      label: parsed.toLocaleString('th-TH', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    };
+  };
+
+  const getLeadFollowUpAlert = (lead: B2BLead) => {
+    const stage = getLeadStage(lead);
+    if (!['ติดต่อแล้ว', 'นัดเข้าพบ', 'ส่งใบเสนอราคาแล้ว'].includes(stage)) return null;
+
+    const latest = getLatestLeadActivity(lead);
+    if (!latest) return null;
+
+    const diffDays = Math.floor((Date.now() - latest.date.getTime()) / (1000 * 60 * 60 * 24));
+    const hasUpcomingAppointment = appointments.some(
+      (apt) =>
+        ((apt.leadId && apt.leadId === lead.id) || apt.leadName === lead.name) &&
+        new Date(`${apt.date}T${apt.time || '00:00'}`).getTime() >= Date.now()
+    );
+
+    if (stage === 'ติดต่อแล้ว' && diffDays >= 7 && !hasUpcomingAppointment) {
+      return `ติดต่อแล้ว ${diffDays} วัน ยังไม่มีนัดเข้าพบ`;
+    }
+    if (stage === 'นัดเข้าพบ' && diffDays >= 3 && !hasUpcomingAppointment) {
+      return `สถานะนัดเข้าพบค้าง ${diffDays} วัน ควรตรวจสอบนัดล่าสุด`;
+    }
+    if (stage === 'ส่งใบเสนอราคาแล้ว' && diffDays >= 5) {
+      return `ส่งใบเสนอราคาแล้ว ${diffDays} วัน ควรติดตามผล`;
+    }
+    return null;
+  };
+
   // Sub-tabs: directory list vs calendar schedule
   const [activeSubTab, setActiveSubTab] = useState<'directory' | 'calendar'>('directory');
 
@@ -593,7 +643,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                           l.pipelineStage === 'ติดต่อแล้ว' ||
                           l.pipelineStage === 'นัดเข้าพบ' ||
                           l.pipelineStage === 'ตกลง Partnership' ||
-                          l.pipelineStage === 'ปิดการขายแล้ว'
+                          l.pipelineStage === 'ปิดการขาย'
                       ).length}{' '}
                       <span className="text-xs font-normal text-[#6F887A]">ราย</span>
                     </div>
@@ -690,6 +740,28 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           </div>
           </details>
 
+          {(() => {
+            const overdue = leadsList.filter((lead) => getLeadFollowUpAlert(lead));
+            return overdue.length > 0 ? (
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs">
+                <div className="flex items-center gap-2 text-amber-800">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span><strong>{overdue.length}</strong> หน่วยงานควรติดตามต่อ</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedStage('All');
+                    setSearchTerm('');
+                  }}
+                  className="font-bold text-amber-800 hover:underline whitespace-nowrap"
+                >
+                  ดูจากป้ายเตือนในรายการ
+                </button>
+              </div>
+            ) : null;
+          })()}
+
           <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
             <span className="font-semibold text-[#617B6D] shrink-0">ตัวกรอง:</span>
             {(['All','A','B','C'] as const).map((p)=><button key={p} onClick={()=>setSelectedPriority(p)}
@@ -785,8 +857,30 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Actions on Card */}
-                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                  <div className="sm:max-w-[260px] w-full sm:w-auto space-y-1.5">
+                    {(() => {
+                      const latest = getLatestLeadActivity(lead);
+                      const alert = getLeadFollowUpAlert(lead);
+                      return (
+                        <>
+                          {alert && (
+                            <div className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-2 py-1 text-[10px] font-bold text-amber-800">
+                              <AlertCircle className="w-3 h-3" />
+                              <span>{alert}</span>
+                            </div>
+                          )}
+                          <div className="text-[10px] text-[#7A8D81]">
+                            {latest
+                              ? <>อัปเดตล่าสุด {latest.label}{latest.actorName ? ` โดย ${latest.actorName}` : ''}</>
+                              : <>ยังไม่มีประวัติการอัปเดต</>}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Quick actions */}
+                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0 flex-wrap justify-end">
                     <span
                       className={`text-xs font-semibold px-3 py-1 rounded-full border ${
                         (lead.pipelineStage || lead.contactStatus) === 'ติดต่อแล้ว'
@@ -806,41 +900,44 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
+                        setActiveLeadModal(lead);
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl bg-[#F7FAF6] hover:bg-[#EEF5EC] text-[#24563B] border border-[#DEE7DC] text-[11px] font-bold"
+                    >
+                      ดูข้อมูล
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setEditingApt(null);
                         setAptDefaultLead(lead);
                         setAptDefaultDate(new Date().toISOString().slice(0,10));
                         setIsAddAptModalOpen(true);
                       }}
-                      className="p-2 rounded-xl bg-[#FAFBF8] hover:bg-[#EEF5EC] text-[#24563B] border border-[#DEE7DC] transition-colors"
-                      title="ลงตารางนัดหมายกับหน่วยงานนี้"
+                      className="px-2.5 py-1.5 rounded-xl bg-[#1B3E2D] hover:bg-[#244F39] text-white text-[11px] font-bold flex items-center gap-1"
                     >
-                      <Calendar className="w-3.5 h-3.5" />
+                      <Calendar className="w-3.5 h-3.5" /> ลงนัด
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={(e) => {
+                    <select
+                      value={getLeadStage(lead)}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => {
                         e.stopPropagation();
-                        setEditingLead(lead);
-                        setIsAddLeadModalOpen(true);
+                        handleUpdateLeadStage(lead.id, e.target.value);
                       }}
-                      className="p-2 rounded-xl bg-[#FAFBF8] hover:bg-[#EEF5EC] text-[#24563B] border border-[#DEE7DC] transition-colors"
-                      title="แก้ไขข้อมูลหน่วยงาน"
+                      className="px-2 py-1.5 rounded-xl border border-[#D5E2D2] bg-white text-[11px] font-bold text-[#345945] max-w-[150px]"
+                      title="เปลี่ยนสถานะองค์กร"
                     >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveLeadModal(lead);
-                      }}
-                      className="p-2 rounded-xl text-[#39634B] hover:bg-[#EEF5EB] transition-colors"
-                      title="ดูสคริปต์โทรและข้อมูลเชิงลึก"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
+                      {!PIPELINE_STAGES.some((item) => item.stage === getLeadStage(lead)) && (
+                        <option value={getLeadStage(lead)}>{getLeadStage(lead)} (ข้อมูลเดิม)</option>
+                      )}
+                      {PIPELINE_STAGES.map((item) => (
+                        <option key={item.stage} value={item.stage}>{item.stage}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               ))}
@@ -909,6 +1006,23 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               </div>
             </div>
 
+            {(() => {
+              const latest = getLatestLeadActivity(activeLeadModal);
+              const alert = getLeadFollowUpAlert(activeLeadModal);
+              return (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                  <span className="text-[#708278]">
+                    {latest ? <>อัปเดตล่าสุด {latest.label}{latest.actorName ? ` โดย ${latest.actorName}` : ''}</> : 'ยังไม่มีประวัติการอัปเดต'}
+                  </span>
+                  {alert && (
+                    <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 border border-amber-200 px-2 py-1 font-bold text-amber-800">
+                      <AlertCircle className="w-3 h-3" /> {alert}
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Customer and BaanHome context */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs sm:text-sm">
               <div className="bg-[#F7FBF5] p-3.5 rounded-2xl border border-[#DDE8DA] space-y-1">
@@ -933,7 +1047,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               </div>
             </div>
 
-            {activeLeadModal.history && activeLeadModal.history.length > 0 && (
+            {isAdmin && activeLeadModal.history && activeLeadModal.history.length > 0 && (
               <details className="bg-white rounded-2xl border border-[#E3EAE0] p-3.5">
                 <summary className="cursor-pointer text-xs font-bold text-[#496655]">
                   ประวัติการแก้ไข ({activeLeadModal.history.length})
@@ -1101,17 +1215,17 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               {/* Pipeline Stage Quick Changer */}
               <div className="flex items-center gap-1.5 flex-wrap text-xs">
                 <span className="text-[#557262] font-semibold">ปรับสถานะ:</span>
-                {['ยังไม่ติดต่อ', 'ติดต่อแล้ว', 'นัดเข้าพบ', 'ตกลง Partnership'].map((st) => (
+                {PIPELINE_STAGES.map(({ stage }) => (
                   <button
-                    key={st}
-                    onClick={() => handleUpdateLeadStage(activeLeadModal.id, st)}
+                    key={stage}
+                    onClick={() => handleUpdateLeadStage(activeLeadModal.id, stage)}
                     className={`px-3 py-1 rounded-xl font-semibold cursor-pointer transition-colors ${
-                      activeLeadModal.pipelineStage === st
+                      getLeadStage(activeLeadModal) === stage
                         ? 'bg-[#1E5D36] text-white'
                         : 'bg-[#F1EFE8] hover:bg-[#E5E2D7] text-[#41594A]'
                     }`}
                   >
-                    {st}
+                    {stage}
                   </button>
                 ))}
               </div>
