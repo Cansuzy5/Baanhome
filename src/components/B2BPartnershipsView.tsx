@@ -24,7 +24,7 @@ import {
   Trash2,
   RotateCcw,
 } from 'lucide-react';
-import { B2BLead, B2BAppointment, B2BCoordinator, AppointmentStatus, StaffProfile, UserRole } from '../types';
+import { B2BLead, B2BAppointment, B2BCoordinator, B2BPipelineStatus, AppointmentStatus, StaffProfile, UserRole } from '../types';
 import {
   B2B_LEADS,
   PARTNERSHIP_PIPELINE_STATS,
@@ -70,6 +70,57 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   const currentRole: UserRole = activeUser?.role || 'Knowledge User';
   const isOperatorOrAdmin = canUserEditOperational(currentRole);
   const isAdmin = canUserManageSystem(currentRole);
+
+  const actorName = activeUser?.name || activeUser?.username || 'Unknown User';
+  const actorId = activeUser?.id || activeUser?.username || '';
+
+  const fieldLabels: Record<string, string> = {
+    name: 'ชื่อหน่วยงาน',
+    orgType: 'ประเภทหน่วยงาน',
+    contactPerson: 'ผู้ติดต่อฝั่งลูกค้า',
+    contactPosition: 'ตำแหน่งผู้ติดต่อ',
+    phone: 'เบอร์โทร',
+    email: 'อีเมล / LINE',
+    eventType: 'ประเภทงาน',
+    attendeesEstimate: 'จำนวนผู้เข้าร่วม',
+    eventDate: 'วันที่คาดว่าจะจัดงาน',
+    eventRequirements: 'รายละเอียดความต้องการ',
+    baanHomeCoordinatorName: 'ผู้ประสานงานบ้านโฮม',
+    priority: 'Priority',
+    pipelineStage: 'สถานะการติดตาม',
+    reasonsToApproach: 'เหตุผลที่ควรเข้าพบ',
+    nextAction: 'ขั้นตอนถัดไป',
+    featuredOffers: 'ข้อเสนอที่ควรชู',
+    offerDetails: 'รายละเอียดข้อเสนอ',
+  };
+
+  const formatHistoryValue = (value: unknown) => {
+    if (Array.isArray(value)) return value.join(', ') || 'ยังไม่ระบุ';
+    if (value === undefined || value === null || value === '') return 'ยังไม่ระบุ';
+    return String(value);
+  };
+
+  const buildLeadHistory = (before: B2BLead | undefined, after: B2BLead, action: string) => {
+    const trackedFields = Object.keys(fieldLabels);
+    const changes = before
+      ? trackedFields
+          .filter((key) => JSON.stringify((before as any)[key] ?? '') !== JSON.stringify((after as any)[key] ?? ''))
+          .map((key) => `${fieldLabels[key]}: "${formatHistoryValue((before as any)[key])}" → "${formatHistoryValue((after as any)[key])}"`)
+      : [`สร้างข้อมูลหน่วยงาน: ${after.name}`];
+
+    if (changes.length === 0) return after.history || [];
+    return [
+      {
+        id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: new Date().toISOString(),
+        actorId,
+        actorName,
+        action,
+        changes,
+      },
+      ...(after.history || before?.history || []),
+    ].slice(0, 100);
+  };
 
   // Sub-tabs: directory list vs calendar schedule
   const [activeSubTab, setActiveSubTab] = useState<'directory' | 'calendar'>('directory');
@@ -131,7 +182,13 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       return;
     }
 
-    const res = await saveCentralB2BLead(lead, currentRole);
+    const previousLead = leadsList.find((item) => item.id === lead.id);
+    const leadWithHistory: B2BLead = {
+      ...lead,
+      history: buildLeadHistory(previousLead, lead, previousLead ? 'แก้ไขข้อมูลหน่วยงาน' : 'สร้างหน่วยงาน'),
+    };
+
+    const res = await saveCentralB2BLead(leadWithHistory, currentRole);
     if (!res.success) {
       setPermissionError(res.error || 'ไม่สามารถบันทึกข้อมูลได้');
       return;
@@ -140,17 +197,17 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     if (scheduleAppointment) {
       const newApt: B2BAppointment = {
         id: `APT-${crypto.randomUUID()}`,
-        leadId: lead.id,
-        leadName: lead.name,
+        leadId: leadWithHistory.id,
+        leadName: leadWithHistory.name,
         date: scheduleAppointment.date,
         time: scheduleAppointment.time,
         title: scheduleAppointment.title,
         location: scheduleAppointment.location,
         objective: 'นำเสนอแพ็กเกจห้องประชุม & Corporate Rate',
         status: 'scheduled',
-        contactPerson: lead.contactPerson,
-        phone: lead.phone,
-        priority: lead.priority,
+        contactPerson: leadWithHistory.contactPerson,
+        phone: leadWithHistory.phone,
+        priority: leadWithHistory.priority,
         createdAt: new Date().toISOString().split('T')[0],
       };
       await saveCentralB2BAppointment(newApt, currentRole);
@@ -197,7 +254,36 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       return false;
     }
 
-    // Appointment edits stay appointment-specific. Lead master data is changed only from the lead edit action.
+    // Creating/saving a calendar appointment means contact has happened.
+    // Only advance "ยังไม่ติดต่อ" → "ติดต่อแล้ว"; never move an organization backwards.
+    const linkedLead = leadsList.find((lead) =>
+      (apt.leadId && lead.id === apt.leadId) || lead.name === apt.leadName
+    );
+    if (linkedLead && (linkedLead.pipelineStage || linkedLead.contactStatus || 'ยังไม่ติดต่อ') === 'ยังไม่ติดต่อ') {
+      const updatedLead: B2BLead = {
+        ...linkedLead,
+        pipelineStage: 'ติดต่อแล้ว',
+        contactStatus: 'ติดต่อแล้ว',
+        updatedAt: new Date().toISOString().split('T')[0],
+      };
+      updatedLead.history = [
+        {
+          id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          timestamp: new Date().toISOString(),
+          actorId,
+          actorName,
+          action: 'สร้างนัดหมาย',
+          changes: [`สถานะการติดตาม: "ยังไม่ติดต่อ" → "ติดต่อแล้ว"`, `สร้างนัดหมายวันที่ ${apt.date} เวลา ${apt.time}`],
+        },
+        ...(linkedLead.history || []),
+      ].slice(0, 100);
+
+      const leadResult = await saveCentralB2BLead(updatedLead, currentRole);
+      if (!leadResult.success) {
+        setPermissionError('บันทึกนัดหมายแล้ว แต่เปลี่ยนสถานะองค์กรเป็น "ติดต่อแล้ว" ไม่สำเร็จ กรุณาตรวจสอบสถานะอีกครั้ง');
+      }
+    }
+
     return true;
   };
 
@@ -296,23 +382,42 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     });
   }, [leadsList, searchTerm, selectedPriority, selectedStage, selectedOrgType]);
 
-  const handleUpdateLeadStage = async (leadId: string, newStage: string) => {
+  const handleUpdateLeadStage = async (leadId: string, newStage: B2BPipelineStatus | string) => {
     if (!isOperatorOrAdmin) {
       setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Operator และ Administrator เท่านั้นที่สามารถเปลี่ยนสถานะติดตามงานได้');
       return;
     }
     const target = leadsList.find((l) => l.id === leadId);
-    if (target) {
-      const updatedLead: B2BLead = {
-        ...target,
-        pipelineStage: newStage,
-        contactStatus: newStage,
-        updatedAt: new Date().toISOString().split('T')[0],
-      };
-      await saveCentralB2BLead(updatedLead, currentRole);
-      if (activeLeadModal && activeLeadModal.id === leadId) {
-        setActiveLeadModal(updatedLead);
-      }
+    if (!target) return;
+
+    const oldStage = target.pipelineStage || target.contactStatus || 'ยังไม่ติดต่อ';
+    if (oldStage === newStage) return;
+
+    const updatedLead: B2BLead = {
+      ...target,
+      pipelineStage: newStage,
+      contactStatus: newStage,
+      updatedAt: new Date().toISOString().split('T')[0],
+      history: [
+        {
+          id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          timestamp: new Date().toISOString(),
+          actorId,
+          actorName,
+          action: 'เปลี่ยนสถานะการติดตาม',
+          changes: [`สถานะการติดตาม: "${oldStage}" → "${newStage}"`],
+        },
+        ...(target.history || []),
+      ].slice(0, 100),
+    };
+
+    const result = await saveCentralB2BLead(updatedLead, currentRole);
+    if (!result.success) {
+      setPermissionError(result.error || 'เปลี่ยนสถานะไม่สำเร็จ');
+      return;
+    }
+    if (activeLeadModal && activeLeadModal.id === leadId) {
+      setActiveLeadModal(updatedLead);
     }
   };
 
@@ -520,7 +625,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             setIsAddAptModalOpen(true);
           }}
           onDeleteAppointment={handleDeleteAppointment}
-          onUpdateStatus={handleUpdateAppointmentStatus}
+          onUpdateLeadStage={handleUpdateLeadStage}
           onSelectLeadForSearch={onSelectLeadForSearch}
         />
       ) : (
@@ -827,6 +932,28 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                 <p><strong>ขั้นตอนถัดไป:</strong> {activeLeadModal.nextAction || 'ยังไม่ระบุ'}</p>
               </div>
             </div>
+
+            {activeLeadModal.history && activeLeadModal.history.length > 0 && (
+              <details className="bg-white rounded-2xl border border-[#E3EAE0] p-3.5">
+                <summary className="cursor-pointer text-xs font-bold text-[#496655]">
+                  ประวัติการแก้ไข ({activeLeadModal.history.length})
+                </summary>
+                <div className="mt-3 space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {activeLeadModal.history.slice(0, 20).map((entry) => (
+                    <div key={entry.id} className="rounded-xl bg-[#F8FAF7] border border-[#EDF1EB] p-2.5 text-[11px]">
+                      <div className="flex flex-wrap items-center justify-between gap-1">
+                        <strong className="text-[#254B36]">{entry.action}</strong>
+                        <span className="text-[#819187]">{new Date(entry.timestamp).toLocaleString('th-TH')}</span>
+                      </div>
+                      <div className="text-[#6A7D71] mt-0.5">โดย {entry.actorName || 'ไม่ระบุผู้แก้ไข'}</div>
+                      <ul className="mt-1 space-y-0.5 text-[#4E6557]">
+                        {entry.changes.map((change, idx) => <li key={idx}>• {change}</li>)}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
 
             {/* Scheduled Appointments for this lead */}
             {activeLeadAppointments.length > 0 && (
