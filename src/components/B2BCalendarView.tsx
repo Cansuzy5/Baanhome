@@ -17,8 +17,9 @@ import {
   Trash2,
   Filter,
 } from 'lucide-react';
-import { B2BAppointment, B2BLead, AppointmentStatus } from '../types';
+import { B2BAppointment, B2BLead, B2BPipelineStatus } from '../types';
 import { exportAppointmentsToCsv } from '../utils/b2bExport';
+import { PIPELINE_STAGES } from '../data/b2bPartnerships';
 
 interface B2BCalendarViewProps {
   appointments: B2BAppointment[];
@@ -26,7 +27,7 @@ interface B2BCalendarViewProps {
   onAddAppointment: (date?: string) => void;
   onEditAppointment: (appointment: B2BAppointment) => void;
   onDeleteAppointment: (appointmentId: string) => void;
-  onUpdateStatus: (appointmentId: string, status: AppointmentStatus) => void;
+  onUpdateLeadStage: (leadId: string, stage: B2BPipelineStatus | string) => void;
   onSelectLeadForSearch?: (leadName: string) => void;
 }
 
@@ -53,13 +54,30 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   onAddAppointment,
   onEditAppointment,
   onDeleteAppointment,
-  onUpdateStatus,
+  onUpdateLeadStage,
   onSelectLeadForSearch,
 }) => {
   // Current view year & month - default to September 2026 based on metadata
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [selectedDateStr, setSelectedDateStr] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [filterStatus, setFilterStatus] = useState<string>('all');
+
+  const getLeadForAppointment = (apt: B2BAppointment) =>
+    leads.find((lead) => (apt.leadId && lead.id === apt.leadId) || lead.name === apt.leadName);
+
+  const getLeadStage = (apt: B2BAppointment) =>
+    getLeadForAppointment(apt)?.pipelineStage ||
+    getLeadForAppointment(apt)?.contactStatus ||
+    'ยังไม่ติดต่อ';
+
+  const stageClass = (stage: string) => {
+    if (stage === 'ปิดการขาย') return 'bg-emerald-100 text-emerald-800';
+    if (stage === 'ตกลง Partnership') return 'bg-teal-100 text-teal-800';
+    if (stage === 'ส่งใบเสนอราคาแล้ว') return 'bg-amber-100 text-amber-800';
+    if (stage === 'นัดเข้าพบ') return 'bg-blue-100 text-blue-800';
+    if (stage === 'ติดต่อแล้ว') return 'bg-lime-100 text-lime-800';
+    return 'bg-slate-100 text-slate-700';
+  };
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -153,34 +171,21 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   // All upcoming appointments filtered
   const filteredAppointments = useMemo(() => {
     return appointments
-      .filter((apt) => {
-        if (filterStatus === 'all') return true;
-        return apt.status === filterStatus;
-      })
+      .filter((apt) => filterStatus === 'all' || getLeadStage(apt) === filterStatus)
       .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
-  }, [appointments, filterStatus]);
+  }, [appointments, leads, filterStatus]);
 
-  // Monthly stats
+  // Pipeline stats use the same organization status across directory and calendar.
   const stats = useMemo(() => {
-    const currentMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
-    const thisMonthApts = appointments.filter((a) => a.date.startsWith(currentMonthPrefix));
-    const completed = thisMonthApts.filter((a) => a.status === 'completed').length;
-    const upcoming = thisMonthApts.filter((a) => a.status === 'scheduled').length;
-    const notMet = thisMonthApts.filter((a) => a.status === 'not_met').length;
-    const rescheduled = thisMonthApts.filter((a) => a.status === 'rescheduled').length;
-    const cancelled = thisMonthApts.filter((a) => a.status === 'cancelled').length;
-    const outcomeBase = completed + notMet;
-    const successRate = outcomeBase > 0 ? Math.round((completed / outcomeBase) * 100) : 0;
+    const stageOf = (lead: B2BLead) => lead.pipelineStage || lead.contactStatus || 'ยังไม่ติดต่อ';
     return {
-      totalThisMonth: thisMonthApts.length,
-      completed,
-      upcoming,
-      notMet,
-      rescheduled,
-      cancelled,
-      successRate,
+      totalThisMonth: appointments.filter((a) => a.date.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`)).length,
+      contacted: leads.filter((l) => stageOf(l) === 'ติดต่อแล้ว').length,
+      meeting: leads.filter((l) => stageOf(l) === 'นัดเข้าพบ').length,
+      quoted: leads.filter((l) => stageOf(l) === 'ส่งใบเสนอราคาแล้ว').length,
+      closed: leads.filter((l) => stageOf(l) === 'ปิดการขาย').length,
     };
-  }, [appointments, year, month]);
+  }, [appointments, leads, year, month]);
 
   return (
     <div className="space-y-3">
@@ -201,16 +206,20 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
               <span className="text-sm font-bold text-[#173827]">{stats.totalThisMonth}</span>
             </div>
             <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-100 text-center">
-              <span className="text-[9px] text-emerald-700 block">พบแล้ว</span>
-              <span className="text-sm font-bold text-emerald-700">{stats.completed}</span>
+              <span className="text-[9px] text-emerald-700 block">ติดต่อแล้ว</span>
+              <span className="text-sm font-bold text-emerald-700">{stats.contacted}</span>
             </div>
             <div className="px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-100 text-center">
-              <span className="text-[9px] text-rose-700 block">ไม่ได้เข้าพบ</span>
-              <span className="text-sm font-bold text-rose-700">{stats.notMet}</span>
+              <span className="text-[9px] text-blue-700 block">นัดเข้าพบ</span>
+              <span className="text-sm font-bold text-blue-700">{stats.meeting}</span>
             </div>
             <div className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-100 text-center">
-              <span className="text-[9px] text-amber-700 block">สำเร็จ</span>
-              <span className="text-sm font-bold text-amber-700">{stats.successRate}%</span>
+              <span className="text-[9px] text-amber-700 block">ส่งใบเสนอราคา</span>
+              <span className="text-sm font-bold text-amber-700">{stats.quoted}</span>
+            </div>
+            <div className="px-3 py-1.5 rounded-xl bg-teal-50 border border-teal-100 text-center">
+              <span className="text-[9px] text-teal-700 block">ปิดการขาย</span>
+              <span className="text-sm font-bold text-teal-700">{stats.closed}</span>
             </div>
 
             <button
@@ -333,17 +342,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                     {dayAppointments.slice(0, 2).map((apt) => (
                       <div
                         key={apt.id}
-                        className={`text-[9px] px-1 py-0.5 rounded truncate font-medium ${
-                          apt.status === 'completed'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : apt.status === 'not_met' || apt.status === 'cancelled'
-                            ? 'bg-rose-100 text-rose-800'
-                            : apt.status === 'rescheduled'
-                            ? 'bg-amber-100 text-amber-800'
-                            : apt.priority === 'A'
-                            ? 'bg-red-50 text-red-700 border-l-2 border-red-500'
-                            : 'bg-amber-50 text-amber-800 border-l-2 border-amber-500'
-                        }`}
+                        className={`text-[9px] px-1 py-0.5 rounded truncate font-medium ${stageClass(getLeadStage(apt))}`}
                         title={`${apt.time} - ${apt.leadName}`}
                       >
                         {apt.time} {apt.leadName.replace('สำนักงาน', 'สนง.').slice(0, 10)}...
@@ -487,22 +486,23 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                       )}
                     </div>
 
-                    {/* Status quick toggle */}
-                    <div className="flex items-center justify-between pt-1 text-[11px]">
-                      <span className="text-[#809B8B]">สถานะ:</span>
-                      <select
-                        value={apt.status}
-                        onChange={(e) =>
-                          onUpdateStatus(apt.id, e.target.value as AppointmentStatus)
-                        }
-                        className="text-[11px] px-2 py-0.5 rounded-lg border border-[#D5E2D2] bg-[#FAFBF9] text-[#1B3E2D] font-semibold"
-                      >
-                        <option value="scheduled">🟢 รอเข้าพบ</option>
-                        <option value="completed">✅ พบแล้ว</option>
-                        <option value="not_met">🔴 ไม่ได้เข้าพบ</option>
-                        <option value="rescheduled">🟡 เลื่อนนัด</option>
-                        <option value="cancelled">⚫ ยกเลิกนัด</option>
-                      </select>
+                    {/* Unified organization pipeline status */}
+                    <div className="flex items-center justify-between pt-1 text-[11px]" onClick={(e) => e.stopPropagation()}>
+                      <span className="text-[#809B8B]">สถานะองค์กร:</span>
+                      {(() => {
+                        const lead = getLeadForAppointment(apt);
+                        const stage = getLeadStage(apt);
+                        return lead ? (
+                          <select
+                            value={stage}
+                            onChange={(e) => onUpdateLeadStage(lead.id, e.target.value)}
+                            className="text-[11px] px-2 py-0.5 rounded-lg border border-[#D5E2D2] bg-[#FAFBF9] text-[#1B3E2D] font-semibold"
+                          >
+                            {!PIPELINE_STAGES.some((item) => item.stage === stage) && <option value={stage}>{stage} (ข้อมูลเดิม)</option>}
+                            {PIPELINE_STAGES.map((item) => <option key={item.stage} value={item.stage}>{item.stage}</option>)}
+                          </select>
+                        ) : <span className="text-[#9A8C74]">ไม่พบข้อมูลองค์กร</span>;
+                      })()}
                     </div>
                   </div>
                 ))}
@@ -525,11 +525,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                 className="text-xs px-2.5 py-1 rounded-xl border border-[#D5E2D2] bg-[#FAFBF9] text-[#345945]"
               >
                 <option value="all">ทุกสถานะ</option>
-                <option value="scheduled">🟢 รอเข้าพบ</option>
-                <option value="completed">✅ พบแล้ว</option>
-                <option value="not_met">🔴 ไม่ได้เข้าพบ</option>
-                <option value="rescheduled">🟡 เลื่อนนัด</option>
-                <option value="cancelled">⚫ ยกเลิกนัด</option>
+                {PIPELINE_STAGES.map((item) => <option key={item.stage} value={item.stage}>{item.stage}</option>)}
               </select>
             </div>
 
@@ -552,28 +548,8 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                       📅 {apt.date} | ⏰ {apt.time} น.
                     </span>
                     <div className="flex items-center gap-1.5">
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          apt.status === 'completed'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : apt.status === 'not_met'
-                            ? 'bg-rose-100 text-rose-800'
-                            : apt.status === 'rescheduled'
-                            ? 'bg-amber-100 text-amber-800'
-                            : apt.status === 'cancelled'
-                            ? 'bg-slate-200 text-slate-700'
-                            : 'bg-blue-100 text-blue-800'
-                        }`}
-                      >
-                        {apt.status === 'completed'
-                          ? 'พบแล้ว'
-                          : apt.status === 'not_met'
-                          ? 'ไม่ได้เข้าพบ'
-                          : apt.status === 'rescheduled'
-                          ? 'เลื่อนนัด'
-                          : apt.status === 'cancelled'
-                          ? 'ยกเลิกนัด'
-                          : 'รอเข้าพบ'}
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${stageClass(getLeadStage(apt))}`}>
+                        {getLeadStage(apt)}
                       </span>
                       <button
                         type="button"
