@@ -84,9 +84,11 @@ export interface B2BLead {
   format?: string;
   pipelineStage?: string;
   orgType?: string;
-  contactPerson?: string;
+  contactPerson?: string; // ชื่อผู้ติดต่อฝั่งลูกค้า
+  contactPosition?: string; // ตำแหน่งผู้ติดต่อฝั่งลูกค้า
   phone?: string;
-  email?: string;
+  email?: string; // อีเมล / LINE
+  lineId?: string;
   address?: string;
   district?: string;
   appointmentDate?: string;
@@ -94,9 +96,28 @@ export interface B2BLead {
   appointmentNotes?: string;
   estimatedBudget?: string;
   attendeesEstimate?: number;
+  eventType?: '' | 'ประชุม' | 'จัดเลี้ยง' | 'สัมมนา';
+  eventDate?: string; // วันที่ลูกค้าคาดว่าจะจัดงาน (ไม่ใช่วันนัดเข้าพบ)
+  eventRequirements?: string;
+  baanHomeCoordinatorId?: string;
+  baanHomeCoordinatorName?: string;
+  baanHomeCoordinatorPhone?: string;
+  featuredOffers?: string[];
+  offerDetails?: string;
+  legacyEventTypeText?: string;
+  legacyOfferText?: string;
   lastContactDate?: string;
   updatedAt?: string;
   isCustom?: boolean; // true if added by user
+}
+
+export interface B2BCoordinator {
+  id: string;
+  name: string;
+  phone?: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export type AppointmentStatus = 'scheduled' | 'completed' | 'not_met' | 'rescheduled' | 'cancelled';
