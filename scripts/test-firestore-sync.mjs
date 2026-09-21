@@ -20,13 +20,13 @@ globalThis.__firebaseMock={
  updateDoc:async(ref,value)=>{check();if(!rows.has(ref.path))throw Error('not found');rows.set(ref.path,{...rows.get(ref.path),...value});emit();},
  deleteDoc:async ref=>{check();rows.delete(ref.path);emit();},
  onSnapshot:(ref,opts,fn,error)=>{if(typeof opts==='function')fn=opts;const w={ref,fn};watchers.add(w);fn(ref.kind==='collection'?list(ref):snap(ref));return ()=>watchers.delete(w);},
- runTransaction:(_,fn)=>{const run=async()=>{check();const pending=[];const tx={get:async ref=>snap(ref),set:(ref,value)=>pending.push([ref,value])};const result=await fn(tx);check();pending.forEach(([ref,value])=>rows.set(ref.path,structuredClone(value)));emit();return result;};const next=chain.then(run,run);chain=next.catch(()=>{});return next;},
+ runTransaction:(_,fn)=>{const run=async()=>{check();const pending=[];const tx={get:async ref=>snap(ref),set:(ref,value)=>pending.push([ref,value]),update:(ref,value)=>pending.push([ref,{...rows.get(ref.path),...value}]),delete:ref=>pending.push([ref,undefined])};const result=await fn(tx);check();pending.forEach(([ref,value])=>value===undefined?rows.delete(ref.path):rows.set(ref.path,structuredClone(value)));emit();return result;};const next=chain.then(run,run);chain=next.catch(()=>{});return next;},
  writeBatch:()=>{const updates=[];return {update:(ref,v)=>updates.push([ref,v]),commit:async()=>{check();updates.forEach(([ref,v])=>rows.set(ref.path,{...rows.get(ref.path),...v}));emit();}};}
 };
 const plugin={name:'mock-firestore',setup(b){
  b.onResolve({filter:/^firebase\/firestore$/},()=>({path:'sdk',namespace:'mock'}));
  b.onResolve({filter:/^(\.\/firebase|\.\.\/_db\.js)$/},()=>({path:'db',namespace:'mock'}));
- b.onLoad({filter:/.*/,namespace:'mock'},args=>({contents:args.path==='sdk'?Object.keys(globalThis.__firebaseMock).map(k=>`export const ${k}=globalThis.__firebaseMock.${k};`).join('\n'):'export const db={};export const getDb=()=>({legacy:true});export const getOperationalDb=()=>db;export const setCorsHeaders=res=>res.setHeader("test","1");'}));
+ b.onLoad({filter:/.*/,namespace:'mock'},args=>({contents:args.path==='sdk'?Object.keys(globalThis.__firebaseMock).map(k=>`export const ${k}=globalThis.__firebaseMock.${k};`).join('\n'):'export const db={};export const getDb=()=>db;export const getLegacyDb=()=>({legacy:true});export const getOperationalDb=()=>db;export const setCorsHeaders=res=>res.setHeader("test","1");'}));
 }};
 async function module(entry,name){const outfile=join(dir,name+'.mjs');await build({entryPoints:[entry],outfile,bundle:true,platform:'node',format:'esm',plugins:[plugin]});return import(pathToFileURL(outfile));}
 try{
@@ -44,7 +44,13 @@ try{
  fail=true;await assert.rejects(auth.createNewUser({...input,username:'failed'},admin));assert.equal(users.length,1,'failed create never published');await assert.rejects(auth.deleteUser(user.id,admin));assert.equal(users.length,1,'failed delete preserved');fail=false;
  await auth.toggleUserStatus(user.id,'inactive',admin);assert.equal((await auth.authenticateLogin('employee','test-pass')).success,false,'central suspended state wins');
  await auth.toggleUserStatus(user.id,'active',admin);assert.equal((await auth.authenticateLogin('employee','test-pass')).success,true);
- await auth.deleteUser(user.id,admin);assert.deepEqual(users,[],'last user removal clears display');
+ await auth.updateUserProfile(user.id,{name:'Renamed',department:'New department'},admin);
+ await auth.updateUserRole(user.id,'Operator',admin);
+ await auth.deleteUser(user.id,admin);
+ const auditDetails=[...rows.entries()].filter(([key])=>key.startsWith('userActivityLogs/')).map(([,value])=>value.details).join('\n');
+ assert.ok(auditDetails.includes('Employee') && auditDetails.includes('Renamed') && auditDetails.includes('New department') && auditDetails.includes('Knowledge User') && auditDetails.includes('Operator'),'audit retains old/new identity, department and roles');
+ assert.ok(!auditDetails.includes('test-pass'),'audit does not log passwords');
+ assert.deepEqual(users,[],'last user removal clears display');
  storage.set('baanhome_app_users_v1',JSON.stringify([user]));assert.equal((await auth.authenticateLogin('employee','test-pass')).success,false,'stale cache cannot restore deleted login');stop();
  rows.set('legacy/systemConfig/b2b',{payload:{leads:[{id:'old-lead'}],appointments:[{id:'old-appointment'}]}});
  const imported=await request('GET');assert.equal(imported.payload.appointments[0].id,'old-appointment','legacy durable B2B preserved');
@@ -53,7 +59,7 @@ try{
  let one,two;const stop1=device1.subscribeCentralB2B(v=>one=v),stop2=device2.subscribeCentralB2B(v=>two=v);
  assert.deepEqual(one.appointments,[]);
  assert.equal((await device1.saveCentralB2BAppointment({id:'apt1',title:'Test'},'Operator')).success,true);assert.equal(two.appointments[0].title,'Test','other device receives create');
- assert.equal((await device2.saveCentralB2BAppointment({id:'apt1',title:'Updated'},'Operator')).success,true);assert.equal(one.appointments[0].title,'Updated');
+ assert.equal((await device2.saveCentralB2BAppointment({id:'apt1',title:'Updated',status:'not_met'},'Operator')).success,true);assert.equal(one.appointments[0].title,'Updated');assert.equal(one.appointments[0].status,'not_met','latest appointment outcome preserved across devices');
  fail=true;assert.equal((await device1.deleteCentralB2BAppointment('apt1','Administrator')).success,false);assert.equal(two.appointments.length,1);fail=false;
  assert.equal((await device1.deleteCentralB2BAppointment('apt1','Administrator')).success,true);assert.deepEqual(one.appointments,[]);assert.deepEqual(two.appointments,[]);
  assert.equal((await request('POST',{appointments:[{id:'stale'}]})).status,400,'bulk snapshot overwrite disabled');

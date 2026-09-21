@@ -110,9 +110,9 @@ export function isQuotaExceededError(error: unknown): boolean {
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errorMessage = error instanceof Error ? error.message : String(error);
 
-  // If daily read/write quota is exceeded, switch seamlessly to local storage without throwing fatal console error
+  // Report quota errors; local cache must never be treated as a successful write.
   if (isQuotaExceededError(error)) {
-    console.warn(`[Firestore Quota] Daily quota reached for ${operationType} on ${path}. Seamless fallback to local storage active.`);
+    console.warn(`[Firestore Quota] Daily quota reached for ${operationType} on ${path}. Central operation was not confirmed.`);
     return;
   }
 

@@ -38,7 +38,7 @@ export async function hashPassword(plainText: string): Promise<string> {
       return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
     }
   } catch (e) {
-    console.warn('Web Crypto unavailable, using fallback hash', e);
+    console.warn('Web Crypto unavailable', e);
   }
   throw new Error('เบราว์เซอร์ไม่รองรับการเข้ารหัส กรุณาเปิดผ่าน HTTPS');
 }
@@ -164,8 +164,21 @@ async function confirmed<T>(operation:Promise<T>):Promise<T> {
 async function changeUser(id:string,updates:Partial<AppUser>,actor:StaffProfile,action:UserActivityAction) {
  requireAdmin(actor);
  if(id===actor.id && (updates.status==='inactive'||(updates.role&&updates.role!=='Administrator')))throw new Error('ไม่สามารถระงับหรือลดสิทธิ์บัญชีตนเองได้');
- await confirmed(updateDoc(doc(db,'appUsers',id),updates));
- void audit(action,`แก้ไขบัญชี ${id}`,actor);
+ const before = await confirmed(runTransaction(db, async tx => {
+  const ref = doc(db, 'appUsers', id);
+  const snapshot = await tx.get(ref);
+  if (!snapshot.exists()) throw new Error('ไม่พบบัญชีผู้ใช้ที่ต้องการแก้ไข');
+  const target = snapshot.data() as AppUser;
+  tx.update(ref, updates);
+  return target;
+ }));
+ const target = `@${before.username} (${before.name})`;
+ let details = `แก้ไขบัญชี ${target}`;
+ if(action==='ADMIN_CHANGE_ROLE') details=`เปลี่ยนสิทธิ์ผู้ใช้ ${target} จาก [${before.role}] เป็น [${updates.role}]`;
+ if(action==='ADMIN_TOGGLE_STATUS') details=`${updates.status==='active'?'เปิดใช้งานบัญชี':'ปิดใช้งานบัญชี (ระงับสิทธิ์เข้าสู่ระบบ)'}: ${target} โดยแอดมิน`;
+ if(action==='ADMIN_RESET_PASSWORD') details=`รีเซ็ตรหัสผ่านใหม่สำหรับ ${target} สำเร็จ (จัดเก็บแบบ Hashed SHA-256)`;
+ if(action==='ADMIN_EDIT_USER') details=`แก้ไขข้อมูลผู้ใช้ @${before.username}: ชื่อ "${before.name}" ➔ "${updates.name}", แผนก "${before.department}" ➔ "${updates.department}"`;
+ void audit(action,details,actor);
 }
 
 export function getLocalActivityLogs(): UserActivityLog[] {
@@ -180,7 +193,7 @@ export function getLocalActivityLogs(): UserActivityLog[] {
   } catch (e) {
     console.error('Failed to get local activity logs', e);
   }
-  return INITIAL_ACTIVITY_LOGS;
+  return [];
 }
 
 export function saveLocalActivityLogs(logs: UserActivityLog[]) {
@@ -239,12 +252,7 @@ export async function recordUserActivity(
     timestamp,
   };
 
-  // 1. Update Local Cache immediately
-  const existing = getLocalActivityLogs();
-  const updated = [newLog, ...existing].slice(0, 300); // keep up to 300 logs
-  saveLocalActivityLogs(updated);
-
-  // 2. Persist to Firestore
+  // Publish/cache only confirmed snapshots from the central audit collection.
   try {
     const docRef = doc(db, 'userActivityLogs', id);
     await setDoc(docRef, {
@@ -252,7 +260,8 @@ export async function recordUserActivity(
       createdAt: serverTimestamp(),
     });
   } catch (err) {
-    console.warn('Firestore write for userActivityLog failed (operating in offline/cached mode)', err);
+    syncFailure(err);
+    throw err;
   }
 }
 
@@ -285,7 +294,7 @@ export async function createNewUser(newUser:{username:string;name:string;departm
  const id='usr_'+await hashPassword('username:'+username);
  const user:AppUser={id,username,name:newUser.name.trim(),department:newUser.department,role:newUser.role,status:'active',avatar:newUser.avatar||'🧑🏻‍💼',passwordHash:await hashPassword(newUser.plainPassword),createdAt:getFormattedTimestamp()};
  await confirmed(runTransaction(db,async tx=>{const ref=doc(db,'appUsers',id);if((await tx.get(ref)).exists())throw new Error('ชื่อผู้ใช้นี้มีอยู่แล้ว');tx.set(ref,user);}));
- void audit('ADMIN_CREATE_USER',`เพิ่มบัญชี @${username}`,actor);return user;
+ void audit('ADMIN_CREATE_USER',`เพิ่มบัญชีผู้ใช้ใหม่: ${user.name} (@${username}) สิทธิ์: ${user.role} แผนก: ${user.department}`,actor);return user;
 }
 export async function updateUserRole(id:string,role:UserRole,actor:StaffProfile):Promise<void>{await changeUser(id,{role},actor,'ADMIN_CHANGE_ROLE');}
 export async function toggleUserStatus(id:string,status:UserStatus,actor:StaffProfile):Promise<void>{await changeUser(id,{status},actor,'ADMIN_TOGGLE_STATUS');}
@@ -299,22 +308,29 @@ export async function updateUserProfile(id:string,updates:{name:string;departmen
 export async function batchUpdateUsersDepartment(oldDeptName:string,newDeptName:string,actor:StaffProfile):Promise<number>{
  requireAdmin(actor);const snapshot=await getDocsFromServer(query(collection(db,'appUsers'),where('department','==',oldDeptName)));
  for(let i=0;i<snapshot.docs.length;i+=400){const batch=writeBatch(db);snapshot.docs.slice(i,i+400).forEach(d=>batch.update(d.ref,{department:newDeptName}));await confirmed(batch.commit());}
- void audit('ADMIN_EDIT_DEPT',`ย้ายแผนก ${snapshot.size} บัญชี`,actor);return snapshot.size;
+ void audit('ADMIN_EDIT_DEPT',`ย้ายแผนกของพนักงาน ${snapshot.size} คน จาก "${oldDeptName}" ➔ "${newDeptName}" อัตโนมัติ`,actor);return snapshot.size;
 }
 export async function deleteUser(id:string,actor:StaffProfile):Promise<void>{
  requireAdmin(actor);if(id===actor.id)throw new Error('ไม่สามารถลบบัญชีตนเองได้');
- await confirmed(deleteDoc(doc(db,'appUsers',id)));void audit('ADMIN_DELETE_USER',`ลบบัญชี ${id}`,actor);
+ const target = await confirmed(runTransaction(db, async tx => {
+  const ref=doc(db,'appUsers',id); const snapshot=await tx.get(ref);
+  if(!snapshot.exists()) throw new Error('ไม่พบบัญชีผู้ใช้ที่ต้องการลบ');
+  tx.delete(ref); return snapshot.data() as AppUser;
+ }));
+ void audit('ADMIN_DELETE_USER',`ลบบัญชีผู้ใช้ @${target.username} (${target.name}) สิทธิ์: ${target.role} แผนก: ${target.department} ออกจากระบบ`,actor);
 }
 export async function authenticateLogin(usernameInput:string,plainPasswordInput:string):Promise<{success:boolean;user?:AppUser;error?:string}>{
  try {
   const username=usernameInput.trim().toLowerCase().replace(/^@/,'');
-  const users=await refreshCentralUsers();const user=users.find(u=>u.username.toLowerCase()===username);
+  const snapshot=await confirmed(getDocsFromServer(query(collection(db,'appUsers'),where('username','==',username),limit(1))));
+  const found=snapshot.docs[0]; const user=found ? {...found.data(),id:found.id} as AppUser : undefined;
   if(!user)return {success:false,error:'ไม่พบบัญชีในฐานข้อมูลกลาง กรุณาติดต่อผู้ดูแลระบบ'};
   if(user.status!=='active')return {success:false,error:'บัญชีนี้ถูกระงับการใช้งาน'};
   if(user.passwordHash!==await hashPassword(plainPasswordInput))return {success:false,error:'รหัสผ่านไม่ถูกต้อง'};
-  const timestamp=getFormattedTimestamp();await updateDoc(doc(db,'appUsers',user.id),{lastLoginAt:timestamp});
+  const timestamp=getFormattedTimestamp();
+  void updateDoc(doc(db,'appUsers',user.id),{lastLoginAt:timestamp}).catch(syncFailure);
   const profile:StaffProfile={id:user.id,username:user.username,name:user.name,department:user.department,avatar:user.avatar,role:user.role,status:user.status,lastLoginAt:timestamp};
-  setActiveSessionUser(profile);void audit('LOGIN','เข้าสู่ระบบ',profile);return {success:true,user:{...user,lastLoginAt:timestamp}};
+  setActiveSessionUser(profile);void audit('LOGIN',`เข้าสู่ระบบสำเร็จในบทบาท [${user.role}]`,profile);return {success:true,user:{...user,lastLoginAt:timestamp}};
  }catch(error){syncFailure(error);return {success:false,error:'เชื่อมต่อฐานข้อมูลกลางไม่ได้ กรุณาลองใหม่ ไม่ได้ตรวจสอบด้วยข้อมูลเก่าในเครื่อง'};}
 }
 

@@ -13,7 +13,7 @@ export function getDb(): Firestore {
   if (!dbInstance) {
     try {
       const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-      dbInstance = getFirestore(app);
+      dbInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
     } catch (e) {
       throw e;
     }
@@ -21,11 +21,12 @@ export function getDb(): Firestore {
   return dbInstance as Firestore;
 }
 
-// Operational records share the named database used by the browser.
-// Existing knowledge/config routes keep their original database.
-export function getOperationalDb(): Firestore {
+// All current routes share the named database already selected on main.
+export function getOperationalDb(): Firestore { return getDb(); }
+// Only the guarded, non-destructive legacy B2B copy uses the default database.
+export function getLegacyDb(): Firestore {
  const app=getApps().length>0?getApp():initializeApp(firebaseConfig);
- return getFirestore(app,firebaseConfig.firestoreDatabaseId||'(default)');
+ return getFirestore(app);
 }
 
 export const db: Firestore = getDb();

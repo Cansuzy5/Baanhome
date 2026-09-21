@@ -118,5 +118,5 @@ export function deleteCentralB2BAppointment(id: string, role?: UserRole) {
   return mutate({ action: 'delete', collection: 'appointments', id }, canUserManageSystem(role));
 }
 export function resetCentralB2BToDefault(role?: UserRole) {
-  return mutate({ leads: B2B_LEADS, appointments: INITIAL_B2B_APPOINTMENTS }, canUserManageSystem(role));
+  return Promise.resolve({success:false,error:'ปิดการรีเซ็ตข้อมูลตัวอย่าง เพื่อป้องกันการทับฐานข้อมูลกลาง กรุณาจัดการรายการที่ต้องการเป็นรายรายการ'});
 }

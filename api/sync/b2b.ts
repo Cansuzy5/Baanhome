@@ -1,5 +1,5 @@
 import { doc, getDocFromServer, runTransaction } from 'firebase/firestore';
-import { getDb, getOperationalDb } from '../_db.js';
+import { getLegacyDb, getOperationalDb } from '../_db.js';
 import { setCorsHeaders } from '../../lib/cors.js';
 import { applyB2BMutation, type B2BData } from '../../lib/b2bMutation.js';
 const normalize = (value: any): B2BData => ({ leads: Array.isArray(value?.leads) ? value.leads : [], appointments: Array.isArray(value?.appointments) ? value.appointments : [] });
@@ -17,7 +17,7 @@ export default async function handler(req: any, res: any) {
   // Never import browser caches or replace an existing destination (even an empty one).
   const destination=await getDocFromServer(ref);
   if(!destination.exists()) {
-   const legacy=await getDocFromServer(doc(getDb(),'systemConfig','b2b'));
+   const legacy=await getDocFromServer(doc(getLegacyDb(),'systemConfig','b2b'));
    if(legacy.exists()) {
     await runTransaction(getOperationalDb(),async tx=>{
      if(!(await tx.get(ref)).exists())tx.set(ref,{payload:normalize(legacy.data().payload),migratedFrom:'default/systemConfig/b2b',updatedAt:new Date().toISOString()});

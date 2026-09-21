@@ -36,7 +36,7 @@ import { B2BCalendarView } from './B2BCalendarView';
 import { AddLeadModal } from './AddLeadModal';
 import { AddAppointmentModal } from './AddAppointmentModal';
 import { ExportB2BModal } from './ExportB2BModal';
-import { GoogleSheetsDbConfig, appendAppointmentToSheet } from '../utils/googleSheetsDatabase';
+import { GoogleSheetsDbConfig } from '../utils/googleSheetsDatabase';
 import { getGoogleAccessToken } from '../utils/googleWorkspaceAuth';
 import {
   subscribeCentralB2B,
@@ -975,10 +975,24 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                             apt.status === 'completed'
                               ? 'bg-emerald-100 text-emerald-800'
+                              : apt.status === 'not_met'
+                              ? 'bg-rose-100 text-rose-800'
+                              : apt.status === 'rescheduled'
+                              ? 'bg-amber-100 text-amber-800'
+                              : apt.status === 'cancelled'
+                              ? 'bg-slate-200 text-slate-700'
                               : 'bg-blue-100 text-blue-800'
                           }`}
                         >
-                          {apt.status === 'completed' ? 'พบแล้ว' : 'รอเข้าพบ'}
+                          {apt.status === 'completed'
+                            ? 'พบแล้ว'
+                            : apt.status === 'not_met'
+                            ? 'ไม่ได้เข้าพบ'
+                            : apt.status === 'rescheduled'
+                            ? 'เลื่อนนัด'
+                            : apt.status === 'cancelled'
+                            ? 'ยกเลิกนัด'
+                            : 'รอเข้าพบ'}
                         </span>
                         <button
                           type="button"
