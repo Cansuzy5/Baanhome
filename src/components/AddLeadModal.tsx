@@ -31,7 +31,7 @@ const OFFER_OPTIONS = [
   'ห้องพัก รีสอร์ท',
   'ห้องพัก พูลวิลล่า',
 ] as const;
-const PIPELINE_STAGES = ['ยังไม่ติดต่อ','ติดต่อแล้ว','นัดเข้าพบ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership','ปิดการขายแล้ว'];
+const PIPELINE_STAGES = ['ยังไม่ติดต่อ','ติดต่อแล้ว','นัดเข้าพบ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership','ปิดการขาย'];
 
 export const AddLeadModal: React.FC<AddLeadModalProps> = ({
   isOpen, onClose, onSave, editLead, coordinators = [], onManageCoordinators,
@@ -226,7 +226,10 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
             <label className="space-y-1"><span className="text-xs font-bold">ระดับความสำคัญ</span><select value={priority} onChange={e=>setPriority(e.target.value as any)} className="w-full px-3 py-2 rounded-xl border bg-white"><option value="A">A — ด่วน / โอกาสสูง</option><option value="B">B — ปานกลาง</option><option value="C">C — ทั่วไป</option></select></label>
-            <label className="space-y-1"><span className="text-xs font-bold">สถานะการติดตาม</span><select value={pipelineStage} onChange={e=>setPipelineStage(e.target.value)} className="w-full px-3 py-2 rounded-xl border bg-white">{PIPELINE_STAGES.map(v=><option key={v}>{v}</option>)}</select></label>
+            <label className="space-y-1"><span className="text-xs font-bold">สถานะการติดตาม</span><select value={pipelineStage} onChange={e=>setPipelineStage(e.target.value)} className="w-full px-3 py-2 rounded-xl border bg-white">
+              {!PIPELINE_STAGES.includes(pipelineStage) && pipelineStage && <option value={pipelineStage}>{pipelineStage} (ข้อมูลเดิม)</option>}
+              {PIPELINE_STAGES.map(v=><option key={v}>{v}</option>)}
+            </select></label>
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
             <label className="space-y-1"><span className="text-xs font-bold">เหตุผลที่ควรเข้าพบ</span><textarea rows={2} value={reasons} onChange={e=>setReasons(e.target.value)} className="w-full px-3 py-2 rounded-xl border"/></label>
