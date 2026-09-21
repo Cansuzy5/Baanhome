@@ -1,397 +1,182 @@
-import React, { useState } from 'react';
-import { X, Building2, Phone, Mail, User, Tag, Calendar, Clock, FileText, CheckCircle2 } from 'lucide-react';
-import { B2BLead } from '../types';
+import React, { useMemo, useState } from 'react';
+import { X, Building2, CheckCircle2, Plus, Tag } from 'lucide-react';
+import { B2BLead, B2BCoordinator } from '../types';
 
 interface AddLeadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (lead: B2BLead, scheduleAppointment?: { date: string; time: string; title: string; location: string }) => void;
+  onSave: (lead: B2BLead) => void | Promise<void>;
   editLead?: B2BLead | null;
+  coordinators?: B2BCoordinator[];
+  onManageCoordinators?: () => void;
 }
 
 const ORG_TYPES = [
   'หน่วยงานราชการ / สำนักงานจังหวัด',
   'สถาบันการศึกษา / มหาวิทยาลัย / วิทยาลัย',
   'โรงพยาบาล / สาธารณสุข',
-  'รัฐวิสาหกิจ (กฟภ., ประปา, ธ.ก.ส., ออมสิน)',
+  'รัฐวิสาหกิจ',
   'ภาคเอกชน / หอการค้า / สภาอุตสาหกรรม',
-  'องค์กรปกครองส่วนท้องถิ่น (อบจ., เทศบาล, อบต.)',
+  'องค์กรปกครองส่วนท้องถิ่น',
   'สมาคม / มูลนิธิ / ชมรม',
-  'ศูนย์ประสานงานพิเศษ / อื่นๆ',
+  'อื่นๆ',
 ];
 
-const PIPELINE_STAGES = [
-  'ยังไม่ติดต่อ',
-  'ติดต่อแล้ว',
-  'นัดเข้าพบ',
-  'ส่งใบเสนอราคาแล้ว',
-  'ตกลง Partnership',
-  'ปิดการขายแล้ว',
-];
+const EVENT_TYPES = ['ประชุม', 'จัดเลี้ยง', 'สัมมนา'] as const;
+const OFFER_OPTIONS = [
+  'อาหารกลางวันคณะ',
+  'อาหารบุฟเฟต์สำหรับคณะ',
+  'อาหารว่าง',
+  'เมนู Signature บ้านโฮม',
+  'ห้องพัก รีสอร์ท',
+  'ห้องพัก พูลวิลล่า',
+] as const;
+const PIPELINE_STAGES = ['ยังไม่ติดต่อ','ติดต่อแล้ว','นัดเข้าพบ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership','ปิดการขายแล้ว'];
 
 export const AddLeadModal: React.FC<AddLeadModalProps> = ({
-  isOpen,
-  onClose,
-  onSave,
-  editLead,
+  isOpen, onClose, onSave, editLead, coordinators = [], onManageCoordinators,
 }) => {
-  const [name, setName] = useState(editLead?.name || '');
-  const [priority, setPriority] = useState<'A' | 'B' | 'C'>(editLead?.priority || 'A');
-  const [orgType, setOrgType] = useState(editLead?.orgType || editLead?.categoryType || ORG_TYPES[0]);
-  const [contactPerson, setContactPerson] = useState(editLead?.contactPerson || '');
-  const [phone, setPhone] = useState(editLead?.phone || '');
-  const [email, setEmail] = useState(editLead?.email || '');
-  const [offer, setOffer] = useState(editLead?.offer || editLead?.proposalOffer || '');
-  const [format, setFormat] = useState(editLead?.format || editLead?.opportunity || '');
-  const [pipelineStage, setPipelineStage] = useState(
-    editLead?.pipelineStage || editLead?.contactStatus || 'ยังไม่ติดต่อ'
-  );
-  const [reasonsToApproach, setReasonsToApproach] = useState(editLead?.reasonsToApproach || '');
-  const [nextAction, setNextAction] = useState(editLead?.nextAction || '');
-  const [notes, setNotes] = useState(editLead?.notes || '');
+  const oldEventText = editLead?.eventType || '';
+  const legacyEvent = !EVENT_TYPES.includes(oldEventText as any)
+    ? (editLead?.legacyEventTypeText || editLead?.format || editLead?.opportunity || '')
+    : '';
 
-  // Quick schedule appointment switch
-  const [alsoSchedule, setAlsoSchedule] = useState(false);
-  const [aptDate, setAptDate] = useState(editLead?.appointmentDate || '2026-09-10');
-  const [aptTime, setAptTime] = useState(editLead?.appointmentTime || '10:00');
-  const [aptLocation, setAptLocation] = useState('บ้านโฮม สวนอาหาร&รีสอร์ท (ห้อง VIP 1)');
-  const [aptTitle, setAptTitle] = useState('นัดเข้าพบนำเสนอแพ็กเกจห้องประชุม & ชิมอาหาร');
+  const oldOfferText = editLead?.offer || editLead?.proposalOffer || '';
+  const knownInitial = editLead?.featuredOffers || OFFER_OPTIONS.filter((x)=>oldOfferText.split(/[,/|]/).map(v=>v.trim()).includes(x));
+  const legacyOffer = editLead?.legacyOfferText || (knownInitial.length === 0 ? oldOfferText : '');
 
-  if (!isOpen) return null;
+  const [name,setName]=useState(editLead?.name||'');
+  const [orgType,setOrgType]=useState(editLead?.orgType||editLead?.categoryType||'');
+  const [contactPerson,setContactPerson]=useState(editLead?.contactPerson||'');
+  const [contactPosition,setContactPosition]=useState(editLead?.contactPosition||'');
+  const [phone,setPhone]=useState(editLead?.phone||'');
+  const [email,setEmail]=useState(editLead?.email||editLead?.lineId||'');
+  const [eventType,setEventType]=useState<B2BLead['eventType']>(EVENT_TYPES.includes(oldEventText as any)?oldEventText as any:'');
+  const [attendees,setAttendees]=useState(editLead?.attendeesEstimate ? String(editLead.attendeesEstimate) : '');
+  const [eventDate,setEventDate]=useState(editLead?.eventDate||'');
+  const [requirements,setRequirements]=useState(editLead?.eventRequirements||legacyEvent);
+  const [coordinatorId,setCoordinatorId]=useState(editLead?.baanHomeCoordinatorId||'');
+  const [priority,setPriority]=useState<'A'|'B'|'C'>(editLead?.priority||'B');
+  const [pipelineStage,setPipelineStage]=useState(editLead?.pipelineStage||editLead?.contactStatus||'ยังไม่ติดต่อ');
+  const [reasons,setReasons]=useState(editLead?.reasonsToApproach||'');
+  const [nextAction,setNextAction]=useState(editLead?.nextAction||'');
+  const [offers,setOffers]=useState<string[]>(knownInitial);
+  const [offerPicker,setOfferPicker]=useState('');
+  const [offerDetails,setOfferDetails]=useState(editLead?.offerDetails||legacyOffer||'');
+  const [saving,setSaving]=useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
+  const activeCoordinators=useMemo(()=>coordinators.filter(c=>c.active || c.id===coordinatorId),[coordinators,coordinatorId]);
+  if(!isOpen) return null;
 
-    const leadId = editLead?.id || `KH-${Math.floor(200 + Math.random() * 800)}`;
-    const newLead: B2BLead = {
-      ...(editLead || {}),
-      id: leadId,
-      name: name.trim(),
-      priority,
-      orgType,
-      categoryType: orgType,
-      contactPerson: contactPerson.trim(),
-      phone: phone.trim(),
-      email: email.trim(),
-      offer: offer.trim() || 'Corporate Rate & ห้องประชุม VIP พร้อมอาหารกลางวัน',
-      proposalOffer: offer.trim() || 'Corporate Rate & ห้องประชุม VIP พร้อมอาหารกลางวัน',
-      format: format.trim() || 'อบรมสัมมนา / ประชุมประจำเดือน (20-40 ท่าน)',
-      opportunity: format.trim() || 'อบรมสัมมนา / ประชุมประจำเดือน (20-40 ท่าน)',
-      pipelineStage,
-      contactStatus: pipelineStage,
-      reasonsToApproach: reasonsToApproach.trim(),
-      nextAction: nextAction.trim(),
-      notes: notes.trim(),
-      appointmentDate: alsoSchedule ? aptDate : editLead?.appointmentDate,
-      appointmentTime: alsoSchedule ? aptTime : editLead?.appointmentTime,
-      isCustom: true,
-      updatedAt: new Date().toISOString().split('T')[0],
-    };
-
-    const appointmentPayload = alsoSchedule
-      ? {
-          date: aptDate,
-          time: aptTime,
-          title: aptTitle,
-          location: aptLocation,
-        }
-      : undefined;
-
-    onSave(newLead, appointmentPayload);
-    onClose();
+  const addOffer=(value:string)=>{
+    if(value && !offers.includes(value)) setOffers([...offers,value]);
+    setOfferPicker('');
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full my-6 overflow-hidden border border-[#E3ECE1] flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-[#1B3E2D] to-[#2D5A43] text-white p-5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-white/15 flex items-center justify-center">
-              <Building2 className="w-5 h-5 text-[#E6F4EA]" />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-bold">
-                {editLead ? 'แก้ไขข้อมูลศูนย์ประสานงาน / หน่วยงาน' : 'เพิ่มศูนย์ประสานงาน / หน่วยงาน B2B ใหม่'}
-              </h2>
-              <p className="text-xs text-[#C5E1D0]">
-                บันทึกลงในระบบ B2B Pipeline ของบ้านโฮม พร้อมเชื่อมโยงการนัดหมาย
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl hover:bg-white/20 transition-colors text-white/80 hover:text-white"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+  const submit=async(e:React.FormEvent)=>{
+    e.preventDefault();
+    if(!name.trim()||saving)return;
+    const coordinator=coordinators.find(c=>c.id===coordinatorId);
+    const lead:B2BLead={
+      ...(editLead||{}),
+      id:editLead?.id||`KH-${Date.now().toString().slice(-8)}`,
+      name:name.trim(),
+      priority,
+      orgType:orgType||undefined,
+      categoryType:orgType||editLead?.categoryType,
+      contactPerson:contactPerson.trim(),
+      contactPosition:contactPosition.trim(),
+      phone:phone.trim(),
+      email:email.trim(),
+      eventType,
+      attendeesEstimate:attendees?Number(attendees):undefined,
+      eventDate:eventDate||undefined,
+      eventRequirements:requirements.trim(),
+      baanHomeCoordinatorId:coordinator?.id||undefined,
+      baanHomeCoordinatorName:coordinator?.name||undefined,
+      baanHomeCoordinatorPhone:coordinator?.phone||undefined,
+      pipelineStage,
+      contactStatus:pipelineStage,
+      reasonsToApproach:reasons.trim(),
+      nextAction:nextAction.trim(),
+      featuredOffers:offers,
+      offer:offers.join(', '),
+      proposalOffer:offers.join(', '),
+      offerDetails:offerDetails.trim(),
+      legacyEventTypeText:editLead?.legacyEventTypeText || legacyEvent || undefined,
+      legacyOfferText:editLead?.legacyOfferText || legacyOffer || undefined,
+      isCustom:editLead?.isCustom ?? true,
+      updatedAt:new Date().toISOString().split('T')[0],
+    };
+    setSaving(true);
+    try{await onSave(lead);onClose();}finally{setSaving(false);}
+  };
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 sm:p-6 overflow-y-auto space-y-4 text-sm text-[#1B3E2D]">
-          {/* Organization Name & Priority */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-[#305340] mb-1">
-                ชื่อศูนย์ประสานงาน / หน่วยงาน <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="เช่น ศูนย์ส่งเสริมอุตสาหกรรมภาค, สภาทนายความกาฬสินธุ์"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-[#D5E2D2] focus:border-[#2D5A43] focus:ring-2 focus:ring-[#2D5A43]/20 text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#305340] mb-1">
-                ระดับความสำคัญ (Priority)
-              </label>
-              <div className="grid grid-cols-3 gap-1.5 pt-0.5">
-                {(['A', 'B', 'C'] as const).map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setPriority(p)}
-                    className={`py-2 text-xs font-bold rounded-xl border transition-all ${
-                      priority === p
-                        ? p === 'A'
-                          ? 'bg-red-600 text-white border-red-600 shadow-sm'
-                          : p === 'B'
-                          ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
-                          : 'bg-emerald-700 text-white border-emerald-700 shadow-sm'
-                        : 'bg-[#F7FAF6] text-[#557361] border-[#DCE8DA] hover:bg-[#EEF5EC]'
-                    }`}
-                  >
-                    Rank {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Org Type & Pipeline Stage */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-[#305340] mb-1">
-                ประเภทหน่วยงาน / สังกัด
-              </label>
-              <select
-                value={orgType}
-                onChange={(e) => setOrgType(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-[#D5E2D2] focus:border-[#2D5A43] focus:ring-2 focus:ring-[#2D5A43]/20 text-xs sm:text-sm bg-white"
-              >
-                {ORG_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#305340] mb-1">
-                สถานะการเข้าพบ / Pipeline
-              </label>
-              <select
-                value={pipelineStage}
-                onChange={(e) => setPipelineStage(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-[#D5E2D2] focus:border-[#2D5A43] focus:ring-2 focus:ring-[#2D5A43]/20 text-xs sm:text-sm bg-white"
-              >
-                {PIPELINE_STAGES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Contact Person, Phone & Email */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-[#305340] mb-1">
-                ผู้ประสานงาน / ตำแหน่ง
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 absolute left-3 top-3 text-[#7B9986]" />
-                <input
-                  type="text"
-                  value={contactPerson}
-                  onChange={(e) => setContactPerson(e.target.value)}
-                  placeholder="เช่น คุณวิภาวรรณ (หน.ธุรการ)"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-[#D5E2D2] focus:border-[#2D5A43] text-xs sm:text-sm"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#305340] mb-1">
-                เบอร์โทรศัพท์ติดต่อ
-              </label>
-              <div className="relative">
-                <Phone className="w-4 h-4 absolute left-3 top-3 text-[#7B9986]" />
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="043-xxx-xxx หรือ 08x-xxx"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-[#D5E2D2] focus:border-[#2D5A43] text-xs sm:text-sm"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#305340] mb-1">
-                อีเมล / LINE ID
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 absolute left-3 top-3 text-[#7B9986]" />
-                <input
-                  type="text"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="contact@org.go.th"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-[#D5E2D2] focus:border-[#2D5A43] text-xs sm:text-sm"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Tailored Offer & Format */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-[#305340] mb-1">
-                ข้อเสนอที่ควรชู (Tailored Offer)
-              </label>
-              <input
-                type="text"
-                value={offer}
-                onChange={(e) => setOffer(e.target.value)}
-                placeholder="เช่น Corporate Rate 15%, ฟรีห้องจัดเบรก VIP"
-                className="w-full px-3.5 py-2 rounded-xl border border-[#D5E2D2] focus:border-[#2D5A43] text-xs sm:text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#305340] mb-1">
-                รูปแบบการจัดงาน / โอกาส (Format)
-              </label>
-              <input
-                type="text"
-                value={format}
-                onChange={(e) => setFormat(e.target.value)}
-                placeholder="เช่น อบรมบุคลากรประจำปี 30-40 คน"
-                className="w-full px-3.5 py-2 rounded-xl border border-[#D5E2D2] focus:border-[#2D5A43] text-xs sm:text-sm"
-              />
-            </div>
-          </div>
-
-          {/* Next Action & Reasons to approach */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-[#305340] mb-1">
-                เหตุผลที่ควรเข้าหา (Reasons to Approach)
-              </label>
-              <textarea
-                rows={2}
-                value={reasonsToApproach}
-                onChange={(e) => setReasonsToApproach(e.target.value)}
-                placeholder="มีงบอบรมสัมมนาสม่ำเสมอ ต้องการห้องประชุมส่วนตัวใกล้เมือง..."
-                className="w-full px-3.5 py-2 rounded-xl border border-[#D5E2D2] focus:border-[#2D5A43] text-xs sm:text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#305340] mb-1">
-                แผนดำเนินการถัดไป (Next Action)
-              </label>
-              <textarea
-                rows={2}
-                value={nextAction}
-                onChange={(e) => setNextAction(e.target.value)}
-                placeholder="โทรนัดหมายหัวหน้าฝ่ายแผนงานเพื่อส่งแคตตาล็อก..."
-                className="w-full px-3.5 py-2 rounded-xl border border-[#D5E2D2] focus:border-[#2D5A43] text-xs sm:text-sm"
-              />
-            </div>
-          </div>
-
-          {/* Appointment Scheduling Option */}
-          <div className="bg-[#F4F9F2] p-4 rounded-2xl border border-[#D8E8D5] space-y-3">
-            <label className="flex items-center gap-2.5 cursor-pointer font-bold text-xs sm:text-sm text-[#1B3E2D]">
-              <input
-                type="checkbox"
-                checked={alsoSchedule}
-                onChange={(e) => setAlsoSchedule(e.target.checked)}
-                className="w-4 h-4 rounded text-[#2D5A43] focus:ring-[#2D5A43]"
-              />
-              <span>📅 บันทึกนัดหมายเข้าพบลงในปฏิทิน (Schedule Appointment)</span>
-            </label>
-
-            {alsoSchedule && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-[#E1EDE0]">
-                <div>
-                  <label className="block text-[11px] font-bold text-[#3C644E] mb-1">
-                    วันที่นัดหมาย
-                  </label>
-                  <input
-                    type="date"
-                    value={aptDate}
-                    onChange={(e) => setAptDate(e.target.value)}
-                    className="w-full px-3 py-1.5 rounded-xl border border-[#CFDFCC] text-xs bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-[#3C644E] mb-1">
-                    เวลานัดหมาย
-                  </label>
-                  <input
-                    type="time"
-                    value={aptTime}
-                    onChange={(e) => setAptTime(e.target.value)}
-                    className="w-full px-3 py-1.5 rounded-xl border border-[#CFDFCC] text-xs bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-[#3C644E] mb-1">
-                    สถานที่นัดพบ
-                  </label>
-                  <input
-                    type="text"
-                    value={aptLocation}
-                    onChange={(e) => setAptLocation(e.target.value)}
-                    placeholder="ห้อง VIP 1 บ้านโฮม / สำนักงานลูกค้า"
-                    className="w-full px-3 py-1.5 rounded-xl border border-[#CFDFCC] text-xs bg-white"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Footer Action Buttons */}
-          <div className="pt-3 border-t border-[#E3ECE1] flex items-center justify-end gap-2.5">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-[#5B7967] hover:bg-[#F2F6F1] transition-colors"
-            >
-              ยกเลิก
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-[#1B3E2D] hover:bg-[#25503B] text-white shadow-md hover:shadow-lg transition-all flex items-center gap-1.5"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{editLead ? 'บันทึกการแก้ไข' : 'บันทึกหน่วยงานใหม่'}</span>
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+  const section=(title:string,children:React.ReactNode)=>(
+    <section className="rounded-2xl border border-[#E2EAE0] bg-[#FBFCFA] p-4 space-y-3">
+      <h3 className="text-sm font-bold text-[#183A28]">{title}</h3>{children}
+    </section>
   );
+
+  return <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-sm overflow-y-auto">
+    <div className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full my-5 overflow-hidden max-h-[92vh] flex flex-col">
+      <div className="bg-[#1B3E2D] text-white p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3"><Building2 className="w-5 h-5"/><div><h2 className="font-bold">{editLead?'แก้ไขข้อมูลลูกค้า / หน่วยงาน':'เพิ่มลูกค้า / หน่วยงาน'}</h2><p className="text-xs text-white/70">แยกข้อมูลลูกค้าและข้อมูลบ้านโฮมให้ชัดเจน</p></div></div>
+        <button onClick={onClose} className="p-2"><X className="w-5 h-5"/></button>
+      </div>
+      <form onSubmit={submit} className="p-4 sm:p-5 overflow-y-auto space-y-4 text-sm">
+        {section('1. ลูกค้า / หน่วยงาน',<>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label className="space-y-1"><span className="text-xs font-bold">ชื่อหน่วยงาน *</span><input required value={name} onChange={e=>setName(e.target.value)} className="w-full px-3 py-2 rounded-xl border"/></label>
+            <label className="space-y-1"><span className="text-xs font-bold">ประเภทหน่วยงาน</span><select value={orgType} onChange={e=>setOrgType(e.target.value)} className="w-full px-3 py-2 rounded-xl border bg-white"><option value="">-- ยังไม่ระบุ --</option>{ORG_TYPES.map(v=><option key={v}>{v}</option>)}</select></label>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label className="space-y-1"><span className="text-xs font-bold">ชื่อผู้ติดต่อฝั่งลูกค้า</span><input value={contactPerson} onChange={e=>setContactPerson(e.target.value)} className="w-full px-3 py-2 rounded-xl border"/></label>
+            <label className="space-y-1"><span className="text-xs font-bold">ตำแหน่งผู้ติดต่อฝั่งลูกค้า</span><input value={contactPosition} onChange={e=>setContactPosition(e.target.value)} className="w-full px-3 py-2 rounded-xl border"/></label>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label className="space-y-1"><span className="text-xs font-bold">เบอร์โทร</span><input value={phone} onChange={e=>setPhone(e.target.value)} className="w-full px-3 py-2 rounded-xl border"/></label>
+            <label className="space-y-1"><span className="text-xs font-bold">อีเมล / LINE</span><input value={email} onChange={e=>setEmail(e.target.value)} className="w-full px-3 py-2 rounded-xl border"/></label>
+          </div>
+        </>)}
+
+        {section('2. ความต้องการจัดงาน',<>
+          <div className="grid sm:grid-cols-3 gap-3">
+            <label className="space-y-1"><span className="text-xs font-bold">ประเภทงาน</span><select value={eventType} onChange={e=>setEventType(e.target.value as any)} className="w-full px-3 py-2 rounded-xl border bg-white"><option value="">-- เลือกประเภทงาน --</option>{EVENT_TYPES.map(v=><option key={v}>{v}</option>)}</select></label>
+            <label className="space-y-1"><span className="text-xs font-bold">จำนวนผู้เข้าร่วมโดยประมาณ</span><input type="number" min="1" value={attendees} onChange={e=>setAttendees(e.target.value)} className="w-full px-3 py-2 rounded-xl border"/></label>
+            <label className="space-y-1"><span className="text-xs font-bold">วันที่ลูกค้าคาดว่าจะจัดงาน</span><input type="date" value={eventDate} onChange={e=>setEventDate(e.target.value)} className="w-full px-3 py-2 rounded-xl border"/></label>
+          </div>
+          <label className="space-y-1 block"><span className="text-xs font-bold">รายละเอียดความต้องการ</span><textarea rows={2} value={requirements} onChange={e=>setRequirements(e.target.value)} className="w-full px-3 py-2 rounded-xl border"/></label>
+          {legacyEvent && <p className="text-[11px] text-amber-700 bg-amber-50 rounded-xl p-2">ข้อมูลเดิมที่ยังจับคู่ Dropdown ไม่ได้ถูกเก็บไว้: {legacyEvent}</p>}
+        </>)}
+
+        {section('3. ผู้รับผิดชอบบ้านโฮม',<>
+          <div className="grid sm:grid-cols-[1fr_auto] gap-2 items-end">
+            <label className="space-y-1"><span className="text-xs font-bold">ผู้ประสานงานบ้านโฮม</span><select value={coordinatorId} onChange={e=>setCoordinatorId(e.target.value)} className="w-full px-3 py-2 rounded-xl border bg-white"><option value="">-- ยังไม่ระบุ --</option>{activeCoordinators.map(c=><option key={c.id} value={c.id}>{c.name}{c.phone?` · ${c.phone}`:''}{!c.active?' (ปิดใช้งาน)':''}</option>)}</select></label>
+            {onManageCoordinators&&<button type="button" onClick={onManageCoordinators} className="px-3 py-2 rounded-xl border border-[#C9D9C6] text-xs font-bold text-[#24563B]">จัดการรายชื่อ</button>}
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label className="space-y-1"><span className="text-xs font-bold">ระดับความสำคัญ</span><select value={priority} onChange={e=>setPriority(e.target.value as any)} className="w-full px-3 py-2 rounded-xl border bg-white"><option value="A">A — ด่วน / โอกาสสูง</option><option value="B">B — ปานกลาง</option><option value="C">C — ทั่วไป</option></select></label>
+            <label className="space-y-1"><span className="text-xs font-bold">สถานะการติดตาม</span><select value={pipelineStage} onChange={e=>setPipelineStage(e.target.value)} className="w-full px-3 py-2 rounded-xl border bg-white">{PIPELINE_STAGES.map(v=><option key={v}>{v}</option>)}</select></label>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label className="space-y-1"><span className="text-xs font-bold">เหตุผลที่ควรเข้าพบ</span><textarea rows={2} value={reasons} onChange={e=>setReasons(e.target.value)} className="w-full px-3 py-2 rounded-xl border"/></label>
+            <label className="space-y-1"><span className="text-xs font-bold">ขั้นตอนถัดไป</span><textarea rows={2} value={nextAction} onChange={e=>setNextAction(e.target.value)} className="w-full px-3 py-2 rounded-xl border"/></label>
+          </div>
+        </>)}
+
+        {section('4. ข้อเสนอจากบ้านโฮม',<>
+          <div>
+            <label className="text-xs font-bold">ข้อเสนอที่ควรชู</label>
+            <select value={offerPicker} onChange={e=>addOffer(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-xl border bg-white"><option value="">+ เลือกข้อเสนอ</option>{OFFER_OPTIONS.filter(v=>!offers.includes(v)).map(v=><option key={v}>{v}</option>)}</select>
+          </div>
+          <div className="flex flex-wrap gap-2">{offers.map(v=><button key={v} type="button" onClick={()=>setOffers(offers.filter(x=>x!==v))} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#EAF4E7] text-[#24563B] text-xs font-bold"><Tag className="w-3 h-3"/>{v}<X className="w-3 h-3"/></button>)}</div>
+          <label className="space-y-1 block"><span className="text-xs font-bold">รายละเอียดข้อเสนอเพิ่มเติม</span><textarea rows={2} value={offerDetails} onChange={e=>setOfferDetails(e.target.value)} placeholder="ราคา แพ็กเกจ หรือเงื่อนไขเฉพาะราย" className="w-full px-3 py-2 rounded-xl border"/></label>
+          {legacyOffer && <p className="text-[11px] text-amber-700 bg-amber-50 rounded-xl p-2">ข้อเสนอเดิมที่ยังจับคู่ไม่ได้ถูกเก็บไว้: {legacyOffer}</p>}
+        </>)}
+
+        <div className="flex justify-end gap-2 pt-2 border-t"><button type="button" onClick={onClose} className="px-4 py-2 text-sm">ยกเลิก</button><button disabled={saving} className="px-5 py-2 rounded-xl bg-[#1B3E2D] text-white font-bold flex items-center gap-1"><CheckCircle2 className="w-4 h-4"/>{saving?'กำลังบันทึก…':'บันทึกข้อมูล'}</button></div>
+      </form>
+    </div>
+  </div>;
 };
