@@ -102,12 +102,14 @@ export function exportAppointmentsToCsv(
     escapeCsvCell(a.objective),
     escapeCsvCell(
       a.status === 'scheduled'
-        ? 'นัดหมายแล้ว'
+        ? 'รอเข้าพบ'
         : a.status === 'completed'
-        ? 'พบเสร็จสิ้น'
+        ? 'พบแล้ว'
+        : a.status === 'not_met'
+        ? 'ไม่ได้เข้าพบ'
         : a.status === 'rescheduled'
         ? 'เลื่อนนัด'
-        : 'ยกเลิก'
+        : 'ยกเลิกนัด'
     ),
     escapeCsvCell(a.priority || '-'),
     escapeCsvCell(a.contactPerson || ''),
