@@ -197,20 +197,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       return false;
     }
 
-    // Sync appointment date into lead if matching
-    if (apt.leadId) {
-      const existingLead = leadsList.find((l) => l.id === apt.leadId);
-      if (existingLead) {
-        const updatedLead: B2BLead = {
-          ...existingLead,
-          appointmentDate: apt.date,
-          appointmentTime: apt.time,
-          pipelineStage: existingLead.pipelineStage === 'ยังไม่ติดต่อ' ? 'นัดเข้าพบ' : existingLead.pipelineStage,
-          contactStatus: existingLead.contactStatus === 'ยังไม่ติดต่อ' ? 'นัดเข้าพบ' : existingLead.contactStatus,
-        };
-        await saveCentralB2BLead(updatedLead, currentRole);
-      }
-    }
+    // Appointment edits stay appointment-specific. Lead master data is changed only from the lead edit action.
     return true;
   };
 
@@ -278,8 +265,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   // Filtered Leads
   const filteredLeads = useMemo(() => {
     return leadsList.filter((lead) => {
-      const offerText = lead.offer || lead.proposalOffer || '';
-      const formatText = lead.format || lead.opportunity || '';
+      const offerText = [lead.featuredOffers?.join(' '), lead.offer, lead.proposalOffer, lead.offerDetails].filter(Boolean).join(' ');
+      const formatText = [lead.eventType, lead.eventRequirements, lead.format, lead.opportunity].filter(Boolean).join(' ');
       const stageText = lead.pipelineStage || lead.contactStatus || 'ยังไม่ติดต่อ';
       const orgTypeText = lead.orgType || lead.categoryType || '';
       const reasonText = lead.reasonsToApproach || '';
@@ -292,7 +279,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         formatText.toLowerCase().includes(searchTerm.toLowerCase()) ||
         orgTypeText.toLowerCase().includes(searchTerm.toLowerCase()) ||
         reasonText.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (lead.contactPerson && lead.contactPerson.toLowerCase().includes(searchTerm.toLowerCase()));
+        (lead.contactPerson && lead.contactPerson.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (lead.contactPosition && lead.contactPosition.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (lead.baanHomeCoordinatorName && lead.baanHomeCoordinatorName.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const matchesPriority =
         selectedPriority === 'All' || lead.priority === selectedPriority;
@@ -525,7 +514,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           leads={leadsList}
           onAddAppointment={(date) => {
             setEditingApt(null);
-            setAptDefaultDate(date || '2026-09-09');
+            setAptDefaultDate(date || new Date().toISOString().slice(0,10));
             setAptDefaultLead(null);
             setIsAddAptModalOpen(true);
           }}
@@ -664,7 +653,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                       </div>
 
                       <p className="text-xs text-[#526D5E] line-clamp-1">
-                        🎯 สิ่งที่ควรเสนอ: <strong>{lead.offer || lead.proposalOffer || 'Corporate Rate + ห้องประชุม VIP'}</strong>
+                        🎯 ข้อเสนอจากบ้านโฮม: <strong>{lead.featuredOffers?.length ? lead.featuredOffers.join(', ') : (lead.offer || lead.proposalOffer || 'ยังไม่ระบุ')}</strong>
                       </p>
 
                       <div className="flex items-center gap-3 text-[11px] text-[#728A7C] flex-wrap">
@@ -680,9 +669,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                             <span>{lead.phone}</span>
                           </span>
                         )}
-                        {(lead.format || lead.opportunity) && (
+                        {(lead.eventType || lead.eventRequirements || lead.format || lead.opportunity) && (
                           <span className="bg-[#FAF9F5] px-2 py-0.5 rounded border border-[#EDE8DB]">
-                            รูปแบบ: {lead.format || lead.opportunity}
+                            งาน: {lead.eventType || lead.eventRequirements || lead.format || lead.opportunity}
                           </span>
                         )}
                         {lead.appointmentDate && (
@@ -717,7 +706,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                         e.stopPropagation();
                         setEditingApt(null);
                         setAptDefaultLead(lead);
-                        setAptDefaultDate(lead.appointmentDate || '2026-09-10');
+                        setAptDefaultDate(new Date().toISOString().slice(0,10));
                         setIsAddAptModalOpen(true);
                       }}
                       className="p-2 rounded-xl bg-[#FAFBF8] hover:bg-[#EEF5EC] text-[#24563B] border border-[#DEE7DC] transition-colors"
@@ -818,40 +807,27 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               </div>
             </div>
 
-            {/* Core Info Grid */}
+            {/* Customer and BaanHome context */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs sm:text-sm">
-              <div className="bg-[#FAFBF9] p-3.5 rounded-2xl border border-[#E9EFE7] space-y-1">
-                <span className="text-[#647F70] text-xs font-semibold block">
-                  👤 ผู้ประสานงาน / รูปแบบความร่วมมือ:
-                </span>
-                <p className="font-bold text-[#1B3E2D]">
-                  {activeLeadModal.cooperationType ||
-                    activeLeadModal.contactPerson ||
-                    'หัวหน้างานอบรม / ฝ่ายธุรการ'}
-                </p>
+              <div className="bg-[#F7FBF5] p-3.5 rounded-2xl border border-[#DDE8DA] space-y-1">
+                <span className="text-[#24563B] text-xs font-bold block">ข้อมูลฝั่งลูกค้า / หน่วยงาน</span>
+                <p><strong>ผู้ติดต่อ:</strong> {activeLeadModal.contactPerson || 'ยังไม่ระบุ'}</p>
+                <p><strong>ตำแหน่ง:</strong> {activeLeadModal.contactPosition || 'ยังไม่ระบุ'}</p>
+                <p><strong>โทร:</strong> {activeLeadModal.phone || 'ยังไม่ระบุ'}</p>
+                <p><strong>อีเมล / LINE:</strong> {activeLeadModal.email || activeLeadModal.lineId || 'ยังไม่ระบุ'}</p>
+                <p><strong>ประเภทงาน:</strong> {activeLeadModal.eventType || 'ยังไม่ระบุ'}</p>
+                <p><strong>จำนวนคน:</strong> {activeLeadModal.attendeesEstimate || 'ยังไม่ระบุ'}</p>
+                <p><strong>วันที่คาดว่าจะจัดงาน:</strong> {activeLeadModal.eventDate || 'ยังไม่ระบุ'}</p>
               </div>
 
-              <div className="bg-[#FAFBF9] p-3.5 rounded-2xl border border-[#E9EFE7] space-y-1">
-                <span className="text-[#647F70] text-xs font-semibold block">
-                  📞 เบอร์โทรศัพท์ / ติดต่อ:
-                </span>
-                <div className="flex items-center justify-between">
-                  <span className="font-mono font-bold text-[#1B3E2D]">
-                    {activeLeadModal.phone || 'โทรสอบถามผ่านส่วนกลาง'}
-                  </span>
-                  {activeLeadModal.phone && (
-                    <button
-                      onClick={() => handleCopyPhone(activeLeadModal.phone!)}
-                      className="text-xs text-[#206038] font-bold hover:underline cursor-pointer flex items-center gap-1"
-                    >
-                      {copiedPhone === activeLeadModal.phone ? (
-                        <span className="text-[#1E7238]">คัดลอกแล้ว ✓</span>
-                      ) : (
-                        <span>คัดลอกเบอร์</span>
-                      )}
-                    </button>
-                  )}
-                </div>
+              <div className="bg-[#FFFCF4] p-3.5 rounded-2xl border border-[#E8E1CD] space-y-1">
+                <span className="text-[#735518] text-xs font-bold block">ข้อมูลฝั่งบ้านโฮม</span>
+                <p><strong>ผู้ประสานงานบ้านโฮม:</strong> {activeLeadModal.baanHomeCoordinatorName || 'ยังไม่ระบุ'}</p>
+                <p><strong>เบอร์ติดต่อ:</strong> {activeLeadModal.baanHomeCoordinatorPhone || 'ยังไม่ระบุ'}</p>
+                <p><strong>Priority:</strong> {activeLeadModal.priority}</p>
+                <p><strong>สถานะติดตาม:</strong> {activeLeadModal.pipelineStage || activeLeadModal.contactStatus || 'ยังไม่ระบุ'}</p>
+                <p><strong>ข้อเสนอ:</strong> {activeLeadModal.featuredOffers?.length ? activeLeadModal.featuredOffers.join(', ') : (activeLeadModal.offer || activeLeadModal.proposalOffer || 'ยังไม่ระบุ')}</p>
+                <p><strong>ขั้นตอนถัดไป:</strong> {activeLeadModal.nextAction || 'ยังไม่ระบุ'}</p>
               </div>
             </div>
 
@@ -989,7 +965,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                 onClick={() => {
                   setEditingApt(null);
                   setAptDefaultLead(activeLeadModal);
-                  setAptDefaultDate('2026-09-10');
+                  setAptDefaultDate(new Date().toISOString().slice(0,10));
                   setIsAddAptModalOpen(true);
                 }}
                 className="px-4 py-2 rounded-xl bg-[#2D5A43] hover:bg-[#204533] text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
