@@ -99,7 +99,7 @@ export interface B2BLead {
   isCustom?: boolean; // true if added by user
 }
 
-export type AppointmentStatus = 'scheduled' | 'completed' | 'rescheduled' | 'cancelled';
+export type AppointmentStatus = 'scheduled' | 'completed' | 'not_met' | 'rescheduled' | 'cancelled';
 
 export interface B2BAppointment {
   id: string;
