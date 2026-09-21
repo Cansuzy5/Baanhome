@@ -57,8 +57,8 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   onSelectLeadForSearch,
 }) => {
   // Current view year & month - default to September 2026 based on metadata
-  const [currentDate, setCurrentDate] = useState(() => new Date(2026, 8, 8)); // 8 is September (0-indexed)
-  const [selectedDateStr, setSelectedDateStr] = useState<string>('2026-09-09');
+  const [currentDate, setCurrentDate] = useState(() => new Date());
+  const [selectedDateStr, setSelectedDateStr] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
   const year = currentDate.getFullYear();
@@ -74,9 +74,9 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   };
 
   const handleJumpToToday = () => {
-    const today = new Date(2026, 8, 8);
+    const today = new Date();
     setCurrentDate(today);
-    setSelectedDateStr('2026-09-08');
+    setSelectedDateStr(today.toISOString().slice(0, 10));
   };
 
   // Calendar Grid Calculation
@@ -102,7 +102,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
         date: d,
         monthType: 'prev',
         dateStr,
-        isToday: dateStr === '2026-09-08',
+        isToday: dateStr === new Date().toISOString().slice(0, 10),
       });
     }
 
@@ -113,7 +113,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
         date: i,
         monthType: 'current',
         dateStr,
-        isToday: dateStr === '2026-09-08',
+        isToday: dateStr === new Date().toISOString().slice(0, 10),
       });
     }
 
@@ -127,7 +127,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
         date: i,
         monthType: 'next',
         dateStr,
-        isToday: dateStr === '2026-09-08',
+        isToday: dateStr === new Date().toISOString().slice(0, 10),
       });
     }
 
@@ -301,7 +301,10 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
               return (
                 <button
                   key={`${item.dateStr}-${idx}`}
-                  onClick={() => setSelectedDateStr(item.dateStr)}
+                  onClick={() => {
+                    setSelectedDateStr(item.dateStr);
+                    if (!hasApts) onAddAppointment(item.dateStr);
+                  }}
                   className={`min-h-[64px] sm:min-h-[74px] p-1.5 rounded-2xl flex flex-col justify-between text-left transition-all border relative ${
                     item.monthType !== 'current'
                       ? 'bg-[#FBFDFB] text-gray-300 border-transparent hover:border-[#E2ECE0]'
@@ -375,7 +378,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
               className="text-[#2D5A43] hover:underline font-bold flex items-center gap-1"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>เพิ่มนัดหมายในวันนี้</span>
+              <span>+ เพิ่มนัดในวันที่เลือก</span>
             </button>
           </div>
         </div>
@@ -418,7 +421,8 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                 {selectedDateAppointments.map((apt) => (
                   <div
                     key={apt.id}
-                    className="p-3.5 rounded-2xl bg-white border border-[#DEE9DC] hover:border-[#2D5A43] transition-all space-y-2 shadow-xs"
+                    onClick={() => onEditAppointment(apt)}
+                    className="p-3.5 rounded-2xl bg-white border border-[#DEE9DC] hover:border-[#2D5A43] transition-all space-y-2 shadow-xs cursor-pointer"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
@@ -540,7 +544,10 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
               {filteredAppointments.map((apt) => (
                 <div
                   key={apt.id}
-                  onClick={() => setSelectedDateStr(apt.date)}
+                  onClick={() => {
+                    setSelectedDateStr(apt.date);
+                    onEditAppointment(apt);
+                  }}
                   className={`p-3 rounded-2xl border transition-all cursor-pointer text-xs ${
                     apt.date === selectedDateStr
                       ? 'border-[#2D5A43] bg-[#F4F9F2]'
