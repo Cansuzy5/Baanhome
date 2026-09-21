@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { X, Calendar, Search, CheckCircle2, Building2, UserRound, Home, Pencil } from 'lucide-react';
-import { B2BAppointment, B2BLead, AppointmentStatus } from '../types';
+import { B2BAppointment, B2BLead } from '../types';
 
 interface AddAppointmentModalProps {
   isOpen: boolean;
@@ -32,7 +32,7 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
   const [searchOpen, setSearchOpen] = useState(false);
   const [date, setDate] = useState(editAppointment?.date || defaultDate || new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState(editAppointment?.time || '10:00');
-  const [status, setStatus] = useState<AppointmentStatus>(editAppointment?.status || 'scheduled');
+  const status = editAppointment?.status || 'scheduled';
   const [title, setTitle] = useState(editAppointment?.title || '');
   const [location, setLocation] = useState(editAppointment?.location || '');
   const [notes, setNotes] = useState(editAppointment?.notes || '');
@@ -168,6 +168,7 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
               <div className="rounded-2xl border border-[#E8E1CD] bg-[#FFFCF4] p-3.5 space-y-2">
                 <div className="flex items-center gap-2 font-bold text-xs text-[#735518]"><Home className="w-4 h-4"/>ข้อมูลฝั่งบ้านโฮม</div>
                 <div className="text-xs space-y-1 text-[#6E633F]">
+                  <p><strong>สถานะการติดตาม:</strong> {show(selectedLead.pipelineStage || selectedLead.contactStatus || 'ยังไม่ติดต่อ')}</p>
                   <p><strong>ผู้ประสานงานบ้านโฮม:</strong> {show(selectedLead.baanHomeCoordinatorName)}</p>
                   <p><strong>ข้อเสนอที่ควรชู:</strong> {selectedLead.featuredOffers?.length ? selectedLead.featuredOffers.join(', ') : show(selectedLead.offer || selectedLead.proposalOffer)}</p>
                   <p><strong>เหตุผลที่ควรเข้าพบ:</strong> {show(selectedLead.reasonsToApproach)}</p>
@@ -186,10 +187,12 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
 
           <div className="rounded-2xl border border-[#E2EAE0] p-4 space-y-3">
             <h3 className="text-xs font-bold text-[#183A28]">รายละเอียดนัดหมายครั้งนี้</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="space-y-1"><span className="text-xs font-bold">วันที่นัดหมาย *</span><input type="date" required value={date} onChange={e=>setDate(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border"/></label>
               <label className="space-y-1"><span className="text-xs font-bold">เวลา *</span><input type="time" required value={time} onChange={e=>setTime(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border"/></label>
-              <label className="space-y-1"><span className="text-xs font-bold">สถานะ</span><select value={status} onChange={e=>setStatus(e.target.value as AppointmentStatus)} className="w-full px-3 py-2.5 rounded-xl border bg-white"><option value="scheduled">🟢 รอเข้าพบ</option><option value="completed">✅ พบแล้ว</option><option value="not_met">🔴 ไม่ได้เข้าพบ</option><option value="rescheduled">🟡 เลื่อนนัด</option><option value="cancelled">⚫ ยกเลิกนัด</option></select></label>
+            </div>
+            <div className="rounded-xl bg-[#F3F8F1] border border-[#DDE8DA] px-3 py-2 text-[11px] text-[#4F6C5B]">
+              เมื่อบันทึกนัด ระบบจะเปลี่ยนสถานะองค์กรจาก “ยังไม่ติดต่อ” เป็น “ติดต่อแล้ว” อัตโนมัติ ส่วนสถานะลำดับถัดไปให้หน้างานอัปเดตเอง
             </div>
             <label className="space-y-1 block"><span className="text-xs font-bold">เรื่องที่จะเข้าพบ</span><input value={title} onChange={e=>setTitle(e.target.value)} placeholder="เช่น นำเสนอแพ็กเกจประชุมและอาหารว่าง" className="w-full px-3 py-2.5 rounded-xl border"/></label>
             <label className="space-y-1 block"><span className="text-xs font-bold">สถานที่นัดหมาย</span><input value={location} onChange={e=>setLocation(e.target.value)} placeholder="สำนักงานลูกค้า / บ้านโฮม / ออนไลน์" className="w-full px-3 py-2.5 rounded-xl border"/></label>
