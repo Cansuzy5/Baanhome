@@ -21,7 +21,10 @@ export function getDb(): Firestore {
   if (!dbInstance) {
     try {
       const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-      dbInstance = getFirestore(app);
+      // Use the same named Firestore database as the browser app.
+      // Without this, Vercel APIs silently read/write the (default) database
+      // while the frontend reads/writes ai-studio-1982e74e-9ff9-469a-9cec-64e98f787d0b.
+      dbInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId);
     } catch (e) {
       console.warn('[Firebase DB] Could not initialize Firestore client, falling back to local/memory store:', e);
     }
