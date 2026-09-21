@@ -398,104 +398,110 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         )}
       </div>
 
-      {/* 1. Header Banner with Action Buttons */}
-      <div className="bg-gradient-to-r from-[#173826] via-[#214D35] to-[#173826] rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-80 h-full opacity-10 pointer-events-none flex items-center justify-end pr-6">
-          <Building className="w-64 h-64 text-white" />
-        </div>
-
-        <div className="relative z-10 max-w-4xl space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-xs text-xs font-semibold text-[#E9C784]">
-              <Target className="w-3.5 h-3.5" />
-              <span>ฐานข้อมูลพันธมิตร & Mini MICE B2B ({leadsList.length} รายการ)</span>
-            </div>
-
-            <button
-              onClick={() => setIsExportModalOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold flex items-center gap-1.5 border border-white/20"
-            >
-              <Download className="w-3.5 h-3.5" /> Export
-            </button>
-          </div>
-
-          <div>
-            <h2 className="text-lg sm:text-xl font-bold tracking-tight mb-2 font-heading text-[#FFFDF8]">
-              ศูนย์ประสานงานกลุ่มเป้าหมายองค์กร, B2B Leads & กำหนดการนัดหมาย
-            </h2>
-            <p className="text-sm sm:text-base text-[#D4E3D8] leading-relaxed">
-              ค้นหาองค์กร ดูข้อมูลสำคัญ และลงนัดเข้าพบได้จากหน้าเดียว
-            </p>
-          </div>
-
-        </div>
-      </div>
-
-      <details className="bg-white rounded-2xl border border-[#E1E8DE] p-3">
-        <summary className="cursor-pointer text-xs font-bold text-[#496655]">สถิติภาพรวม (กดเพื่อดู)</summary>
-        <div className="mt-3"><div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs">
-          <div className="flex items-center justify-between text-xs text-[#637C6D] font-medium mb-1">
-            <span>กลุ่มเป้าหมายทั้งหมด</span>
-            <Building className="w-4 h-4 text-[#2C573F]" />
-          </div>
-          <div className="text-2xl sm:text-3xl font-bold text-[#143623]">
-            {leadsList.length} <span className="text-xs font-normal text-[#6F887A]">แห่ง</span>
-          </div>
-          <div className="text-[11px] text-[#4F715E] mt-1">
-            หน่วยงานในระบบทั้งหมด
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs">
-          <div className="flex items-center justify-between text-xs text-[#966317] font-medium mb-1">
-            <span>Priority A (เข้าหาด่วน)</span>
-            <Award className="w-4 h-4 text-[#B5781C]" />
-          </div>
-          <div className="text-2xl sm:text-3xl font-bold text-[#B06B0E]">
-            {leadsList.filter((l) => l.priority === 'A').length}{' '}
-            <span className="text-xs font-normal text-[#966317]">ราย</span>
-          </div>
-          <div className="text-[11px] text-[#A6752C] mt-1">
-            ความพร้อมจัดงานและงบประมาณสูง
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs">
-          <div className="flex items-center justify-between text-xs text-[#1D5E34] font-medium mb-1">
-            <span>นัดหมายในปฏิทิน</span>
-            <Calendar className="w-4 h-4 text-[#2D5A43]" />
-          </div>
-          <div className="text-2xl sm:text-3xl font-bold text-[#1B432E]">
-            {appointments.length}{' '}
-            <span className="text-xs font-normal text-[#6F887A]">นัดหมาย</span>
-          </div>
-          <div className="text-[11px] text-[#4F715E] mt-1">
-            รอเข้าพบ {appointments.filter((a) => a.status === 'scheduled').length} รายการ
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs">
-          <div className="flex items-center justify-between text-xs text-[#305C42] font-medium mb-1">
-            <span>เริ่มติดต่อ / ตกลงแล้ว</span>
-            <CheckCircle2 className="w-4 h-4 text-[#237A40]" />
-          </div>
-          <div className="text-2xl sm:text-3xl font-bold text-[#1E7438]">
-            {leadsList.filter(
-              (l) =>
-                l.pipelineStage === 'ติดต่อแล้ว' ||
-                l.pipelineStage === 'นัดเข้าพบ' ||
-                l.pipelineStage === 'ตกลง Partnership' ||
-                l.pipelineStage === 'ปิดการขายแล้ว'
-            ).length}{' '}
-            <span className="text-xs font-normal text-[#6F887A]">ราย</span>
-          </div>
-          <div className="text-[11px] text-[#34784C] mt-1">
-            เข้าสู่กระบวนการเจรจา
-          </div>
-        </div>
-      </div></div>
-      </details>
+      {activeSubTab === 'directory' && (
+        <>
+                {/* 1. Header Banner with Action Buttons */}
+                <div className="bg-gradient-to-r from-[#173826] via-[#214D35] to-[#173826] rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden">
+                  <div className="absolute right-0 top-0 w-80 h-full opacity-10 pointer-events-none flex items-center justify-end pr-6">
+                    <Building className="w-64 h-64 text-white" />
+                  </div>
+          
+                  <div className="relative z-10 max-w-4xl space-y-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-xs text-xs font-semibold text-[#E9C784]">
+                        <Target className="w-3.5 h-3.5" />
+                        <span>ฐานข้อมูลพันธมิตร & Mini MICE B2B ({leadsList.length} รายการ)</span>
+                      </div>
+          
+                      <button
+                        onClick={() => setIsExportModalOpen(true)}
+                        className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold flex items-center gap-1.5 border border-white/20"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Export
+                      </button>
+                    </div>
+          
+                    <div>
+                      <h2 className="text-lg sm:text-xl font-bold tracking-tight mb-2 font-heading text-[#FFFDF8]">
+                        ศูนย์ประสานงานกลุ่มเป้าหมายองค์กร, B2B Leads & กำหนดการนัดหมาย
+                      </h2>
+                      <p className="text-sm sm:text-base text-[#D4E3D8] leading-relaxed">
+                        ค้นหาองค์กร ดูข้อมูลสำคัญ และลงนัดเข้าพบได้จากหน้าเดียว
+                      </p>
+                    </div>
+          
+                  </div>
+                </div>
+          
+                <details className="bg-white rounded-2xl border border-[#E1E8DE] p-3">
+                  <summary className="cursor-pointer text-xs font-bold text-[#496655]">สถิติภาพรวม (กดเพื่อดู)</summary>
+                  <div className="mt-3"><div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+                  <div className="bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs">
+                    <div className="flex items-center justify-between text-xs text-[#637C6D] font-medium mb-1">
+                      <span>กลุ่มเป้าหมายทั้งหมด</span>
+                      <Building className="w-4 h-4 text-[#2C573F]" />
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-bold text-[#143623]">
+                      {leadsList.length} <span className="text-xs font-normal text-[#6F887A]">แห่ง</span>
+                    </div>
+                    <div className="text-[11px] text-[#4F715E] mt-1">
+                      หน่วยงานในระบบทั้งหมด
+                    </div>
+                  </div>
+          
+                  <div className="bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs">
+                    <div className="flex items-center justify-between text-xs text-[#966317] font-medium mb-1">
+                      <span>Priority A (เข้าหาด่วน)</span>
+                      <Award className="w-4 h-4 text-[#B5781C]" />
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-bold text-[#B06B0E]">
+                      {leadsList.filter((l) => l.priority === 'A').length}{' '}
+                      <span className="text-xs font-normal text-[#966317]">ราย</span>
+                    </div>
+                    <div className="text-[11px] text-[#A6752C] mt-1">
+                      ความพร้อมจัดงานและงบประมาณสูง
+                    </div>
+                  </div>
+          
+                  <div className="bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs">
+                    <div className="flex items-center justify-between text-xs text-[#1D5E34] font-medium mb-1">
+                      <span>นัดหมายในปฏิทิน</span>
+                      <Calendar className="w-4 h-4 text-[#2D5A43]" />
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-bold text-[#1B432E]">
+                      {appointments.length}{' '}
+                      <span className="text-xs font-normal text-[#6F887A]">นัดหมาย</span>
+                    </div>
+                    <div className="text-[11px] text-[#4F715E] mt-1">
+                      รอเข้าพบ {appointments.filter((a) => a.status === 'scheduled').length} รายการ
+                    </div>
+                  </div>
+          
+                  <div className="bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs">
+                    <div className="flex items-center justify-between text-xs text-[#305C42] font-medium mb-1">
+                      <span>เริ่มติดต่อ / ตกลงแล้ว</span>
+                      <CheckCircle2 className="w-4 h-4 text-[#237A40]" />
+                    </div>
+                    <div className="text-2xl sm:text-3xl font-bold text-[#1E7438]">
+                      {leadsList.filter(
+                        (l) =>
+                          l.pipelineStage === 'ติดต่อแล้ว' ||
+                          l.pipelineStage === 'นัดเข้าพบ' ||
+                          l.pipelineStage === 'ตกลง Partnership' ||
+                          l.pipelineStage === 'ปิดการขายแล้ว'
+                      ).length}{' '}
+                      <span className="text-xs font-normal text-[#6F887A]">ราย</span>
+                    </div>
+                    <div className="text-[11px] text-[#34784C] mt-1">
+                      เข้าสู่กระบวนการเจรจา
+                    </div>
+                  </div>
+                </div></div>
+                </details>
+          
+          
+        </>
+      )}
 
       {/* 4. TAB CONTENT */}
       {activeSubTab === 'calendar' ? (
