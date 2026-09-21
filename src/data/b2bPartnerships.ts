@@ -18,14 +18,12 @@ export const PARTNERSHIP_PIPELINE_STATS = {
 };
 
 export const PIPELINE_STAGES: PipelineStageSummary[] = [
-  { stage: 'ยังไม่ติดต่อ', count: 99, description: 'เตรียมข้อมูลและค้นหาผู้ประสานงาน' },
-  { stage: 'เตรียมเข้าหา', count: 0, description: 'เตรียม Corporate Rate และเอกสารแนะนำ' },
-  { stage: 'ติดต่อแล้ว', count: 2, description: 'ติดต่อเบื้องต้นแล้ว รอการนัดหมาย' },
-  { stage: 'นัดเข้าพบ', count: 0, description: 'เข้าพบและนำเสนอแพ็กเกจสถานที่' },
-  { stage: 'ส่ง Brochure/Rate Card', count: 0, description: 'ส่งใบเสนอราคาและ Rate Card' },
-  { stage: 'ติดตามผล', count: 0, description: 'Follow-up ครั้งที่ 1 และ 2' },
-  { stage: 'ตกลง Partnership', count: 0, description: 'ทำข้อตกลง Corporate Account' },
-  { stage: 'มี Booking แล้ว', count: 0, description: 'จัดงานสำเร็จและสร้างความสัมพันธ์ต่อเนื่อง' },
+  { stage: 'ยังไม่ติดต่อ', count: 0, description: 'ยังไม่ได้เริ่มติดต่อ' },
+  { stage: 'ติดต่อแล้ว', count: 0, description: 'เริ่มพูดคุยหรือมีการประสานงานแล้ว' },
+  { stage: 'นัดเข้าพบ', count: 0, description: 'มีนัดเข้าพบหรือนำเสนอ' },
+  { stage: 'ส่งใบเสนอราคาแล้ว', count: 0, description: 'ส่งราคา แพ็กเกจ หรือข้อเสนอแล้ว' },
+  { stage: 'ตกลง Partnership', count: 0, description: 'ตกลงความร่วมมือหรือเงื่อนไขหลักแล้ว' },
+  { stage: 'ปิดการขาย', count: 0, description: 'ยืนยันซื้อหรือใช้บริการแล้ว' },
 ];
 
 export const TOP_RECOMMENDED_TARGETS: {
