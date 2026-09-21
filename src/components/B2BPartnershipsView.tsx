@@ -24,7 +24,7 @@ import {
   Trash2,
   RotateCcw,
 } from 'lucide-react';
-import { B2BLead, B2BAppointment, AppointmentStatus, StaffProfile, UserRole } from '../types';
+import { B2BLead, B2BAppointment, B2BCoordinator, AppointmentStatus, StaffProfile, UserRole } from '../types';
 import {
   B2B_LEADS,
   PARTNERSHIP_PIPELINE_STATS,
@@ -35,6 +35,7 @@ import { INITIAL_B2B_APPOINTMENTS } from '../data/b2bAppointments';
 import { B2BCalendarView } from './B2BCalendarView';
 import { AddLeadModal } from './AddLeadModal';
 import { AddAppointmentModal } from './AddAppointmentModal';
+import { B2BCoordinatorManagerModal } from './B2BCoordinatorManagerModal';
 import { ExportB2BModal } from './ExportB2BModal';
 import { GoogleSheetsDbConfig } from '../utils/googleSheetsDatabase';
 import { getGoogleAccessToken } from '../utils/googleWorkspaceAuth';
@@ -51,6 +52,7 @@ import {
   getCachedAppointments,
 } from '../utils/b2bService';
 import { getActiveSessionUser } from '../utils/authService';
+import { subscribeB2BCoordinators } from '../utils/b2bCoordinatorService';
 
 interface B2BPartnershipsViewProps {
   onSelectLeadForSearch?: (leadName: string) => void;
@@ -86,6 +88,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   // Persistent leads and appointments from central database
   const [leadsList, setLeadsList] = useState<B2BLead[]>(getCachedLeads);
   const [appointments, setAppointments] = useState<B2BAppointment[]>(getCachedAppointments);
+  const [coordinators, setCoordinators] = useState<B2BCoordinator[]>([]);
 
   // Modals state
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -95,6 +98,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   const [editingApt, setEditingApt] = useState<B2BAppointment | null>(null);
   const [aptDefaultDate, setAptDefaultDate] = useState<string>('2026-09-09');
   const [aptDefaultLead, setAptDefaultLead] = useState<B2BLead | null>(null);
+  const [isCoordinatorManagerOpen, setIsCoordinatorManagerOpen] = useState(false);
 
   // In-App Confirmation Modals state (avoiding window.confirm which is blocked in sandboxed iframes)
   const [appointmentToDelete, setAppointmentToDelete] = useState<B2BAppointment | null>(null);
@@ -106,11 +110,15 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
   // Subscribe to Central Shared B2B Database in real-time across all users
   useEffect(() => {
-    const unsubscribe = subscribeCentralB2B(({ leads, appointments: apts }) => {
+    const unsubscribeB2B = subscribeCentralB2B(({ leads, appointments: apts }) => {
       setLeadsList(leads);
       setAppointments(apts);
     });
-    return () => unsubscribe();
+    const unsubscribeCoordinators = subscribeB2BCoordinators(setCoordinators);
+    return () => {
+      unsubscribeB2B();
+      unsubscribeCoordinators();
+    };
   }, []);
 
   // Handle Add or Edit Lead
@@ -365,8 +373,44 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         </div>
       )}
 
+      {/* Quick work bar: primary actions first */}
+      <div className="bg-white rounded-2xl border border-[#DDE7DC] shadow-sm p-3 sm:p-4 space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 overflow-x-auto">
+            <button onClick={() => setActiveSubTab('directory')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap ${activeSubTab==='directory'?'bg-[#1B3E2D] text-white':'bg-[#F5F7F3] text-[#4E6A59]'}`}>
+              รายชื่อลูกค้า / หน่วยงาน ({leadsList.length})
+            </button>
+            <button onClick={() => setActiveSubTab('calendar')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap ${activeSubTab==='calendar'?'bg-[#1B3E2D] text-white':'bg-[#F5F7F3] text-[#4E6A59]'}`}>
+              ปฏิทินนัดหมาย ({appointments.filter(a=>a.status==='scheduled').length})
+            </button>
+          </div>
+
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={() => { setEditingLead(null); setIsAddLeadModalOpen(true); }}
+              className="px-3.5 py-2 rounded-xl bg-[#2E7D4E] text-white text-xs font-bold flex items-center gap-1">
+              <Plus className="w-4 h-4"/> เพิ่มหน่วยงาน
+            </button>
+            <button onClick={() => { setEditingApt(null); setAptDefaultDate(new Date().toISOString().slice(0,10)); setAptDefaultLead(null); setIsAddAptModalOpen(true); }}
+              className="px-3.5 py-2 rounded-xl bg-[#C89B3C] text-[#1E3A29] text-xs font-bold flex items-center gap-1">
+              <Calendar className="w-4 h-4"/> เพิ่มนัดหมาย
+            </button>
+          </div>
+        </div>
+
+        {activeSubTab === 'directory' && (
+          <div className="relative">
+            <Search className="w-4 h-4 text-[#738C7D] absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)}
+              placeholder="ค้นหาชื่อหน่วยงาน ผู้ติดต่อลูกค้า ประเภทงาน หรือข้อเสนอ..."
+              className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm rounded-xl border border-[#D5E0D2] focus:outline-none focus:ring-2 focus:ring-[#235838] bg-[#FAFBF9]" />
+          </div>
+        )}
+      </div>
+
       {/* 1. Header Banner with Action Buttons */}
-      <div className="bg-gradient-to-r from-[#173826] via-[#214D35] to-[#173826] rounded-3xl p-5 sm:p-8 text-white shadow-md relative overflow-hidden">
+      <div className="bg-gradient-to-r from-[#173826] via-[#214D35] to-[#173826] rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden">
         <div className="absolute right-0 top-0 w-80 h-full opacity-10 pointer-events-none flex items-center justify-end pr-6">
           <Building className="w-64 h-64 text-white" />
         </div>
@@ -378,49 +422,20 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               <span>ฐานข้อมูลพันธมิตร & Mini MICE B2B ({leadsList.length} รายการ)</span>
             </div>
 
-            {/* Quick Export & Add Action Buttons */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => setIsExportModalOpen(true)}
-                className="px-3.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold transition-all flex items-center gap-1.5 border border-white/20 shadow-sm"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export ข้อมูล (Excel / TSV)</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setEditingLead(null);
-                  setIsAddLeadModalOpen(true);
-                }}
-                className="px-3.5 py-1.5 rounded-xl bg-[#2E7D4E] hover:bg-[#256941] text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ เพิ่มศูนย์ประสานงาน</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setEditingApt(null);
-                  setAptDefaultDate('2026-09-09');
-                  setAptDefaultLead(null);
-                  setIsAddAptModalOpen(true);
-                }}
-                className="px-3.5 py-1.5 rounded-xl bg-[#C89B3C] hover:bg-[#B3872E] text-[#1E3A29] text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                <span>+ ลงตารางนัดหมาย</span>
-              </button>
-            </div>
+            <button
+              onClick={() => setIsExportModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold flex items-center gap-1.5 border border-white/20"
+            >
+              <Download className="w-3.5 h-3.5" /> Export
+            </button>
           </div>
 
           <div>
-            <h2 className="text-xl sm:text-3xl font-bold tracking-tight mb-2 font-heading text-[#FFFDF8]">
+            <h2 className="text-lg sm:text-xl font-bold tracking-tight mb-2 font-heading text-[#FFFDF8]">
               ศูนย์ประสานงานกลุ่มเป้าหมายองค์กร, B2B Leads & กำหนดการนัดหมาย
             </h2>
             <p className="text-sm sm:text-base text-[#D4E3D8] leading-relaxed">
-              จัดการข้อมูล 101 หน่วยงานราชการ สถาบันการศึกษา รัฐวิสาหกิจ พร้อมระบบปฏิทินนัดหมายเข้าพบ
-              สคริปต์การขาย และการส่งออกข้อมูลสำหรับทำรายงานผู้บริหาร
+              ค้นหาองค์กร ดูข้อมูลสำคัญ และลงนัดเข้าพบได้จากหน้าเดียว
             </p>
           </div>
 
@@ -436,8 +451,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         </div>
       </div>
 
-      {/* 2. Top Metric Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+      <details className="bg-white rounded-2xl border border-[#E1E8DE] p-3">
+        <summary className="cursor-pointer text-xs font-bold text-[#496655]">สถิติภาพรวม (กดเพื่อดู)</summary>
+        <div className="mt-3"><div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs">
           <div className="flex items-center justify-between text-xs text-[#637C6D] font-medium mb-1">
             <span>กลุ่มเป้าหมายทั้งหมด</span>
@@ -498,50 +514,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             เข้าสู่กระบวนการเจรจา
           </div>
         </div>
-      </div>
-
-      {/* 3. Sub-Navigation Tabs: Directory vs Calendar */}
-      <div className="flex items-center justify-between border-b border-[#E3ECE1] pb-3 gap-2 flex-wrap">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setActiveSubTab('directory')}
-            className={`px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              activeSubTab === 'directory'
-                ? 'bg-[#1B3E2D] text-white shadow-md'
-                : 'bg-white text-[#52705E] hover:bg-[#F0F5EE] border border-[#DDE7DC]'
-            }`}
-          >
-            <Building className="w-4 h-4" />
-            <span>รายชื่อศูนย์ประสานงาน & หน่วยงาน ({leadsList.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSubTab('calendar')}
-            className={`px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer ${
-              activeSubTab === 'calendar'
-                ? 'bg-[#1B3E2D] text-white shadow-md'
-                : 'bg-white text-[#52705E] hover:bg-[#F0F5EE] border border-[#DDE7DC]'
-            }`}
-          >
-            <Calendar className="w-4 h-4" />
-            <span>ปฏิทินนัดหมาย & กำหนดการเข้าพบ</span>
-            <span className="px-2 py-0.5 rounded-full text-[10px] bg-[#C89B3C] text-[#1A3324] font-extrabold">
-              {appointments.filter((a) => a.status === 'scheduled').length}
-            </span>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleResetLeads}
-            className="text-xs text-[#7B9786] hover:text-[#2D5A43] flex items-center gap-1 font-semibold p-1 hover:underline"
-            title="รีเซ็ตเป็นข้อมูล 101 หน่วยงานเริ่มต้น"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">รีเซ็ตข้อมูลเริ่มต้น</span>
-          </button>
-        </div>
-      </div>
+      </div></div>
+      </details>
 
       {/* 4. TAB CONTENT */}
       {activeSubTab === 'calendar' ? (
@@ -566,8 +540,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       ) : (
         /* DIRECTORY VIEW */
         <div className="space-y-6">
-          {/* TOP 5 QUICK-WIN RECOMMENDATIONS */}
-          <div className="bg-[#FAF9F5] rounded-3xl p-5 sm:p-6 border border-[#E2DBD0] shadow-xs">
+          <details className="bg-[#FAF9F5] rounded-2xl p-4 border border-[#E2DBD0]">
+            <summary className="cursor-pointer text-xs font-bold text-[#7E5C1D]">หน่วยงานแนะนำเร่งด่วน (กดเพื่อดู)</summary>
+            <div className="mt-4">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <div>
                 <span className="text-xs font-bold text-[#8C6218] uppercase tracking-wider block">
@@ -622,78 +597,18 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               ))}
             </div>
           </div>
+          </details>
 
-          {/* Filter & Search Toolbar */}
-          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-[#DEE5DB] shadow-xs space-y-3">
-            <div className="flex flex-col md:flex-row gap-3">
-              {/* Search Input */}
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-[#738C7D] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="ค้นหาชื่อศูนย์ประสานงาน, หน่วยงาน, ผู้ประสานงาน, รูปแบบงาน หรือข้อเสนอ..."
-                  className="w-full pl-10 pr-4 py-2 text-xs sm:text-sm rounded-xl border border-[#D5E0D2] focus:outline-none focus:ring-2 focus:ring-[#235838] bg-[#FAF9F6]"
-                />
-                {searchTerm && (
-                  <button
-                    onClick={() => setSearchTerm('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#7B9284] hover:text-[#1F3E2E]"
-                  >
-                    ล้าง
-                  </button>
-                )}
-              </div>
-
-              {/* Priority Filter */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-                <span className="text-xs font-semibold text-[#5A7465] shrink-0 mr-1">
-                  Priority:
-                </span>
-                {(['All', 'A', 'B', 'C'] as const).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setSelectedPriority(p)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer shrink-0 ${
-                      selectedPriority === p
-                        ? 'bg-[#183E2A] text-white shadow-2xs'
-                        : 'bg-[#F2EFE8] hover:bg-[#EAE5DB] text-[#41594A]'
-                    }`}
-                  >
-                    {p === 'All' ? `ทั้งหมด (${leadsList.length})` : `Priority ${p}`}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Pipeline Stage Quick Filters */}
-            <div className="flex items-center gap-2 overflow-x-auto pt-1 pb-1 text-xs">
-              <span className="font-semibold text-[#617B6D] shrink-0">สถานะ Pipeline:</span>
-              <button
-                onClick={() => setSelectedStage('All')}
-                className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer shrink-0 ${
-                  selectedStage === 'All'
-                    ? 'bg-[#235838] text-white font-bold'
-                    : 'bg-[#FAF8F2] text-[#4A6455] hover:bg-[#EAE4D7]'
-                }`}
-              >
-                ทั้งหมด
-              </button>
-              {PIPELINE_STAGES.map((st) => (
-                <button
-                  key={st.stage}
-                  onClick={() => setSelectedStage(st.stage)}
-                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer shrink-0 ${
-                    selectedStage === st.stage
-                      ? 'bg-[#235838] text-white font-bold'
-                      : 'bg-[#FAF8F2] text-[#4A6455] hover:bg-[#EAE4D7]'
-                  }`}
-                >
-                  {st.stage}
-                </button>
-              ))}
-            </div>
+          <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
+            <span className="font-semibold text-[#617B6D] shrink-0">ตัวกรอง:</span>
+            {(['All','A','B','C'] as const).map((p)=><button key={p} onClick={()=>setSelectedPriority(p)}
+              className={`px-2.5 py-1 rounded-lg whitespace-nowrap ${selectedPriority===p?'bg-[#235838] text-white':'bg-[#FAF8F2] text-[#4A6455]'}`}>
+              {p==='All'?'ทุก Priority':`Priority ${p}`}
+            </button>)}
+            <select value={selectedStage} onChange={(e)=>setSelectedStage(e.target.value)} className="px-2.5 py-1 rounded-lg border bg-white">
+              <option value="All">ทุกสถานะ</option>
+              {PIPELINE_STAGES.map(st=><option key={st.stage} value={st.stage}>{st.stage}</option>)}
+            </select>
           </div>
 
           {/* Leads Listing */}
@@ -1111,6 +1026,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         onClose={() => setIsAddLeadModalOpen(false)}
         onSave={handleSaveLead}
         editLead={editingLead}
+        coordinators={coordinators}
+        onManageCoordinators={() => setIsCoordinatorManagerOpen(true)}
       />
 
       <AddAppointmentModal
@@ -1122,6 +1039,18 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         editAppointment={editingApt}
         defaultDate={aptDefaultDate}
         defaultLead={aptDefaultLead}
+        onEditLead={(lead) => {
+          setIsAddAptModalOpen(false);
+          setEditingLead(lead);
+          setIsAddLeadModalOpen(true);
+        }}
+      />
+
+      <B2BCoordinatorManagerModal
+        isOpen={isCoordinatorManagerOpen}
+        onClose={() => setIsCoordinatorManagerOpen(false)}
+        coordinators={coordinators}
+        role={currentRole}
       />
 
       <ExportB2BModal
@@ -1209,7 +1138,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               <div className="text-[#648372]">รหัส: {leadToDelete.id}</div>
               {leadToDelete.contactPerson && (
                 <div className="text-[11px] text-[#789686]">
-                  ผู้ประสานงาน: {leadToDelete.contactPerson}
+                  ผู้ติดต่อฝั่งลูกค้า: {leadToDelete.contactPerson}
                 </div>
               )}
             </div>
