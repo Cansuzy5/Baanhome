@@ -42,8 +42,17 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
     : '';
 
   const oldOfferText = editLead?.offer || editLead?.proposalOffer || '';
-  const knownInitial = editLead?.featuredOffers || OFFER_OPTIONS.filter((x)=>oldOfferText.split(/[,/|]/).map(v=>v.trim()).includes(x));
-  const legacyOffer = editLead?.legacyOfferText || (knownInitial.length === 0 ? oldOfferText : '');
+  const rawOfferParts = oldOfferText.split(/[,/|]/).map(v=>v.trim()).filter(Boolean);
+  const existingFeatured = editLead?.featuredOffers || [];
+  const knownInitial = Array.from(new Set([
+    ...existingFeatured.filter(v => OFFER_OPTIONS.includes(v as any)),
+    ...OFFER_OPTIONS.filter((x)=>rawOfferParts.includes(x)),
+  ]));
+  const unmatchedOfferParts = [
+    ...existingFeatured.filter(v => !OFFER_OPTIONS.includes(v as any)),
+    ...rawOfferParts.filter(v => !OFFER_OPTIONS.includes(v as any)),
+  ];
+  const legacyOffer = editLead?.legacyOfferText || Array.from(new Set(unmatchedOfferParts)).join(', ');
 
   const [name,setName]=useState(editLead?.name||'');
   const [orgType,setOrgType]=useState(editLead?.orgType||editLead?.categoryType||'');
