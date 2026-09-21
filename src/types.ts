@@ -65,6 +65,23 @@ export interface KnowledgeItem {
   images?: string[];
 }
 
+export type B2BPipelineStatus =
+  | 'ยังไม่ติดต่อ'
+  | 'ติดต่อแล้ว'
+  | 'นัดเข้าพบ'
+  | 'ส่งใบเสนอราคาแล้ว'
+  | 'ตกลง Partnership'
+  | 'ปิดการขาย';
+
+export interface B2BLeadHistoryEntry {
+  id: string;
+  timestamp: string;
+  actorId?: string;
+  actorName?: string;
+  action: string;
+  changes: string[];
+}
+
 export interface B2BLead {
   id: string; // e.g. KH-168
   name: string; // e.g. สำนักงานพัฒนาฝีมือแรงงานกาฬสินธุ์
@@ -74,7 +91,7 @@ export interface B2BLead {
   reasonsToApproach?: string; // เหตุผลที่ควรเข้า
   opportunity?: string; // โอกาส / รูปแบบงาน
   proposalOffer?: string; // ข้อเสนอที่ควรเสนอ
-  contactStatus?: string;
+  contactStatus?: B2BPipelineStatus | string;
   sourceUrl?: string;
   notes?: string;
   nextAction?: string;
@@ -82,7 +99,7 @@ export interface B2BLead {
   // UI helper properties & aliases
   offer?: string;
   format?: string;
-  pipelineStage?: string;
+  pipelineStage?: B2BPipelineStatus | string;
   orgType?: string;
   contactPerson?: string; // ชื่อผู้ติดต่อฝั่งลูกค้า
   contactPosition?: string; // ตำแหน่งผู้ติดต่อฝั่งลูกค้า
@@ -109,6 +126,7 @@ export interface B2BLead {
   lastContactDate?: string;
   updatedAt?: string;
   isCustom?: boolean; // true if added by user
+  history?: B2BLeadHistoryEntry[];
 }
 
 export interface B2BCoordinator {
