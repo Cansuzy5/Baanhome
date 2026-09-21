@@ -4,15 +4,7 @@ import fs from 'fs';
 import path from 'path';
 
 // Firebase configuration for Baanhome Resort centralized database
-const firebaseConfig = {
-  projectId: "gen-lang-client-0051881339",
-  appId: "1:236671287595:web:68c9cbe1ff5a917238456e",
-  apiKey: "AIzaSyCuoP2tvd2nJC-3u4OYCwnck72mMNUyOKc",
-  authDomain: "gen-lang-client-0051881339.firebaseapp.com",
-  storageBucket: "gen-lang-client-0051881339.firebasestorage.app",
-  messagingSenderId: "236671287595",
-  firestoreDatabaseId: "ai-studio-1982e74e-9ff9-469a-9cec-64e98f787d0b"
-};
+import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' };
 
 // Reuse Firestore instance across serverless invocations
 let dbInstance: Firestore | null = null;
@@ -23,10 +15,17 @@ export function getDb(): Firestore {
       const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
       dbInstance = getFirestore(app);
     } catch (e) {
-      console.warn('[Firebase DB] Could not initialize Firestore client, falling back to local/memory store:', e);
+      throw e;
     }
   }
   return dbInstance as Firestore;
+}
+
+// Operational records share the named database used by the browser.
+// Existing knowledge/config routes keep their original database.
+export function getOperationalDb(): Firestore {
+ const app=getApps().length>0?getApp():initializeApp(firebaseConfig);
+ return getFirestore(app,firebaseConfig.firestoreDatabaseId||'(default)');
 }
 
 export const db: Firestore = getDb();

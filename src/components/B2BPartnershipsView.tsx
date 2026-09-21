@@ -189,19 +189,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       return false;
     }
 
-    // Auto-sync appointment to connected Google Sheets if enabled
-    if (sheetsDbConfig && sheetsDbConfig.autoSyncB2B && sheetsDbConfig.spreadsheetId) {
-      getGoogleAccessToken()
-        .then((token) => {
-          if (token) {
-            appendAppointmentToSheet(token, sheetsDbConfig.spreadsheetId, apt).catch((err) => {
-              console.warn('Auto-append appointment to Google Sheets failed:', err);
-            });
-          }
-        })
-        .catch((err) => console.warn('Could not get Google access token for sync:', err));
-    }
-
     // Sync appointment date into lead if matching
     if (apt.leadId) {
       const existingLead = leadsList.find((l) => l.id === apt.leadId);

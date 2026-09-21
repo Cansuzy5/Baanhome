@@ -1,3 +1,5 @@
+import centralB2B from './api/sync/b2b.js';
+import centralUsers from './api/sync/users.js';
 import { applyB2BMutation } from './lib/b2bMutation.js';
 import express from 'express';
 import path from 'path';
@@ -237,6 +239,9 @@ ${contextText}
       lastLoginAt: '2026-09-19 14:49:15',
     }
   ];
+
+  app.all('/api/sync/users', centralUsers);
+  app.all('/api/sync/b2b', centralB2B);
 
   app.get('/api/sync/users', (req, res) => {
     try {
