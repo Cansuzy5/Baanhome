@@ -295,7 +295,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   };
 
   // Handle Add or Edit Appointment.
-  // New appointments and the organization pipeline are saved atomically.
+  // Calendar activities and organization pipeline are intentionally independent.
   const handleSaveAppointment = async (apt: B2BAppointment) => {
     if (!isOperatorOrAdmin) {
       setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Operator และ Administrator เท่านั้นที่สามารถบันทึกนัดหมายได้');
@@ -314,17 +314,10 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     let updatedLead: B2BLead | undefined;
 
     if (isNewAppointment) {
-      const oldStage = getLeadStage(linkedLead);
-      const stageOrder = PIPELINE_STAGES.map((item) => item.stage);
-      const oldIndex = stageOrder.indexOf(oldStage);
-      const meetingIndex = stageOrder.indexOf('นัดเข้าพบ');
-      const shouldAdvance = oldIndex === -1 || oldIndex < meetingIndex;
-
       updatedLead = {
         ...linkedLead,
         appointmentDate: apt.date,
         appointmentTime: apt.time,
-        ...(shouldAdvance ? { pipelineStage: 'นัดเข้าพบ', contactStatus: 'นัดเข้าพบ' } : {}),
         updatedAt: localDateKey(),
         history: [
           {
@@ -332,13 +325,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             timestamp: new Date().toISOString(),
             actorId,
             actorName,
-            action: 'นัดเข้าพบ',
-            changes: [
-              ...(shouldAdvance && oldStage !== 'นัดเข้าพบ'
-                ? [`สถานะการติดตาม: "${oldStage}" → "นัดเข้าพบ"`]
-                : []),
-              `นัดเข้าพบวันที่ ${apt.date} เวลา ${apt.time}`,
-            ],
+            action: 'สร้างนัดหมาย',
+            changes: [`สร้างนัดวันที่ ${apt.date} เวลา ${apt.time}`],
           },
           ...(linkedLead.history || []),
         ].slice(0, 100),
@@ -394,14 +382,10 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       updatedAt: localDateKey(),
     };
 
-    const oldStage = getLeadStage(linkedLead);
-    const stageOrder = PIPELINE_STAGES.map((item) => item.stage);
-    const shouldAdvance = stageOrder.indexOf(oldStage) < stageOrder.indexOf('นัดเข้าพบ');
     const updatedLead: B2BLead = {
       ...linkedLead,
       appointmentDate: newDate,
       appointmentTime: newTime,
-      ...(shouldAdvance ? { pipelineStage: 'นัดเข้าพบ', contactStatus: 'นัดเข้าพบ' } : {}),
       updatedAt: localDateKey(),
       history: [
         {
@@ -433,7 +417,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
   const handleCompleteAppointment = async (
     apt: B2BAppointment,
-    nextStage: B2BPipelineStatus,
     resultNote: string
   ) => {
     if (!isOperatorOrAdmin) return false;
@@ -449,11 +432,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       completedAt: new Date().toISOString(),
       updatedAt: localDateKey(),
     };
-    const oldStage = getLeadStage(linkedLead);
     const updatedLead: B2BLead = {
       ...linkedLead,
-      pipelineStage: nextStage,
-      contactStatus: nextStage,
       updatedAt: localDateKey(),
       history: [
         {
@@ -463,7 +443,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           actorName,
           action: 'เข้าพบแล้ว',
           changes: [
-            ...(oldStage !== nextStage ? [`สถานะการติดตาม: "${oldStage}" → "${nextStage}"`] : []),
             `บันทึกผลนัดวันที่ ${apt.date} เวลา ${apt.time}`,
             ...(resultNote.trim() ? [`ผลการเข้าพบ: ${resultNote.trim()}`] : []),
           ],
@@ -505,11 +484,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         item.status === 'scheduled' &&
         ((item.leadId && item.leadId === linkedLead.id) || item.leadName === linkedLead.name)
     );
-    const oldStage = getLeadStage(linkedLead);
-    const shouldStepBack = oldStage === 'นัดเข้าพบ' && !hasOtherActiveAppointment;
     const updatedLead: B2BLead = {
       ...linkedLead,
-      ...(shouldStepBack ? { pipelineStage: 'ติดต่อแล้ว', contactStatus: 'ติดต่อแล้ว' } : {}),
       ...(hasOtherActiveAppointment ? {} : { appointmentDate: undefined, appointmentTime: undefined }),
       updatedAt: localDateKey(),
       history: [
@@ -522,7 +498,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           changes: [
             `ยกเลิกนัดวันที่ ${apt.date} เวลา ${apt.time}`,
             ...(reason.trim() ? [`เหตุผล: ${reason.trim()}`] : []),
-            ...(shouldStepBack ? ['สถานะการติดตาม: "นัดเข้าพบ" → "ติดต่อแล้ว"'] : []),
           ],
         },
         ...(linkedLead.history || []),
@@ -589,9 +564,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           );
 
         const nextAppointment = remainingAppointments[0];
-        const currentStage =
-          linkedLead.pipelineStage || linkedLead.contactStatus || 'ยังไม่ติดต่อ';
-
         const updatedLead: B2BLead = {
           ...linkedLead,
           // Legacy denormalized appointment fields are refreshed/cleared so
@@ -601,18 +573,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           updatedAt: localDateKey(),
         };
 
-        // Only step back when the master status is explicitly "นัดเข้าพบ" and
-        // there are no appointments left. Later manual pipeline stages must
-        // never be downgraded by deleting a calendar event.
         const changes: string[] = [
           `ลบนัดหมายวันที่ ${deletingAppointment.date} เวลา ${deletingAppointment.time}`,
         ];
-
-        if (!nextAppointment && currentStage === 'นัดเข้าพบ') {
-          updatedLead.pipelineStage = 'ติดต่อแล้ว';
-          updatedLead.contactStatus = 'ติดต่อแล้ว';
-          changes.push('สถานะการติดตาม: "นัดเข้าพบ" → "ติดต่อแล้ว"');
-        }
 
         updatedLead.history = [
           {
@@ -738,15 +701,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     }
     const target = leadsList.find((l) => l.id === leadId);
     if (!target) return;
-
-    // "นัดเข้าพบ" must always have a real calendar appointment.
-    if (newStage === 'นัดเข้าพบ') {
-      setEditingApt(null);
-      setAptDefaultLead(target);
-      setAptDefaultDate(localDateKey());
-      setIsAddAptModalOpen(true);
-      return;
-    }
 
     const oldStage = target.pipelineStage || target.contactStatus || 'ยังไม่ติดต่อ';
     if (oldStage === newStage) return;
@@ -1241,7 +1195,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                     })()}
                   </div>
 
-                  {/* Quick actions: show what staff should do next, not every possible status */}
+                  {/* Quick actions */}
                   <div className="flex items-center gap-2 self-end sm:self-center shrink-0 flex-wrap justify-end">
                     <span
                       className={`text-xs font-semibold px-3 py-1 rounded-full border ${
@@ -1272,80 +1226,37 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                       ดูข้อมูล
                     </button>
 
-                    {(() => {
-                      const stage = getLeadStage(lead);
-                      const scheduledAppointment = appointments.find(
-                        (apt) =>
-                          apt.status === 'scheduled' &&
-                          ((apt.leadId && apt.leadId === lead.id) || apt.leadName === lead.name)
-                      );
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingApt(null);
+                        setAptDefaultLead(lead);
+                        setAptDefaultDate(localDateKey());
+                        setIsAddAptModalOpen(true);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-[#1B3E2D] hover:bg-[#244F39] text-white text-[11px] font-bold flex items-center gap-1"
+                    >
+                      <Calendar className="w-3.5 h-3.5" /> ลงนัด
+                    </button>
 
-                      if (stage === 'ยังไม่ติดต่อ') {
-                        return (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUpdateLeadStage(lead.id, 'ติดต่อแล้ว');
-                            }}
-                            className="px-3 py-1.5 rounded-xl bg-lime-600 hover:bg-lime-700 text-white text-[11px] font-bold"
-                          >
-                            ติดต่อแล้ว
-                          </button>
-                        );
-                      }
-
-                      if (scheduledAppointment) {
-                        return (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingApt(scheduledAppointment);
-                              setIsAddAptModalOpen(true);
-                            }}
-                            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1"
-                          >
-                            <Calendar className="w-3.5 h-3.5" /> ดูนัด
-                          </button>
-                        );
-                      }
-
-                      if (stage === 'ติดต่อแล้ว' || stage === 'นัดเข้าพบ') {
-                        return (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingApt(null);
-                              setAptDefaultLead(lead);
-                              setAptDefaultDate(localDateKey());
-                              setIsAddAptModalOpen(true);
-                            }}
-                            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1"
-                          >
-                            <Calendar className="w-3.5 h-3.5" /> นัดเข้าพบ
-                          </button>
-                        );
-                      }
-
-                      if (stage !== 'ปิดการขาย') {
-                        return (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveLeadModal(lead);
-                            }}
-                            className="px-3 py-1.5 rounded-xl bg-[#1B3E2D] hover:bg-[#244F39] text-white text-[11px] font-bold"
-                          >
-                            อัปเดตสถานะ
-                          </button>
-                        );
-                      }
-
-                      return null;
-                    })()}
+                    <select
+                      value={getLeadStage(lead)}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        handleUpdateLeadStage(lead.id, e.target.value);
+                      }}
+                      className="px-2 py-1.5 rounded-xl border border-[#D5E2D2] bg-white text-[11px] font-bold text-[#345945] max-w-[165px]"
+                      title="เลือกสถานะองค์กร"
+                    >
+                      {!PIPELINE_STAGES.some((item) => item.stage === getLeadStage(lead)) && (
+                        <option value={getLeadStage(lead)}>{getLeadStage(lead)} (ข้อมูลเดิม)</option>
+                      )}
+                      {PIPELINE_STAGES.map((item) => (
+                        <option key={item.stage} value={item.stage}>{item.stage}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               ))}
@@ -1605,91 +1516,38 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               </div>
             </div>
 
-            {/* Guided next step */}
-            <div className="pt-3 border-t border-[#EEF3ED] space-y-2">
+            {/* Manual pipeline + repeat appointments */}
+            <div className="pt-3 border-t border-[#EEF3ED] space-y-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div>
-                  <div className="text-xs font-bold text-[#183A28]">ขั้นตอนถัดไป</div>
-                  <div className="text-[11px] text-[#718579]">ระบบแสดงเฉพาะงานที่ควรทำต่อ เพื่อลดความสับสนของหน้างาน</div>
+                  <div className="text-xs font-bold text-[#183A28]">สถานะการติดตาม</div>
+                  <div className="text-[11px] text-[#718579]">เลือกสถานะตามสถานการณ์จริง และลงนัดซ้ำได้ทุกเมื่อ</div>
                 </div>
-                <span className="text-xs font-bold px-3 py-1 rounded-full bg-[#F1F5EF] text-[#315A43] border border-[#DDE7DA]">
-                  {getLeadStage(activeLeadModal)}
-                </span>
+                <select
+                  value={getLeadStage(activeLeadModal)}
+                  onChange={(e) => handleUpdateLeadStage(activeLeadModal.id, e.target.value)}
+                  className="px-3 py-2 rounded-xl border border-[#D5E2D2] bg-white text-xs font-bold text-[#345945]"
+                >
+                  {!PIPELINE_STAGES.some((item) => item.stage === getLeadStage(activeLeadModal)) && (
+                    <option value={getLeadStage(activeLeadModal)}>{getLeadStage(activeLeadModal)} (ข้อมูลเดิม)</option>
+                  )}
+                  {PIPELINE_STAGES.map(({ stage }) => (
+                    <option key={stage} value={stage}>{stage}</option>
+                  ))}
+                </select>
               </div>
 
-              {(() => {
-                const stage = getLeadStage(activeLeadModal);
-                const scheduledAppointment = activeLeadAppointments.find((apt) => apt.status === 'scheduled');
-
-                if (stage === 'ยังไม่ติดต่อ') {
-                  return (
-                    <button
-                      onClick={() => handleUpdateLeadStage(activeLeadModal.id, 'ติดต่อแล้ว')}
-                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-lime-600 hover:bg-lime-700 text-white font-bold text-xs"
-                    >
-                      ✓ บันทึกว่าติดต่อแล้ว
-                    </button>
-                  );
-                }
-
-                if (scheduledAppointment) {
-                  return (
-                    <button
-                      onClick={() => {
-                        setEditingApt(scheduledAppointment);
-                        setIsAddAptModalOpen(true);
-                      }}
-                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5"
-                    >
-                      <Calendar className="w-4 h-4" /> เปิดนัดเข้าพบ
-                    </button>
-                  );
-                }
-
-                if (stage === 'ติดต่อแล้ว' || stage === 'นัดเข้าพบ') {
-                  return (
-                    <button
-                      onClick={() => {
-                        setEditingApt(null);
-                        setAptDefaultLead(activeLeadModal);
-                        setAptDefaultDate(localDateKey());
-                        setIsAddAptModalOpen(true);
-                      }}
-                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5"
-                    >
-                      <Calendar className="w-4 h-4" /> นัดเข้าพบ
-                    </button>
-                  );
-                }
-
-                if (stage === 'ส่งใบเสนอราคาแล้ว') {
-                  return (
-                    <button
-                      onClick={() => handleUpdateLeadStage(activeLeadModal.id, 'ตกลง Partnership')}
-                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs"
-                    >
-                      → ตกลง Partnership
-                    </button>
-                  );
-                }
-
-                if (stage === 'ตกลง Partnership') {
-                  return (
-                    <button
-                      onClick={() => handleUpdateLeadStage(activeLeadModal.id, 'ปิดการขาย')}
-                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs"
-                    >
-                      ✓ ปิดการขาย
-                    </button>
-                  );
-                }
-
-                return (
-                  <div className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
-                    ✓ ปิดการขายแล้ว — ไม่มีขั้นตอนถัดไป
-                  </div>
-                );
-              })()}
+              <button
+                onClick={() => {
+                  setEditingApt(null);
+                  setAptDefaultLead(activeLeadModal);
+                  setAptDefaultDate(localDateKey());
+                  setIsAddAptModalOpen(true);
+                }}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-[#2D5A43] hover:bg-[#204533] text-white font-bold text-xs flex items-center justify-center gap-1.5"
+              >
+                <Calendar className="w-4 h-4" /> + ลงนัดหมายเพิ่ม
+              </button>
             </div>
           </div>
         </div>
