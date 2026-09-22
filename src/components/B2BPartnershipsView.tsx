@@ -44,6 +44,7 @@ import {
   saveCentralB2BLead,
   deleteCentralB2BLead,
   saveCentralB2BAppointment,
+  saveCentralB2BWorkflow,
   deleteCentralB2BAppointment,
   resetCentralB2BToDefault,
   canUserEditOperational,
@@ -53,6 +54,7 @@ import {
 } from '../utils/b2bService';
 import { getActiveSessionUser } from '../utils/authService';
 import { subscribeB2BCoordinators } from '../utils/b2bCoordinatorService';
+import { localDateKey } from '../utils/dateUtils';
 
 interface B2BPartnershipsViewProps {
   onSelectLeadForSearch?: (leadName: string) => void;
@@ -258,7 +260,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         contactPerson: leadWithHistory.contactPerson,
         phone: leadWithHistory.phone,
         priority: leadWithHistory.priority,
-        createdAt: new Date().toISOString().split('T')[0],
+        createdAt: localDateKey(),
       };
       await saveCentralB2BAppointment(newApt, currentRole);
     }
@@ -291,49 +293,250 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     finally { setIsDeleting(false); }
   };
 
-  // Handle Add or Edit Appointment
+  // Handle Add or Edit Appointment.
+  // New appointments and the organization pipeline are saved atomically.
   const handleSaveAppointment = async (apt: B2BAppointment) => {
     if (!isOperatorOrAdmin) {
       setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Operator และ Administrator เท่านั้นที่สามารถบันทึกนัดหมายได้');
       return false;
     }
 
-    const res = await saveCentralB2BAppointment(apt, currentRole);
-    if (!res.success) {
-      setPermissionError(res.error || 'ไม่สามารถบันทึกนัดหมายได้');
-      return false;
-    }
-
-    // Creating/saving a calendar appointment means contact has happened.
-    // Only advance "ยังไม่ติดต่อ" → "ติดต่อแล้ว"; never move an organization backwards.
     const linkedLead = leadsList.find((lead) =>
       (apt.leadId && lead.id === apt.leadId) || lead.name === apt.leadName
     );
-    if (linkedLead && (linkedLead.pipelineStage || linkedLead.contactStatus || 'ยังไม่ติดต่อ') === 'ยังไม่ติดต่อ') {
-      const updatedLead: B2BLead = {
+    if (!linkedLead) {
+      setPermissionError('ไม่พบข้อมูลองค์กรที่ผูกกับนัดหมาย กรุณาเลือกองค์กรจากฐานข้อมูล');
+      return false;
+    }
+
+    const isNewAppointment = !appointments.some((item) => item.id === apt.id);
+    let updatedLead: B2BLead | undefined;
+
+    if (isNewAppointment) {
+      const oldStage = getLeadStage(linkedLead);
+      const stageOrder = PIPELINE_STAGES.map((item) => item.stage);
+      const oldIndex = stageOrder.indexOf(oldStage);
+      const meetingIndex = stageOrder.indexOf('นัดเข้าพบ');
+      const shouldAdvance = oldIndex === -1 || oldIndex < meetingIndex;
+
+      updatedLead = {
         ...linkedLead,
-        pipelineStage: 'ติดต่อแล้ว',
-        contactStatus: 'ติดต่อแล้ว',
-        updatedAt: new Date().toISOString().split('T')[0],
+        appointmentDate: apt.date,
+        appointmentTime: apt.time,
+        ...(shouldAdvance ? { pipelineStage: 'นัดเข้าพบ', contactStatus: 'นัดเข้าพบ' } : {}),
+        updatedAt: localDateKey(),
+        history: [
+          {
+            id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            timestamp: new Date().toISOString(),
+            actorId,
+            actorName,
+            action: 'นัดเข้าพบ',
+            changes: [
+              ...(shouldAdvance && oldStage !== 'นัดเข้าพบ'
+                ? [`สถานะการติดตาม: "${oldStage}" → "นัดเข้าพบ"`]
+                : []),
+              `นัดเข้าพบวันที่ ${apt.date} เวลา ${apt.time}`,
+            ],
+          },
+          ...(linkedLead.history || []),
+        ].slice(0, 100),
       };
-      updatedLead.history = [
+    }
+
+    const result = await saveCentralB2BWorkflow(
+      { appointment: apt, ...(updatedLead ? { lead: updatedLead } : {}) },
+      currentRole
+    );
+    if (!result.success) {
+      setPermissionError(result.error || 'ไม่สามารถบันทึกนัดหมายได้');
+      return false;
+    }
+
+    if (updatedLead && activeLeadModal?.id === updatedLead.id) setActiveLeadModal(updatedLead);
+    return true;
+  };
+
+  const handleRescheduleAppointment = async (
+    apt: B2BAppointment,
+    newDate: string,
+    newTime: string,
+    reason: string
+  ) => {
+    if (!isOperatorOrAdmin) return false;
+    if (!newDate || !newTime || (newDate === apt.date && newTime === apt.time)) return false;
+
+    const linkedLead = leadsList.find((lead) =>
+      (apt.leadId && lead.id === apt.leadId) || lead.name === apt.leadName
+    );
+    if (!linkedLead) return false;
+
+    const updatedAppointment: B2BAppointment = {
+      ...apt,
+      date: newDate,
+      time: newTime,
+      status: 'scheduled',
+      rescheduleHistory: [
+        ...(apt.rescheduleHistory || []),
+        {
+          id: `move_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          fromDate: apt.date,
+          fromTime: apt.time,
+          toDate: newDate,
+          toTime: newTime,
+          reason: reason.trim() || undefined,
+          changedAt: new Date().toISOString(),
+          changedById: actorId,
+          changedByName: actorName,
+        },
+      ],
+      updatedAt: localDateKey(),
+    };
+
+    const oldStage = getLeadStage(linkedLead);
+    const stageOrder = PIPELINE_STAGES.map((item) => item.stage);
+    const shouldAdvance = stageOrder.indexOf(oldStage) < stageOrder.indexOf('นัดเข้าพบ');
+    const updatedLead: B2BLead = {
+      ...linkedLead,
+      appointmentDate: newDate,
+      appointmentTime: newTime,
+      ...(shouldAdvance ? { pipelineStage: 'นัดเข้าพบ', contactStatus: 'นัดเข้าพบ' } : {}),
+      updatedAt: localDateKey(),
+      history: [
         {
           id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           timestamp: new Date().toISOString(),
           actorId,
           actorName,
-          action: 'สร้างนัดหมาย',
-          changes: [`สถานะการติดตาม: "ยังไม่ติดต่อ" → "ติดต่อแล้ว"`, `สร้างนัดหมายวันที่ ${apt.date} เวลา ${apt.time}`],
+          action: 'เลื่อนนัด',
+          changes: [
+            `เลื่อนนัดจาก ${apt.date} ${apt.time} → ${newDate} ${newTime}`,
+            ...(reason.trim() ? [`เหตุผล: ${reason.trim()}`] : []),
+          ],
         },
         ...(linkedLead.history || []),
-      ].slice(0, 100);
+      ].slice(0, 100),
+    };
 
-      const leadResult = await saveCentralB2BLead(updatedLead, currentRole);
-      if (!leadResult.success) {
-        setPermissionError('บันทึกนัดหมายแล้ว แต่เปลี่ยนสถานะองค์กรเป็น "ติดต่อแล้ว" ไม่สำเร็จ กรุณาตรวจสอบสถานะอีกครั้ง');
-      }
+    const result = await saveCentralB2BWorkflow(
+      { appointment: updatedAppointment, lead: updatedLead },
+      currentRole
+    );
+    if (!result.success) {
+      setPermissionError(result.error || 'เลื่อนนัดไม่สำเร็จ');
+      return false;
     }
+    if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(updatedLead);
+    return true;
+  };
 
+  const handleCompleteAppointment = async (
+    apt: B2BAppointment,
+    nextStage: B2BPipelineStatus,
+    resultNote: string
+  ) => {
+    if (!isOperatorOrAdmin) return false;
+    const linkedLead = leadsList.find((lead) =>
+      (apt.leadId && lead.id === apt.leadId) || lead.name === apt.leadName
+    );
+    if (!linkedLead) return false;
+
+    const updatedAppointment: B2BAppointment = {
+      ...apt,
+      status: 'completed',
+      resultNote: resultNote.trim() || undefined,
+      completedAt: new Date().toISOString(),
+      updatedAt: localDateKey(),
+    };
+    const oldStage = getLeadStage(linkedLead);
+    const updatedLead: B2BLead = {
+      ...linkedLead,
+      pipelineStage: nextStage,
+      contactStatus: nextStage,
+      updatedAt: localDateKey(),
+      history: [
+        {
+          id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          timestamp: new Date().toISOString(),
+          actorId,
+          actorName,
+          action: 'เข้าพบแล้ว',
+          changes: [
+            ...(oldStage !== nextStage ? [`สถานะการติดตาม: "${oldStage}" → "${nextStage}"`] : []),
+            `บันทึกผลนัดวันที่ ${apt.date} เวลา ${apt.time}`,
+            ...(resultNote.trim() ? [`ผลการเข้าพบ: ${resultNote.trim()}`] : []),
+          ],
+        },
+        ...(linkedLead.history || []),
+      ].slice(0, 100),
+    };
+
+    const result = await saveCentralB2BWorkflow(
+      { appointment: updatedAppointment, lead: updatedLead },
+      currentRole
+    );
+    if (!result.success) {
+      setPermissionError(result.error || 'บันทึกผลการเข้าพบไม่สำเร็จ');
+      return false;
+    }
+    if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(updatedLead);
+    return true;
+  };
+
+  const handleCancelAppointment = async (apt: B2BAppointment, reason: string) => {
+    if (!isOperatorOrAdmin) return false;
+    const linkedLead = leadsList.find((lead) =>
+      (apt.leadId && lead.id === apt.leadId) || lead.name === apt.leadName
+    );
+    if (!linkedLead) return false;
+
+    const updatedAppointment: B2BAppointment = {
+      ...apt,
+      status: 'cancelled',
+      cancelReason: reason.trim() || undefined,
+      cancelledAt: new Date().toISOString(),
+      updatedAt: localDateKey(),
+    };
+
+    const hasOtherActiveAppointment = appointments.some(
+      (item) =>
+        item.id !== apt.id &&
+        item.status === 'scheduled' &&
+        ((item.leadId && item.leadId === linkedLead.id) || item.leadName === linkedLead.name)
+    );
+    const oldStage = getLeadStage(linkedLead);
+    const shouldStepBack = oldStage === 'นัดเข้าพบ' && !hasOtherActiveAppointment;
+    const updatedLead: B2BLead = {
+      ...linkedLead,
+      ...(shouldStepBack ? { pipelineStage: 'ติดต่อแล้ว', contactStatus: 'ติดต่อแล้ว' } : {}),
+      ...(hasOtherActiveAppointment ? {} : { appointmentDate: undefined, appointmentTime: undefined }),
+      updatedAt: localDateKey(),
+      history: [
+        {
+          id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          timestamp: new Date().toISOString(),
+          actorId,
+          actorName,
+          action: 'ยกเลิกนัด',
+          changes: [
+            `ยกเลิกนัดวันที่ ${apt.date} เวลา ${apt.time}`,
+            ...(reason.trim() ? [`เหตุผล: ${reason.trim()}`] : []),
+            ...(shouldStepBack ? ['สถานะการติดตาม: "นัดเข้าพบ" → "ติดต่อแล้ว"'] : []),
+          ],
+        },
+        ...(linkedLead.history || []),
+      ].slice(0, 100),
+    };
+
+    const result = await saveCentralB2BWorkflow(
+      { appointment: updatedAppointment, lead: updatedLead },
+      currentRole
+    );
+    if (!result.success) {
+      setPermissionError(result.error || 'ยกเลิกนัดไม่สำเร็จ');
+      return false;
+    }
+    if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(updatedLead);
     return true;
   };
 
@@ -394,7 +597,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           // the directory never shows a deleted calendar appointment.
           appointmentDate: nextAppointment?.date || undefined,
           appointmentTime: nextAppointment?.time || undefined,
-          updatedAt: new Date().toISOString().split('T')[0],
+          updatedAt: localDateKey(),
         };
 
         // Only step back when the master status is explicitly "นัดเข้าพบ" and
@@ -453,7 +656,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       const updated: B2BAppointment = {
         ...target,
         status,
-        updatedAt: new Date().toISOString().split('T')[0],
+        updatedAt: localDateKey(),
       };
       const result = await saveCentralB2BAppointment(updated, currentRole);
       if (!result.success) setPermissionError(result.error || 'เปลี่ยนสถานะไม่สำเร็จ');
@@ -525,7 +728,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       ...target,
       pipelineStage: newStage,
       contactStatus: newStage,
-      updatedAt: new Date().toISOString().split('T')[0],
+      updatedAt: localDateKey(),
       history: [
         {
           id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -614,7 +817,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               className="px-3.5 py-2 rounded-xl bg-[#2E7D4E] text-white text-xs font-bold flex items-center gap-1">
               <Plus className="w-4 h-4"/> เพิ่มหน่วยงาน
             </button>
-            <button onClick={() => { setEditingApt(null); setAptDefaultDate(new Date().toISOString().slice(0,10)); setAptDefaultLead(null); setIsAddAptModalOpen(true); }}
+            <button onClick={() => { setEditingApt(null); setAptDefaultDate(localDateKey()); setAptDefaultLead(null); setIsAddAptModalOpen(true); }}
               className="px-3.5 py-2 rounded-xl bg-[#C89B3C] text-[#1E3A29] text-xs font-bold flex items-center gap-1">
               <Calendar className="w-4 h-4"/> เพิ่มนัดหมาย
             </button>
@@ -744,7 +947,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           leads={leadsList}
           onAddAppointment={(date) => {
             setEditingApt(null);
-            setAptDefaultDate(date || new Date().toISOString().slice(0,10));
+            setAptDefaultDate(date || localDateKey());
             setAptDefaultLead(null);
             setIsAddAptModalOpen(true);
           }}
@@ -991,7 +1194,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                         e.stopPropagation();
                         setEditingApt(null);
                         setAptDefaultLead(lead);
-                        setAptDefaultDate(new Date().toISOString().slice(0,10));
+                        setAptDefaultDate(localDateKey());
                         setIsAddAptModalOpen(true);
                       }}
                       className="px-2.5 py-1.5 rounded-xl bg-[#1B3E2D] hover:bg-[#244F39] text-white text-[11px] font-bold flex items-center gap-1"
@@ -1281,7 +1484,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                 onClick={() => {
                   setEditingApt(null);
                   setAptDefaultLead(activeLeadModal);
-                  setAptDefaultDate(new Date().toISOString().slice(0,10));
+                  setAptDefaultDate(localDateKey());
                   setIsAddAptModalOpen(true);
                 }}
                 className="px-4 py-2 rounded-xl bg-[#2D5A43] hover:bg-[#204533] text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
@@ -1327,6 +1530,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         isOpen={isAddAptModalOpen}
         onClose={() => setIsAddAptModalOpen(false)}
         onSave={handleSaveAppointment}
+        onReschedule={handleRescheduleAppointment}
+        onComplete={handleCompleteAppointment}
+        onCancelAppointment={handleCancelAppointment}
         leads={leadsList}
         editAppointment={editingApt}
         defaultDate={aptDefaultDate}
