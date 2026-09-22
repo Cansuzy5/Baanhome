@@ -203,6 +203,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   const [selectedStage, setSelectedStage] = useState<string>('All');
   const [selectedOrgType, setSelectedOrgType] = useState<string>('All');
   const [appointmentFilter, setAppointmentFilter] = useState<'All' | 'ready' | 'hasAppointment' | 'noAppointment'>('All');
+  const [overviewFilter, setOverviewFilter] = useState<'All' | 'engaged'>('All');
 
   // Lead Detail Modal & clipboard states
   const [activeLeadModal, setActiveLeadModal] = useState<B2BLead | null>(null);
@@ -745,9 +746,13 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         (appointmentFilter === 'hasAppointment' && hasAppointment) ||
         (appointmentFilter === 'noAppointment' && !hasAppointment);
 
-      return matchesSearch && matchesPriority && matchesStage && matchesOrgType && matchesAppointment;
+      const matchesOverview =
+        overviewFilter === 'All' ||
+        (overviewFilter === 'engaged' && ['ติดต่อแล้ว','นัดเข้าพบ','ติดตามต่อ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership'].includes(stageText));
+
+      return matchesSearch && matchesPriority && matchesStage && matchesOrgType && matchesAppointment && matchesOverview;
     });
-  }, [leadsList, appointments, searchTerm, selectedPriority, selectedStage, selectedOrgType, appointmentFilter]);
+  }, [leadsList, appointments, searchTerm, selectedPriority, selectedStage, selectedOrgType, appointmentFilter, overviewFilter]);
 
   const handleUpdateLeadStage = async (leadId: string, newStage: B2BPipelineStatus | string) => {
     if (!isOperatorOrAdmin) {
@@ -980,7 +985,11 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                 <details className="bg-white rounded-2xl border border-[#E1E8DE] p-3">
                   <summary className="cursor-pointer text-xs font-bold text-[#496655]">สถิติภาพรวม (กดเพื่อดู)</summary>
                   <div className="mt-3"><div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-                  <div className="bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs">
+                  <button type="button"
+                    onClick={() => {
+                      setOverviewFilter('All'); setSelectedPriority('All'); setSelectedStage('All'); setAppointmentFilter('All'); setSearchTerm('');
+                    }}
+                    className="text-left bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs hover:border-[#2D5A43] hover:bg-[#FAFCF9] transition-all cursor-pointer">
                     <div className="flex items-center justify-between text-xs text-[#637C6D] font-medium mb-1">
                       <span>กลุ่มเป้าหมายทั้งหมด</span>
                       <Building className="w-4 h-4 text-[#2C573F]" />
@@ -988,12 +997,14 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                     <div className="text-2xl sm:text-3xl font-bold text-[#143623]">
                       {leadsList.length} <span className="text-xs font-normal text-[#6F887A]">แห่ง</span>
                     </div>
-                    <div className="text-[11px] text-[#4F715E] mt-1">
-                      หน่วยงานในระบบทั้งหมด
-                    </div>
-                  </div>
+                    <div className="text-[11px] text-[#4F715E] mt-1">กดเพื่อดูทั้งหมด</div>
+                  </button>
           
-                  <div className="bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs">
+                  <button type="button"
+                    onClick={() => {
+                      setOverviewFilter('All'); setSelectedPriority('A'); setSelectedStage('All'); setAppointmentFilter('All');
+                    }}
+                    className={`text-left p-4 rounded-2xl border shadow-2xs transition-all cursor-pointer ${selectedPriority==='A'?'border-[#B5781C] bg-amber-50 ring-2 ring-amber-100':'bg-white border-[#DFE6DC] hover:border-[#B5781C]'}`}>
                     <div className="flex items-center justify-between text-xs text-[#966317] font-medium mb-1">
                       <span>Priority A (เข้าหาด่วน)</span>
                       <Award className="w-4 h-4 text-[#B5781C]" />
@@ -1002,12 +1013,12 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                       {leadsList.filter((l) => l.priority === 'A').length}{' '}
                       <span className="text-xs font-normal text-[#966317]">ราย</span>
                     </div>
-                    <div className="text-[11px] text-[#A6752C] mt-1">
-                      ความพร้อมจัดงานและงบประมาณสูง
-                    </div>
-                  </div>
+                    <div className="text-[11px] text-[#A6752C] mt-1">กดเพื่อกรอง Priority A</div>
+                  </button>
           
-                  <div className="bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs">
+                  <button type="button"
+                    onClick={() => setActiveSubTab('calendar')}
+                    className="text-left bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs hover:border-[#2D5A43] hover:bg-[#F6FAF5] transition-all cursor-pointer">
                     <div className="flex items-center justify-between text-xs text-[#1D5E34] font-medium mb-1">
                       <span>นัดหมายในปฏิทิน</span>
                       <Calendar className="w-4 h-4 text-[#2D5A43]" />
@@ -1017,29 +1028,25 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                       <span className="text-xs font-normal text-[#6F887A]">นัดหมาย</span>
                     </div>
                     <div className="text-[11px] text-[#4F715E] mt-1">
-                      รอเข้าพบ {appointments.filter((a) => a.status === 'scheduled').length} รายการ
+                      กดเพื่อเปิดปฏิทิน · รอเข้าพบ {appointments.filter((a) => a.status === 'scheduled').length}
                     </div>
-                  </div>
+                  </button>
           
-                  <div className="bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs">
+                  <button type="button"
+                    onClick={() => {
+                      setOverviewFilter('engaged'); setSelectedPriority('All'); setSelectedStage('All'); setAppointmentFilter('All');
+                    }}
+                    className={`text-left p-4 rounded-2xl border shadow-2xs transition-all cursor-pointer ${overviewFilter==='engaged'?'border-[#237A40] bg-emerald-50 ring-2 ring-emerald-100':'bg-white border-[#DFE6DC] hover:border-[#237A40]'}`}>
                     <div className="flex items-center justify-between text-xs text-[#305C42] font-medium mb-1">
-                      <span>เริ่มติดต่อ / ตกลงแล้ว</span>
+                      <span>อยู่ระหว่างติดตาม</span>
                       <CheckCircle2 className="w-4 h-4 text-[#237A40]" />
                     </div>
                     <div className="text-2xl sm:text-3xl font-bold text-[#1E7438]">
-                      {leadsList.filter(
-                        (l) =>
-                          l.pipelineStage === 'ติดต่อแล้ว' ||
-                          l.pipelineStage === 'นัดเข้าพบ' ||
-                          l.pipelineStage === 'ตกลง Partnership' ||
-                          l.pipelineStage === 'ปิดการขาย'
-                      ).length}{' '}
+                      {leadsList.filter((l) => ['ติดต่อแล้ว','นัดเข้าพบ','ติดตามต่อ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership'].includes(getLeadStage(l))).length}{' '}
                       <span className="text-xs font-normal text-[#6F887A]">ราย</span>
                     </div>
-                    <div className="text-[11px] text-[#34784C] mt-1">
-                      เข้าสู่กระบวนการเจรจา
-                    </div>
-                  </div>
+                    <div className="text-[11px] text-[#34784C] mt-1">กดเพื่อดูงานที่กำลังดำเนินการ</div>
+                  </button>
                 </div></div>
                 </details>
           
@@ -1140,7 +1147,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setSelectedStage('All');
+                    setSelectedStage('All'); setOverviewFilter('All');
                     setSearchTerm('');
                   }}
                   className="font-bold text-amber-800 hover:underline whitespace-nowrap"
@@ -1154,10 +1161,10 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           <div className="bg-white rounded-2xl border border-[#E1E8DE] p-3 space-y-2">
             <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
               <span className="font-semibold text-[#617B6D] shrink-0">สถานะงาน:</span>
-              <button onClick={() => setSelectedStage('All')}
+              <button onClick={() => setSelectedStage('All'); setOverviewFilter('All')}
                 className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${selectedStage==='All'?'bg-[#235838] text-white':'bg-[#F5F7F3] text-[#4A6455]'}`}>ทั้งหมด</button>
               {PIPELINE_STAGES.filter((item) => !['ปิดการขาย','ปิดการขายไม่สำเร็จ'].includes(item.stage)).map((item) => (
-                <button key={item.stage} onClick={() => setSelectedStage(item.stage)}
+                <button key={item.stage} onClick={() => setSelectedStage(item.stage); setOverviewFilter('All')}
                   className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold border ${
                     selectedStage===item.stage
                       ? item.stage==='ติดตามต่อ' ? 'bg-violet-600 text-white border-violet-600' : 'bg-[#235838] text-white border-[#235838]'
@@ -1182,7 +1189,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
             <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
               <span className="font-semibold text-[#617B6D] shrink-0">Priority:</span>
-              {(['All','A','B','C'] as const).map((p)=><button key={p} onClick={()=>setSelectedPriority(p)}
+              {(['All','A','B','C'] as const).map((p)=><button key={p} onClick={()=>setSelectedPriority(p); setOverviewFilter('All')}
                 className={`px-2.5 py-1 rounded-lg whitespace-nowrap ${selectedPriority===p?'bg-[#235838] text-white':'bg-[#FAF8F2] text-[#4A6455]'}`}>
                 {p==='All'?'ทั้งหมด':`Priority ${p}`}
               </button>)}
@@ -1191,7 +1198,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                   onClick={() => {
                     setSearchTerm('');
                     setSelectedPriority('All');
-                    setSelectedStage('All');
+                    setSelectedStage('All'); setOverviewFilter('All');
                     setAppointmentFilter('All');
                   }}
                   className="px-2.5 py-1 rounded-lg whitespace-nowrap text-rose-700 bg-rose-50 border border-rose-100 font-semibold">
@@ -1475,6 +1482,26 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               );
             })()}
 
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingApt(null);
+                  setAptDefaultLead(activeLeadModal);
+                  setAptDefaultDate(localDateKey());
+                  setIsAddAptModalOpen(true);
+                }}
+                className="px-4 py-2 rounded-xl bg-[#1B3E2D] hover:bg-[#244F39] text-white text-xs font-bold flex items-center gap-1.5"
+              >
+                <Calendar className="w-4 h-4" /> + ลงนัดหมายเพิ่ม
+              </button>
+              {activeLeadAppointments.filter((apt) => apt.status === 'scheduled').length > 0 && (
+                <span className="text-[11px] font-semibold text-[#2E6B45] bg-[#EEF6EB] border border-[#D4E6D0] px-2.5 py-1 rounded-full">
+                  มีนัดรอเข้าพบ {activeLeadAppointments.filter((apt) => apt.status === 'scheduled').length} นัด
+                </span>
+              )}
+            </div>
+
             {/* Customer and BaanHome context */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs sm:text-sm">
               <div className="bg-[#F7FBF5] p-3.5 rounded-2xl border border-[#DDE8DA] space-y-1">
@@ -1715,17 +1742,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                 </select>
               </div>
 
-              <button
-                onClick={() => {
-                  setEditingApt(null);
-                  setAptDefaultLead(activeLeadModal);
-                  setAptDefaultDate(localDateKey());
-                  setIsAddAptModalOpen(true);
-                }}
-                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-[#2D5A43] hover:bg-[#204533] text-white font-bold text-xs flex items-center justify-center gap-1.5"
-              >
-                <Calendar className="w-4 h-4" /> + ลงนัดหมายเพิ่ม
-              </button>
+
             </div>
           </div>
         </div>
