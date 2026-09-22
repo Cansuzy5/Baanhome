@@ -46,6 +46,7 @@ import {
   saveCentralB2BAppointment,
   saveCentralB2BWorkflow,
   closeCentralB2BSalesCycle,
+  deleteCentralB2BSalesClosure,
   deleteCentralB2BAppointment,
   resetCentralB2BToDefault,
   canUserEditOperational,
@@ -873,6 +874,16 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     });
   }, [leadsList, appointments, searchTerm, selectedPriority, selectedStage, selectedOrgType, appointmentFilter, overviewFilter]);
 
+  const getForwardStageOptions = (currentStage: string) => {
+    const order = ['ยังไม่ติดต่อ','ติดต่อแล้ว','นัดเข้าพบ','ติดตามต่อ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership'];
+    const currentIndex = order.indexOf(currentStage);
+    if (currentIndex < 0) return PIPELINE_STAGES;
+    const allowed = new Set(order.slice(currentIndex));
+    allowed.add('ปิดการขาย');
+    allowed.add('ปิดการขายไม่สำเร็จ');
+    return PIPELINE_STAGES.filter((item) => allowed.has(item.stage));
+  };
+
   const handleUpdateLeadStage = async (leadId: string, newStage: B2BPipelineStatus | string) => {
     if (!isOperatorOrAdmin) {
       setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Operator และ Administrator เท่านั้นที่สามารถเปลี่ยนสถานะติดตามงานได้');
@@ -925,8 +936,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       ].slice(0, 100),
     };
 
-    const result = isClosure
-      ? await closeCentralB2BSalesCycle(updatedLead, now, currentRole)
+    const result = isClosure && closure
+      ? await closeCentralB2BSalesCycle(updatedLead, now, closure.id, closure.outcome, currentRole)
       : await saveCentralB2BLead(updatedLead, currentRole);
     if (!result.success) {
       setPermissionError(result.error || 'เปลี่ยนสถานะไม่สำเร็จ');
@@ -972,7 +983,12 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           ...(target.history || []),
         ].slice(0, 100),
       };
-      const result = await saveCentralB2BLead(updatedLead, currentRole);
+      const result = await deleteCentralB2BSalesClosure(
+        updatedLead,
+        closure.id,
+        closure.closedAt,
+        currentRole
+      );
       if (!result.success) {
         setDeleteError(result.error || 'ลบรอบการขายไม่สำเร็จ');
         return;
@@ -1550,7 +1566,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                       {!PIPELINE_STAGES.some((item) => item.stage === getLeadStage(lead)) && (
                         <option value={getLeadStage(lead)}>{getLeadStage(lead)} (ข้อมูลเดิม)</option>
                       )}
-                      {PIPELINE_STAGES.map((item) => (
+                      {getForwardStageOptions(getLeadStage(lead)).map((item) => (
                         <option key={item.stage} value={item.stage}>{item.stage}</option>
                       ))}
                     </select>
