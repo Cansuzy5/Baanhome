@@ -72,7 +72,8 @@ export type B2BPipelineStatus =
   | 'ติดตามต่อ'
   | 'ส่งใบเสนอราคาแล้ว'
   | 'ตกลง Partnership'
-  | 'ปิดการขาย';
+  | 'ปิดการขาย'
+  | 'ปิดการขายไม่สำเร็จ';
 
 export interface B2BLeadHistoryEntry {
   id: string;
@@ -81,6 +82,15 @@ export interface B2BLeadHistoryEntry {
   actorName?: string;
   action: string;
   changes: string[];
+}
+
+export interface B2BSalesClosure {
+  id: string;
+  outcome: 'success' | 'unsuccessful';
+  closedAt: string;
+  closedById?: string;
+  closedByName?: string;
+  previousStage?: string;
 }
 
 export interface B2BLead {
@@ -128,6 +138,7 @@ export interface B2BLead {
   updatedAt?: string;
   isCustom?: boolean; // true if added by user
   history?: B2BLeadHistoryEntry[];
+  salesClosures?: B2BSalesClosure[];
 }
 
 export interface B2BCoordinator {
