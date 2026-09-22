@@ -523,15 +523,38 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                       )}
                     </div>
 
-                    <div className="flex items-center justify-between pt-1 text-[11px]" onClick={(e) => e.stopPropagation()}>
-                      <span className={`font-bold px-2 py-1 rounded-full ${appointmentClass(apt)}`}>{appointmentLabel(apt)}</span>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}
-                        className="px-2.5 py-1 rounded-lg bg-[#1B3E2D] text-white font-bold"
-                      >
-                        จัดการนัด
-                      </button>
+                    <div className="pt-1 space-y-2 text-[11px]" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`font-bold px-2 py-1 rounded-full ${appointmentClass(apt)}`}>{appointmentLabel(apt)}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}
+                          className="px-2.5 py-1 rounded-lg bg-[#1B3E2D] text-white font-bold"
+                        >
+                          จัดการนัด
+                        </button>
+                      </div>
+                      {(() => {
+                        const lead = getLeadForAppointment(apt);
+                        const stage = getLeadStage(apt);
+                        return lead ? (
+                          <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#EEF4ED]">
+                            <span className="text-[#72877B] font-semibold">สถานะติดตาม:</span>
+                            <select
+                              value={stage}
+                              onChange={(e) => onUpdateLeadStage(lead.id, e.target.value)}
+                              className={`max-w-[190px] px-2 py-1 rounded-lg border border-[#D5E2D2] font-bold ${stageClass(stage)}`}
+                            >
+                              {!PIPELINE_STAGES.some((item) => item.stage === stage) && (
+                                <option value={stage}>{stage} (ข้อมูลเดิม)</option>
+                              )}
+                              {PIPELINE_STAGES.map((item) => (
+                                <option key={item.stage} value={item.stage}>{item.stage}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : null;
+                      })()}
                     </div>
                   </div>
                 ))}
