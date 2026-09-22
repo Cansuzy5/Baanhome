@@ -903,7 +903,11 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     return PIPELINE_STAGES.filter((item) => allowed.has(item.stage));
   };
 
-  const handleUpdateLeadStage = async (leadId: string, newStage: B2BPipelineStatus | string) => {
+  const handleUpdateLeadStage = async (
+    leadId: string,
+    newStage: B2BPipelineStatus | string,
+    sourceAppointmentId?: string
+  ) => {
     if (!isOperatorOrAdmin) {
       setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Operator และ Administrator เท่านั้นที่สามารถเปลี่ยนสถานะติดตามงานได้');
       return;
@@ -924,6 +928,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           closedById: actorId,
           closedByName: actorName,
           previousStage: oldStage,
+          sourceAppointmentId,
         }
       : null;
 
@@ -956,7 +961,14 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     };
 
     const result = isClosure && closure
-      ? await closeCentralB2BSalesCycle(updatedLead, now, closure.id, closure.outcome, currentRole)
+      ? await closeCentralB2BSalesCycle(
+          updatedLead,
+          now,
+          closure.id,
+          closure.outcome,
+          sourceAppointmentId,
+          currentRole
+        )
       : await saveCentralB2BLead(updatedLead, currentRole);
     if (!result.success) {
       setPermissionError(result.error || 'เปลี่ยนสถานะไม่สำเร็จ');
