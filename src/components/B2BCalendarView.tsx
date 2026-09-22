@@ -84,12 +84,22 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
 
   const appointmentClass = (apt: B2BAppointment) => {
     if (apt.status === 'completed') return 'bg-emerald-100 text-emerald-800 border-l-2 border-emerald-500';
-    if (apt.status === 'cancelled') return 'bg-slate-100 text-slate-600 border-l-2 border-slate-400';
+    if (apt.status === 'rescheduled') return 'bg-amber-100 text-amber-800 border-l-2 border-amber-500';
+    if (apt.status === 'cancelled') return 'bg-rose-100 text-rose-700 border-l-2 border-rose-500';
+    if (apt.status === 'not_met') return 'bg-slate-200 text-slate-700 border-l-2 border-slate-500';
     return 'bg-blue-100 text-blue-800 border-l-2 border-blue-500';
   };
 
   const appointmentLabel = (apt: B2BAppointment) =>
-    apt.status === 'completed' ? 'เข้าพบแล้ว' : apt.status === 'cancelled' ? 'ยกเลิกนัด' : 'นัดเข้าพบ';
+    apt.status === 'completed'
+      ? 'เข้าพบแล้ว'
+      : apt.status === 'rescheduled'
+      ? 'เลื่อนนัด'
+      : apt.status === 'cancelled'
+      ? 'ยกเลิกนัด'
+      : apt.status === 'not_met'
+      ? 'ไม่ได้เข้าพบ'
+      : 'รอเข้าพบ';
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -190,22 +200,36 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
     );
   }, [appointmentsByDate, selectedDateStr]);
 
-  // All upcoming appointments filtered
+  // Agenda filtering from the clickable overview cards / status selector.
   const filteredAppointments = useMemo(() => {
+    const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
     return appointments
-      .filter((apt) => filterStatus === 'all' || getLeadStage(apt) === filterStatus)
+      .filter((apt) => {
+        if (filterStatus === 'all') return true;
+        if (filterStatus === 'month') return apt.date.startsWith(monthPrefix);
+        if (filterStatus === 'closed-success') {
+          const lead = getLeadForAppointment(apt);
+          return (lead?.salesClosures || []).some((item) => item.outcome === 'success');
+        }
+        return getLeadStage(apt) === filterStatus;
+      })
       .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
-  }, [appointments, leads, filterStatus]);
+  }, [appointments, leads, filterStatus, year, month]);
 
   // Pipeline stats use the same organization status across directory and calendar.
   const stats = useMemo(() => {
-    const stageOf = (lead: B2BLead) => lead.pipelineStage || lead.contactStatus || 'ยังไม่ติดต่อ';
+    const stageOf = (lead: B2BLead) => {
+      const raw = lead.pipelineStage || lead.contactStatus || 'ยังไม่ติดต่อ';
+      return raw === 'เข้าพบแล้ว' ? 'ติดตามต่อ' : raw;
+    };
     return {
       totalThisMonth: appointments.filter((a) => a.date.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`)).length,
       contacted: leads.filter((l) => stageOf(l) === 'ติดต่อแล้ว').length,
       meeting: leads.filter((l) => stageOf(l) === 'นัดเข้าพบ').length,
+      followUp: leads.filter((l) => stageOf(l) === 'ติดตามต่อ').length,
       quoted: leads.filter((l) => stageOf(l) === 'ส่งใบเสนอราคาแล้ว').length,
-      closed: leads.filter((l) => stageOf(l) === 'ปิดการขาย').length,
+      partnership: leads.filter((l) => stageOf(l) === 'ตกลง Partnership').length,
+      closedSuccess: leads.reduce((sum, lead) => sum + (lead.salesClosures || []).filter((item) => item.outcome === 'success').length, 0),
     };
   }, [appointments, leads, year, month]);
 
@@ -223,26 +247,41 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="px-3 py-1.5 rounded-xl bg-[#F3F7F1] border border-[#E0E8DD] text-center">
-              <span className="text-[9px] text-[#789084] block">เดือนนี้</span>
+            <button type="button" onClick={() => setFilterStatus('month')}
+              className={`px-3 py-1.5 rounded-xl border text-center transition-all ${filterStatus==='month'?'ring-2 ring-[#2D5A43] bg-[#EEF5EC] border-[#2D5A43]':'bg-[#F3F7F1] border-[#E0E8DD] hover:border-[#AFC4B4]'}`}>
+              <span className="text-[9px] text-[#789084] block">นัดเดือนนี้</span>
               <span className="text-sm font-bold text-[#173827]">{stats.totalThisMonth}</span>
-            </div>
-            <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-100 text-center">
-              <span className="text-[9px] text-emerald-700 block">ติดต่อแล้ว</span>
-              <span className="text-sm font-bold text-emerald-700">{stats.contacted}</span>
-            </div>
-            <div className="px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-100 text-center">
+            </button>
+            <button type="button" onClick={() => setFilterStatus('ติดต่อแล้ว')}
+              className={`px-3 py-1.5 rounded-xl border text-center transition-all ${filterStatus==='ติดต่อแล้ว'?'ring-2 ring-lime-500 bg-lime-100 border-lime-400':'bg-lime-50 border-lime-100 hover:border-lime-300'}`}>
+              <span className="text-[9px] text-lime-700 block">ติดต่อแล้ว</span>
+              <span className="text-sm font-bold text-lime-700">{stats.contacted}</span>
+            </button>
+            <button type="button" onClick={() => setFilterStatus('นัดเข้าพบ')}
+              className={`px-3 py-1.5 rounded-xl border text-center transition-all ${filterStatus==='นัดเข้าพบ'?'ring-2 ring-blue-500 bg-blue-100 border-blue-400':'bg-blue-50 border-blue-100 hover:border-blue-300'}`}>
               <span className="text-[9px] text-blue-700 block">นัดเข้าพบ</span>
               <span className="text-sm font-bold text-blue-700">{stats.meeting}</span>
-            </div>
-            <div className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-100 text-center">
+            </button>
+            <button type="button" onClick={() => setFilterStatus('ติดตามต่อ')}
+              className={`px-3 py-1.5 rounded-xl border text-center transition-all ${filterStatus==='ติดตามต่อ'?'ring-2 ring-violet-500 bg-violet-100 border-violet-400':'bg-violet-50 border-violet-100 hover:border-violet-300'}`}>
+              <span className="text-[9px] text-violet-700 block">ติดตามต่อ</span>
+              <span className="text-sm font-bold text-violet-700">{stats.followUp}</span>
+            </button>
+            <button type="button" onClick={() => setFilterStatus('ส่งใบเสนอราคาแล้ว')}
+              className={`px-3 py-1.5 rounded-xl border text-center transition-all ${filterStatus==='ส่งใบเสนอราคาแล้ว'?'ring-2 ring-amber-500 bg-amber-100 border-amber-400':'bg-amber-50 border-amber-100 hover:border-amber-300'}`}>
               <span className="text-[9px] text-amber-700 block">ส่งใบเสนอราคา</span>
               <span className="text-sm font-bold text-amber-700">{stats.quoted}</span>
-            </div>
-            <div className="px-3 py-1.5 rounded-xl bg-teal-50 border border-teal-100 text-center">
-              <span className="text-[9px] text-teal-700 block">ปิดการขาย</span>
-              <span className="text-sm font-bold text-teal-700">{stats.closed}</span>
-            </div>
+            </button>
+            <button type="button" onClick={() => setFilterStatus('ตกลง Partnership')}
+              className={`px-3 py-1.5 rounded-xl border text-center transition-all ${filterStatus==='ตกลง Partnership'?'ring-2 ring-teal-500 bg-teal-100 border-teal-400':'bg-teal-50 border-teal-100 hover:border-teal-300'}`}>
+              <span className="text-[9px] text-teal-700 block">Partnership</span>
+              <span className="text-sm font-bold text-teal-700">{stats.partnership}</span>
+            </button>
+            <button type="button" onClick={() => setFilterStatus('closed-success')}
+              className={`px-3 py-1.5 rounded-xl border text-center transition-all ${filterStatus==='closed-success'?'ring-2 ring-emerald-600 bg-emerald-100 border-emerald-500':'bg-emerald-50 border-emerald-100 hover:border-emerald-300'}`}>
+              <span className="text-[9px] text-emerald-700 block">ปิดสำเร็จ</span>
+              <span className="text-sm font-bold text-emerald-700">{stats.closedSuccess}</span>
+            </button>
 
             <button
               onClick={() => exportAppointmentsToCsv(appointments)}
@@ -393,9 +432,11 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
           </div>
 
           <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-[#6D8276]">
-            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-blue-500" /> นัดเข้าพบ</span>
+            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-blue-500" /> รอเข้าพบ</span>
             <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> เข้าพบแล้ว</span>
-            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-slate-400" /> เลื่อนแล้ว / ยกเลิก</span>
+            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-amber-500" /> เลื่อนนัด</span>
+            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-rose-500" /> ยกเลิกนัด</span>
+            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-slate-500" /> ไม่ได้เข้าพบ</span>
           </div>
 
           {/* Quick Date Summary */}
@@ -582,7 +623,9 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                 className="text-xs px-2.5 py-1 rounded-xl border border-[#D5E2D2] bg-[#FAFBF9] text-[#345945]"
               >
                 <option value="all">ทุกสถานะ</option>
-                {PIPELINE_STAGES.map((item) => <option key={item.stage} value={item.stage}>{item.stage}</option>)}
+                <option value="month">นัดเดือนนี้</option>
+                {PIPELINE_STAGES.filter((item) => !['ปิดการขาย','ปิดการขายไม่สำเร็จ'].includes(item.stage)).map((item) => <option key={item.stage} value={item.stage}>{item.stage}</option>)}
+                <option value="closed-success">ปิดการขายสำเร็จ</option>
               </select>
             </div>
 
