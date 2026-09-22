@@ -80,13 +80,20 @@ export function applyB2BMutation(current: B2BData, body: any): B2BData {
     }
     const leads = upsert(current.leads, body.lead, body.expectedLeadRevision);
     const appointments = current.appointments.map(appointment => {
-      const belongsToLead = appointmentBelongsToLead(current, appointment, body.lead);
+      const isSourceAppointment =
+        typeof body.sourceAppointmentId === 'string' &&
+        body.sourceAppointmentId &&
+        appointment.id === body.sourceAppointmentId;
+      const belongsToLead =
+        isSourceAppointment ||
+        appointmentBelongsToLead(current, appointment, body.lead);
+
       if (!belongsToLead || appointment.salesCycleClosedAt) return appointment;
 
       return {
         ...appointment,
-        // Repair legacy appointments with a stale/missing organization link while
-        // archiving the round so future reads can use the stable ID.
+        // The selected calendar appointment is authoritative for this close action.
+        // Repair its organization link and archive the rest of the same current cycle.
         leadId: body.lead.id,
         leadName: body.lead.name,
         salesCycleClosedAt: body.closedAt,
