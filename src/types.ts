@@ -83,6 +83,20 @@ export interface B2BLeadHistoryEntry {
   changes: string[];
 }
 
+export interface B2BOpportunityRound {
+  id: string;
+  sequence: number;
+  name: string;
+  startDate: string;
+  notes?: string;
+  createdAt: string;
+  createdById?: string;
+  createdByName?: string;
+  updatedAt?: string;
+  updatedById?: string;
+  updatedByName?: string;
+}
+
 export interface B2BLead {
   id: string; // e.g. KH-168
   name: string; // e.g. สำนักงานพัฒนาฝีมือแรงงานกาฬสินธุ์
@@ -128,6 +142,8 @@ export interface B2BLead {
   updatedAt?: string;
   isCustom?: boolean; // true if added by user
   history?: B2BLeadHistoryEntry[];
+  opportunityRounds?: B2BOpportunityRound[];
+  activeOpportunityRoundId?: string;
 }
 
 export interface B2BCoordinator {
@@ -178,6 +194,8 @@ export interface B2BAppointment {
   completedAt?: string;
   cancelledAt?: string;
   rescheduleHistory?: AppointmentRescheduleEntry[];
+  opportunityRoundId?: string;
+  opportunityRoundName?: string;
   assignedStaff?: string;
   priority?: 'A' | 'B' | 'C';
   createdAt: string;
