@@ -24,7 +24,7 @@ import {
   Trash2,
   RotateCcw,
 } from 'lucide-react';
-import { B2BLead, B2BAppointment, B2BCoordinator, B2BOpportunityRound, B2BPipelineStatus, AppointmentStatus, StaffProfile, UserRole } from '../types';
+import { B2BLead, B2BAppointment, B2BCoordinator, B2BPipelineStatus, AppointmentStatus, StaffProfile, UserRole } from '../types';
 import {
   B2B_LEADS,
   PARTNERSHIP_PIPELINE_STATS,
@@ -36,7 +36,6 @@ import { B2BCalendarView } from './B2BCalendarView';
 import { AddLeadModal } from './AddLeadModal';
 import { AddAppointmentModal } from './AddAppointmentModal';
 import { B2BCoordinatorManagerModal } from './B2BCoordinatorManagerModal';
-import { B2BOpportunityRoundModal } from './B2BOpportunityRoundModal';
 import { ExportB2BModal } from './ExportB2BModal';
 import { GoogleSheetsDbConfig } from '../utils/googleSheetsDatabase';
 import { getGoogleAccessToken } from '../utils/googleWorkspaceAuth';
@@ -204,7 +203,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   const [aptDefaultDate, setAptDefaultDate] = useState<string>('2026-09-09');
   const [aptDefaultLead, setAptDefaultLead] = useState<B2BLead | null>(null);
   const [isCoordinatorManagerOpen, setIsCoordinatorManagerOpen] = useState(false);
-  const [isRoundManagerOpen, setIsRoundManagerOpen] = useState(false);
 
   // In-App Confirmation Modals state (avoiding window.confirm which is blocked in sandboxed iframes)
   const [appointmentToDelete, setAppointmentToDelete] = useState<B2BAppointment | null>(null);
@@ -296,109 +294,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     finally { setIsDeleting(false); }
   };
 
-  const saveRoundLead = async (updatedLead: B2BLead, action: string, changes: string[]) => {
-    const leadWithHistory: B2BLead = {
-      ...updatedLead,
-      updatedAt: localDateKey(),
-      history: [
-        {
-          id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          timestamp: new Date().toISOString(),
-          actorId,
-          actorName,
-          action,
-          changes,
-        },
-        ...(updatedLead.history || []),
-      ].slice(0, 100),
-    };
-    const result = await saveCentralB2BLead(leadWithHistory, currentRole);
-    if (!result.success) {
-      setPermissionError(result.error || 'บันทึกรอบงานไม่สำเร็จ');
-      return false;
-    }
-    if (activeLeadModal?.id === leadWithHistory.id) setActiveLeadModal(leadWithHistory);
-    return true;
-  };
-
-  const handleCreateOpportunityRound = async (name: string, startDate: string, notes: string) => {
-    if (!isOperatorOrAdmin || !activeLeadModal) return false;
-    const existing = activeLeadModal.opportunityRounds || [];
-    const nextSequence = existing.reduce((max, item) => Math.max(max, item.sequence || 0), 0) + 1;
-    const round: B2BOpportunityRound = {
-      id: `ROUND-${crypto.randomUUID()}`,
-      sequence: nextSequence,
-      name,
-      startDate,
-      notes: notes || undefined,
-      createdAt: new Date().toISOString(),
-      createdById: actorId,
-      createdByName: actorName,
-    };
-    return saveRoundLead(
-      {
-        ...activeLeadModal,
-        opportunityRounds: [...existing, round],
-        activeOpportunityRoundId: round.id,
-      },
-      'เปิดรอบงานใหม่',
-      [`เปิดรอบที่ ${nextSequence}: ${name}`]
-    );
-  };
-
-  const handleEditOpportunityRound = async (roundId: string, name: string, startDate: string, notes: string) => {
-    if (!isAdmin || !activeLeadModal) return false;
-    const rounds = activeLeadModal.opportunityRounds || [];
-    const before = rounds.find((item) => item.id === roundId);
-    if (!before) return false;
-    const updatedRounds = rounds.map((item) =>
-      item.id === roundId
-        ? {
-            ...item,
-            name,
-            startDate,
-            notes: notes || undefined,
-            updatedAt: new Date().toISOString(),
-            updatedById: actorId,
-            updatedByName: actorName,
-          }
-        : item
-    );
-    return saveRoundLead(
-      { ...activeLeadModal, opportunityRounds: updatedRounds },
-      'แก้ไขรอบงานย้อนหลัง',
-      [`รอบที่ ${before.sequence}: "${before.name}" → "${name}"`, `วันที่เริ่ม: ${before.startDate} → ${startDate}`]
-    );
-  };
-
-  const handleDeleteOpportunityRound = async (roundId: string) => {
-    if (!isAdmin || !activeLeadModal) return false;
-    const rounds = activeLeadModal.opportunityRounds || [];
-    const target = rounds.find((item) => item.id === roundId);
-    if (!target) return false;
-    const remaining = rounds.filter((item) => item.id !== roundId);
-    const nextActive =
-      activeLeadModal.activeOpportunityRoundId === roundId
-        ? [...remaining].sort((a,b) => b.sequence - a.sequence)[0]?.id
-        : activeLeadModal.activeOpportunityRoundId;
-    return saveRoundLead(
-      { ...activeLeadModal, opportunityRounds: remaining, activeOpportunityRoundId: nextActive },
-      'ลบรอบงาน',
-      [`ลบรอบที่ ${target.sequence}: ${target.name}`, 'เก็บนัดหมายเดิมไว้ ไม่ลบข้อมูลนัด']
-    );
-  };
-
-  const handleSetActiveOpportunityRound = async (roundId: string) => {
-    if (!isOperatorOrAdmin || !activeLeadModal) return false;
-    const round = (activeLeadModal.opportunityRounds || []).find((item) => item.id === roundId);
-    if (!round) return false;
-    return saveRoundLead(
-      { ...activeLeadModal, activeOpportunityRoundId: roundId },
-      'เปลี่ยนรอบงานปัจจุบัน',
-      [`เลือกรอบที่ ${round.sequence}: ${round.name}`]
-    );
-  };
-
   // Handle Add or Edit Appointment.
   // Appointment lifecycle is separate from sales progression, except that an active
   // appointment advances early-stage organizations to "นัดเข้าพบ". Later stages stay manual.
@@ -417,15 +312,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     }
 
     const isNewAppointment = !appointments.some((item) => item.id === apt.id);
-    const activeRound = (linkedLead.opportunityRounds || []).find(
-      (round) => round.id === linkedLead.activeOpportunityRoundId
-    );
-    const appointmentToSave: B2BAppointment = {
-      ...apt,
-      ...(isNewAppointment && activeRound
-        ? { opportunityRoundId: activeRound.id, opportunityRoundName: activeRound.name }
-        : {}),
-    };
     let updatedLead: B2BLead | undefined;
 
     // A real active appointment means the organization has reached "นัดเข้าพบ".
@@ -433,7 +319,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     // Partnership, or closed sale when a repeat appointment is added.
     const currentStage = getLeadStage(linkedLead);
     const shouldAdvanceToMeeting =
-      appointmentToSave.status === 'scheduled' &&
+      apt.status === 'scheduled' &&
       (currentStage === 'ยังไม่ติดต่อ' || currentStage === 'ติดต่อแล้ว');
 
     if (isNewAppointment || shouldAdvanceToMeeting) {
@@ -469,7 +355,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     }
 
     const result = await saveCentralB2BWorkflow(
-      { appointment: appointmentToSave, ...(updatedLead ? { lead: updatedLead } : {}) },
+      { appointment: apt, ...(updatedLead ? { lead: updatedLead } : {}) },
       currentRole
     );
     if (!result.success) {
@@ -1514,32 +1400,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl border border-[#E3EAE0] p-3.5">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="text-xs font-bold text-[#315A43]">รอบงาน / Opportunity</div>
-                  <div className="text-[11px] text-[#718579]">
-                    {(() => {
-                      const activeRound = (activeLeadModal.opportunityRounds || []).find(
-                        (round) => round.id === activeLeadModal.activeOpportunityRoundId
-                      );
-                      return activeRound
-                        ? `รอบปัจจุบัน: รอบที่ ${activeRound.sequence} — ${activeRound.name}`
-                        : 'ยังไม่มีรอบงาน ลูกค้าเดิมกลับมาให้เปิดรอบใหม่ได้';
-                    })()}
-                  </div>
-                </div>
-                {isOperatorOrAdmin && (
-                  <button
-                    onClick={() => setIsRoundManagerOpen(true)}
-                    className="px-3 py-1.5 rounded-xl bg-[#1B3E2D] text-white text-xs font-bold"
-                  >
-                    จัดการรอบงาน
-                  </button>
-                )}
-              </div>
-            </div>
-
             {isAdmin && activeLeadModal.history && activeLeadModal.history.length > 0 && (
               <details className="bg-white rounded-2xl border border-[#E3EAE0] p-3.5">
                 <summary className="cursor-pointer text-xs font-bold text-[#496655]">
@@ -1591,7 +1451,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                           📅 {apt.date} เวลา {apt.time} น.
                         </span>
                         <p className="text-[11px] text-[#557764]">{apt.title}</p>
-                        {apt.opportunityRoundName && <p className="text-[10px] text-[#8A6A2C]">รอบงาน: {apt.opportunityRoundName}</p>}
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span
@@ -1764,19 +1623,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         coordinators={coordinators}
         role={currentRole}
       />
-
-      {activeLeadModal && (
-        <B2BOpportunityRoundModal
-          isOpen={isRoundManagerOpen}
-          onClose={() => setIsRoundManagerOpen(false)}
-          lead={activeLeadModal}
-          isAdmin={isAdmin}
-          onCreate={handleCreateOpportunityRound}
-          onEdit={handleEditOpportunityRound}
-          onDelete={handleDeleteOpportunityRound}
-          onSetActive={handleSetActiveOpportunityRound}
-        />
-      )}
 
       <ExportB2BModal
         isOpen={isExportModalOpen}
