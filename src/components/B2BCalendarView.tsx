@@ -28,7 +28,7 @@ interface B2BCalendarViewProps {
   onAddAppointment: (date?: string) => void;
   onEditAppointment: (appointment: B2BAppointment) => void;
   onDeleteAppointment: (appointmentId: string) => void;
-  onUpdateLeadStage: (leadId: string, stage: B2BPipelineStatus | string) => void;
+  onUpdateLeadStage: (leadId: string, stage: B2BPipelineStatus | string, sourceAppointmentId?: string) => void;
   onSelectLeadForSearch?: (leadName: string) => void;
 }
 
@@ -67,11 +67,16 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
     (value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('th-TH');
 
   const getLeadForAppointment = (apt: B2BAppointment) => {
-    // Prefer a valid ID. If a legacy appointment carries a stale/non-existent ID,
-    // fall back to a unique normalized organization name (and phone when needed).
+    // Trust leadId only when it still agrees with the appointment identity.
+    // Legacy test records can contain an ID that points to a different existing lead.
     if (apt.leadId) {
       const byId = leads.find((lead) => lead.id === apt.leadId);
-      if (byId) return byId;
+      if (
+        byId &&
+        (!apt.leadName || normalizeLeadName(byId.name) === normalizeLeadName(apt.leadName))
+      ) {
+        return byId;
+      }
     }
 
     const sameName = leads.filter(
@@ -704,7 +709,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                             <span className="text-[#72877B] font-semibold">สถานะติดตาม:</span>
                             <select
                               value={stage}
-                              onChange={(e) => onUpdateLeadStage(lead.id, e.target.value)}
+                              onChange={(e) => onUpdateLeadStage(lead.id, e.target.value, apt.id)}
                               className={`max-w-[190px] px-2 py-1 rounded-lg border border-[#D5E2D2] font-bold ${stageClass(stage)}`}
                             >
                               {!getPostVisitForwardStages(stage).some((item) => item.stage === stage) && (
