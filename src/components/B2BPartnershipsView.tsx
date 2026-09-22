@@ -721,6 +721,15 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     const target = leadsList.find((l) => l.id === leadId);
     if (!target) return;
 
+    // "นัดเข้าพบ" must always have a real calendar appointment.
+    if (newStage === 'นัดเข้าพบ') {
+      setEditingApt(null);
+      setAptDefaultLead(target);
+      setAptDefaultDate(localDateKey());
+      setIsAddAptModalOpen(true);
+      return;
+    }
+
     const oldStage = target.pipelineStage || target.contactStatus || 'ยังไม่ติดต่อ';
     if (oldStage === newStage) return;
 
@@ -1215,9 +1224,10 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                       {!PIPELINE_STAGES.some((item) => item.stage === getLeadStage(lead)) && (
                         <option value={getLeadStage(lead)}>{getLeadStage(lead)} (ข้อมูลเดิม)</option>
                       )}
-                      {PIPELINE_STAGES.map((item) => (
+                      {PIPELINE_STAGES.filter((item) => item.stage !== 'นัดเข้าพบ').map((item) => (
                         <option key={item.stage} value={item.stage}>{item.stage}</option>
                       ))}
+                      {getLeadStage(lead) === 'นัดเข้าพบ' && <option value="นัดเข้าพบ">นัดเข้าพบ</option>}
                     </select>
                   </div>
                 </div>
