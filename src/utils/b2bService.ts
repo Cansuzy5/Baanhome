@@ -138,6 +138,17 @@ export function saveCentralB2BWorkflow(
     canUserEditOperational(role)
   );
 }
+export function closeCentralB2BSalesCycle(lead: B2BLead, closedAt: string, role?: UserRole) {
+  return mutate(
+    {
+      action: 'closeCycle',
+      lead,
+      closedAt,
+      expectedLeadRevision: lead._revision,
+    },
+    canUserEditOperational(role)
+  );
+}
 export function deleteCentralB2BAppointment(id: string, role?: UserRole) {
   return mutate({ action: 'delete', collection: 'appointments', id }, canUserManageSystem(role));
 }
