@@ -534,7 +534,6 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                       </button>
                     </div>
                   </div>
-                ))}               </div>
                 ))}
               </div>
             )}
