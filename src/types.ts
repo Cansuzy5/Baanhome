@@ -190,6 +190,7 @@ export interface B2BAppointment {
   cancelReason?: string;
   completedAt?: string;
   cancelledAt?: string;
+  salesCycleClosedAt?: string; // retained history: appointment belongs to a closed sales cycle
   rescheduleHistory?: AppointmentRescheduleEntry[];
   assignedStaff?: string;
   priority?: 'A' | 'B' | 'C';
