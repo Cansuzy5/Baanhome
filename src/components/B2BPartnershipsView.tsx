@@ -1241,21 +1241,24 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                     })()}
                   </div>
 
-                  {/* Quick actions */}
+                  {/* Quick actions: show what staff should do next, not every possible status */}
                   <div className="flex items-center gap-2 self-end sm:self-center shrink-0 flex-wrap justify-end">
                     <span
                       className={`text-xs font-semibold px-3 py-1 rounded-full border ${
-                        (lead.pipelineStage || lead.contactStatus) === 'ติดต่อแล้ว'
-                          ? 'bg-[#E5F5E4] text-[#1E7438] border-[#C3E8C1]'
-                          : (lead.pipelineStage || lead.contactStatus) === 'ตกลง Partnership' ||
-                            (lead.pipelineStage || lead.contactStatus) === 'ตกลงแล้ว'
-                          ? 'bg-[#DBEAFE] text-[#1D4ED8] border-[#BFDBFE]'
-                          : (lead.pipelineStage || lead.contactStatus) === 'นัดเข้าพบ'
-                          ? 'bg-[#FFF4E5] text-[#B76E00] border-[#FFE2B8]'
-                          : 'bg-[#FAF8F2] text-[#697E72] border-[#E8E1D2]'
+                        getLeadStage(lead) === 'ติดต่อแล้ว'
+                          ? 'bg-lime-50 text-lime-800 border-lime-200'
+                          : getLeadStage(lead) === 'นัดเข้าพบ'
+                          ? 'bg-blue-50 text-blue-800 border-blue-200'
+                          : getLeadStage(lead) === 'ส่งใบเสนอราคาแล้ว'
+                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                          : getLeadStage(lead) === 'ตกลง Partnership'
+                          ? 'bg-teal-50 text-teal-800 border-teal-200'
+                          : getLeadStage(lead) === 'ปิดการขาย'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : 'bg-slate-50 text-slate-700 border-slate-200'
                       }`}
                     >
-                      {lead.pipelineStage || lead.contactStatus || 'ยังไม่ติดต่อ'}
+                      {getLeadStage(lead)}
                     </span>
 
                     <button
@@ -1269,38 +1272,80 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                       ดูข้อมูล
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingApt(null);
-                        setAptDefaultLead(lead);
-                        setAptDefaultDate(localDateKey());
-                        setIsAddAptModalOpen(true);
-                      }}
-                      className="px-2.5 py-1.5 rounded-xl bg-[#1B3E2D] hover:bg-[#244F39] text-white text-[11px] font-bold flex items-center gap-1"
-                    >
-                      <Calendar className="w-3.5 h-3.5" /> ลงนัด
-                    </button>
+                    {(() => {
+                      const stage = getLeadStage(lead);
+                      const scheduledAppointment = appointments.find(
+                        (apt) =>
+                          apt.status === 'scheduled' &&
+                          ((apt.leadId && apt.leadId === lead.id) || apt.leadName === lead.name)
+                      );
 
-                    <select
-                      value={getLeadStage(lead)}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        handleUpdateLeadStage(lead.id, e.target.value);
-                      }}
-                      className="px-2 py-1.5 rounded-xl border border-[#D5E2D2] bg-white text-[11px] font-bold text-[#345945] max-w-[150px]"
-                      title="เปลี่ยนสถานะองค์กร"
-                    >
-                      {!PIPELINE_STAGES.some((item) => item.stage === getLeadStage(lead)) && (
-                        <option value={getLeadStage(lead)}>{getLeadStage(lead)} (ข้อมูลเดิม)</option>
-                      )}
-                      {PIPELINE_STAGES.filter((item) => item.stage !== 'นัดเข้าพบ').map((item) => (
-                        <option key={item.stage} value={item.stage}>{item.stage}</option>
-                      ))}
-                      {getLeadStage(lead) === 'นัดเข้าพบ' && <option value="นัดเข้าพบ">นัดเข้าพบ</option>}
-                    </select>
+                      if (stage === 'ยังไม่ติดต่อ') {
+                        return (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUpdateLeadStage(lead.id, 'ติดต่อแล้ว');
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-lime-600 hover:bg-lime-700 text-white text-[11px] font-bold"
+                          >
+                            ติดต่อแล้ว
+                          </button>
+                        );
+                      }
+
+                      if (scheduledAppointment) {
+                        return (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingApt(scheduledAppointment);
+                              setIsAddAptModalOpen(true);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1"
+                          >
+                            <Calendar className="w-3.5 h-3.5" /> ดูนัด
+                          </button>
+                        );
+                      }
+
+                      if (stage === 'ติดต่อแล้ว' || stage === 'นัดเข้าพบ') {
+                        return (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingApt(null);
+                              setAptDefaultLead(lead);
+                              setAptDefaultDate(localDateKey());
+                              setIsAddAptModalOpen(true);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1"
+                          >
+                            <Calendar className="w-3.5 h-3.5" /> นัดเข้าพบ
+                          </button>
+                        );
+                      }
+
+                      if (stage !== 'ปิดการขาย') {
+                        return (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveLeadModal(lead);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-[#1B3E2D] hover:bg-[#244F39] text-white text-[11px] font-bold"
+                          >
+                            อัปเดตสถานะ
+                          </button>
+                        );
+                      }
+
+                      return null;
+                    })()}
                   </div>
                 </div>
               ))}
@@ -1560,38 +1605,91 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               </div>
             </div>
 
-            {/* Quick Action to Schedule Appointment */}
-            <div className="flex items-center justify-between pt-2 border-t border-[#EEF3ED] gap-2 flex-wrap">
-              <button
-                onClick={() => {
-                  setEditingApt(null);
-                  setAptDefaultLead(activeLeadModal);
-                  setAptDefaultDate(localDateKey());
-                  setIsAddAptModalOpen(true);
-                }}
-                className="px-4 py-2 rounded-xl bg-[#2D5A43] hover:bg-[#204533] text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
-              >
-                <Calendar className="w-4 h-4" />
-                <span>+ ลงตารางนัดหมายเข้าพบ</span>
-              </button>
-
-              {/* Pipeline Stage Quick Changer */}
-              <div className="flex items-center gap-1.5 flex-wrap text-xs">
-                <span className="text-[#557262] font-semibold">ปรับสถานะ:</span>
-                {PIPELINE_STAGES.map(({ stage }) => (
-                  <button
-                    key={stage}
-                    onClick={() => handleUpdateLeadStage(activeLeadModal.id, stage)}
-                    className={`px-3 py-1 rounded-xl font-semibold cursor-pointer transition-colors ${
-                      getLeadStage(activeLeadModal) === stage
-                        ? 'bg-[#1E5D36] text-white'
-                        : 'bg-[#F1EFE8] hover:bg-[#E5E2D7] text-[#41594A]'
-                    }`}
-                  >
-                    {stage}
-                  </button>
-                ))}
+            {/* Guided next step */}
+            <div className="pt-3 border-t border-[#EEF3ED] space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <div className="text-xs font-bold text-[#183A28]">ขั้นตอนถัดไป</div>
+                  <div className="text-[11px] text-[#718579]">ระบบแสดงเฉพาะงานที่ควรทำต่อ เพื่อลดความสับสนของหน้างาน</div>
+                </div>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-[#F1F5EF] text-[#315A43] border border-[#DDE7DA]">
+                  {getLeadStage(activeLeadModal)}
+                </span>
               </div>
+
+              {(() => {
+                const stage = getLeadStage(activeLeadModal);
+                const scheduledAppointment = activeLeadAppointments.find((apt) => apt.status === 'scheduled');
+
+                if (stage === 'ยังไม่ติดต่อ') {
+                  return (
+                    <button
+                      onClick={() => handleUpdateLeadStage(activeLeadModal.id, 'ติดต่อแล้ว')}
+                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-lime-600 hover:bg-lime-700 text-white font-bold text-xs"
+                    >
+                      ✓ บันทึกว่าติดต่อแล้ว
+                    </button>
+                  );
+                }
+
+                if (scheduledAppointment) {
+                  return (
+                    <button
+                      onClick={() => {
+                        setEditingApt(scheduledAppointment);
+                        setIsAddAptModalOpen(true);
+                      }}
+                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5"
+                    >
+                      <Calendar className="w-4 h-4" /> เปิดนัดเข้าพบ
+                    </button>
+                  );
+                }
+
+                if (stage === 'ติดต่อแล้ว' || stage === 'นัดเข้าพบ') {
+                  return (
+                    <button
+                      onClick={() => {
+                        setEditingApt(null);
+                        setAptDefaultLead(activeLeadModal);
+                        setAptDefaultDate(localDateKey());
+                        setIsAddAptModalOpen(true);
+                      }}
+                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5"
+                    >
+                      <Calendar className="w-4 h-4" /> นัดเข้าพบ
+                    </button>
+                  );
+                }
+
+                if (stage === 'ส่งใบเสนอราคาแล้ว') {
+                  return (
+                    <button
+                      onClick={() => handleUpdateLeadStage(activeLeadModal.id, 'ตกลง Partnership')}
+                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs"
+                    >
+                      → ตกลง Partnership
+                    </button>
+                  );
+                }
+
+                if (stage === 'ตกลง Partnership') {
+                  return (
+                    <button
+                      onClick={() => handleUpdateLeadStage(activeLeadModal.id, 'ปิดการขาย')}
+                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs"
+                    >
+                      ✓ ปิดการขาย
+                    </button>
+                  );
+                }
+
+                return (
+                  <div className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+                    ✓ ปิดการขายแล้ว — ไม่มีขั้นตอนถัดไป
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -1615,6 +1713,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         onReschedule={handleRescheduleAppointment}
         onComplete={handleCompleteAppointment}
         onCancelAppointment={handleCancelAppointment}
+        onUpdateLeadStage={handleUpdateLeadStage}
         leads={leadsList}
         editAppointment={editingApt}
         defaultDate={aptDefaultDate}
