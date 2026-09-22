@@ -46,6 +46,7 @@ import {
   saveCentralB2BAppointment,
   saveCentralB2BWorkflow,
   closeCentralB2BSalesCycle,
+  closeCentralB2BSalesCycleFromAppointment,
   deleteCentralB2BSalesClosure,
   deleteCentralB2BAppointment,
   resetCentralB2BToDefault,
@@ -961,20 +962,30 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     };
 
     const result = isClosure && closure
-      ? await closeCentralB2BSalesCycle(
-          updatedLead,
-          now,
-          closure.id,
-          closure.outcome,
-          sourceAppointmentId,
-          currentRole
-        )
+      ? sourceAppointmentId
+        ? await closeCentralB2BSalesCycleFromAppointment(
+            sourceAppointmentId,
+            closure.outcome,
+            now,
+            closure.id,
+            actorId,
+            actorName,
+            currentRole
+          )
+        : await closeCentralB2BSalesCycle(
+            updatedLead,
+            now,
+            closure.id,
+            closure.outcome,
+            sourceAppointmentId,
+            currentRole
+          )
       : await saveCentralB2BLead(updatedLead, currentRole);
     if (!result.success) {
       setPermissionError(result.error || 'เปลี่ยนสถานะไม่สำเร็จ');
       return;
     }
-    if (activeLeadModal && activeLeadModal.id === leadId) {
+    if (!isClosure && activeLeadModal && activeLeadModal.id === leadId) {
       setActiveLeadModal(updatedLead);
     }
   };
