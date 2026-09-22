@@ -144,6 +144,55 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     return `ผ่านมาแล้ว ${Math.abs(diffDays)} วัน`;
   };
 
+  const getCurrentCycleTimeline = (lead: B2BLead) => {
+    const currentStage = getLeadStage(lead);
+    const latestClosureAt = (lead.salesClosures || [])
+      .map((item) => new Date(item.closedAt).getTime())
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => b - a)[0] || 0;
+
+    const events = (lead.history || [])
+      .map((entry) => {
+        const timestamp = new Date(entry.timestamp).getTime();
+        if (!Number.isFinite(timestamp) || timestamp <= latestClosureAt) return null;
+
+        let stage = '';
+        for (const change of entry.changes || []) {
+          const match = change.match(/สถานะการติดตาม:\s*"[^"]*"\s*→\s*"([^"]+)"/);
+          if (match?.[1]) {
+            stage = match[1] === 'เข้าพบแล้ว' ? 'ติดตามต่อ' : match[1];
+            break;
+          }
+        }
+        if (!stage && entry.action === 'เข้าพบแล้ว') stage = 'ติดตามต่อ';
+        return stage ? { stage, timestamp } : null;
+      })
+      .filter((item): item is { stage: string; timestamp: number } => Boolean(item))
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    const deduped: Array<{ stage: string; timestamp: number }> = [];
+    for (const item of events) {
+      if (deduped[deduped.length - 1]?.stage === item.stage) continue;
+      deduped.push(item);
+    }
+
+    if (deduped.length === 0) {
+      const raw = lead.updatedAt ? new Date(lead.updatedAt).getTime() : NaN;
+      if (!Number.isFinite(raw)) return [];
+      deduped.push({ stage: currentStage, timestamp: raw });
+    } else if (deduped[deduped.length - 1].stage !== currentStage) {
+      const raw = lead.updatedAt ? new Date(lead.updatedAt).getTime() : Date.now();
+      deduped.push({ stage: currentStage, timestamp: Number.isFinite(raw) ? raw : Date.now() });
+    }
+
+    const now = Date.now();
+    return deduped.map((item, index) => {
+      const end = deduped[index + 1]?.timestamp || now;
+      const days = Math.max(0, Math.floor((end - item.timestamp) / 86400000));
+      return { stage: item.stage, days, current: index === deduped.length - 1 };
+    });
+  };
+
   const getLatestLeadActivity = (lead: B2BLead) => {
     const latestHistory = lead.history?.[0];
     const rawDate = latestHistory?.timestamp || lead.updatedAt || '';
@@ -893,6 +942,36 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     );
   }, [activeLeadModal, appointments]);
 
+  const directoryStats = useMemo(() => {
+    const hasScheduled = (lead: B2BLead) =>
+      appointments.some(
+        (apt) =>
+          apt.status === 'scheduled' &&
+          ((apt.leadId && apt.leadId === lead.id) || apt.leadName === lead.name)
+      );
+
+    const stageCounts = PIPELINE_STAGES.reduce<Record<string, number>>((acc, item) => {
+      acc[item.stage] = leadsList.filter((lead) => getLeadStage(lead) === item.stage).length;
+      return acc;
+    }, {});
+
+    const withAppointment = leadsList.filter(hasScheduled).length;
+    const ready = leadsList.filter(
+      (lead) => getLeadStage(lead) === 'ติดต่อแล้ว' && !hasScheduled(lead)
+    ).length;
+
+    return {
+      total: leadsList.length,
+      stageCounts,
+      withAppointment,
+      withoutAppointment: Math.max(0, leadsList.length - withAppointment),
+      ready,
+      priorityA: leadsList.filter((lead) => lead.priority === 'A').length,
+      priorityB: leadsList.filter((lead) => lead.priority === 'B').length,
+      priorityC: leadsList.filter((lead) => lead.priority === 'C').length,
+    };
+  }, [leadsList, appointments]);
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Role Notice Banner if Permission Error */}
@@ -948,110 +1027,75 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       </div>
 
       {activeSubTab === 'directory' && (
-        <>
-                {/* 1. Header Banner with Action Buttons */}
-                <div className="bg-gradient-to-r from-[#173826] via-[#214D35] to-[#173826] rounded-2xl p-4 sm:p-5 text-white shadow-md relative overflow-hidden">
-                  <div className="absolute right-0 top-0 w-80 h-full opacity-10 pointer-events-none flex items-center justify-end pr-6">
-                    <Building className="w-64 h-64 text-white" />
-                  </div>
-          
-                  <div className="relative z-10 max-w-4xl space-y-4">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-xs text-xs font-semibold text-[#E9C784]">
-                        <Target className="w-3.5 h-3.5" />
-                        <span>ฐานข้อมูลพันธมิตร & Mini MICE B2B ({leadsList.length} รายการ)</span>
-                      </div>
-          
-                      <button
-                        onClick={() => setIsExportModalOpen(true)}
-                        className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold flex items-center gap-1.5 border border-white/20"
-                      >
-                        <Download className="w-3.5 h-3.5" /> Export
-                      </button>
-                    </div>
-          
-                    <div>
-                      <h2 className="text-lg sm:text-xl font-bold tracking-tight mb-2 font-heading text-[#FFFDF8]">
-                        ศูนย์ประสานงานกลุ่มเป้าหมายองค์กร, B2B Leads & กำหนดการนัดหมาย
-                      </h2>
-                      <p className="text-sm sm:text-base text-[#D4E3D8] leading-relaxed">
-                        ค้นหาองค์กร ดูข้อมูลสำคัญ และลงนัดเข้าพบได้จากหน้าเดียว
-                      </p>
-                    </div>
-          
-                  </div>
-                </div>
-          
-                <details className="bg-white rounded-2xl border border-[#E1E8DE] p-3">
-                  <summary className="cursor-pointer text-xs font-bold text-[#496655]">สถิติภาพรวม (กดเพื่อดู)</summary>
-                  <div className="mt-3"><div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-                  <button type="button"
-                    onClick={() => {
-                      setOverviewFilter('All'); setSelectedPriority('All'); setSelectedStage('All'); setAppointmentFilter('All'); setSearchTerm('');
-                    }}
-                    className="text-left bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs hover:border-[#2D5A43] hover:bg-[#FAFCF9] transition-all cursor-pointer">
-                    <div className="flex items-center justify-between text-xs text-[#637C6D] font-medium mb-1">
-                      <span>กลุ่มเป้าหมายทั้งหมด</span>
-                      <Building className="w-4 h-4 text-[#2C573F]" />
-                    </div>
-                    <div className="text-2xl sm:text-3xl font-bold text-[#143623]">
-                      {leadsList.length} <span className="text-xs font-normal text-[#6F887A]">แห่ง</span>
-                    </div>
-                    <div className="text-[11px] text-[#4F715E] mt-1">กดเพื่อดูทั้งหมด</div>
-                  </button>
-          
-                  <button type="button"
-                    onClick={() => {
-                      setOverviewFilter('All'); setSelectedPriority('A'); setSelectedStage('All'); setAppointmentFilter('All');
-                    }}
-                    className={`text-left p-4 rounded-2xl border shadow-2xs transition-all cursor-pointer ${selectedPriority==='A'?'border-[#B5781C] bg-amber-50 ring-2 ring-amber-100':'bg-white border-[#DFE6DC] hover:border-[#B5781C]'}`}>
-                    <div className="flex items-center justify-between text-xs text-[#966317] font-medium mb-1">
-                      <span>Priority A (เข้าหาด่วน)</span>
-                      <Award className="w-4 h-4 text-[#B5781C]" />
-                    </div>
-                    <div className="text-2xl sm:text-3xl font-bold text-[#B06B0E]">
-                      {leadsList.filter((l) => l.priority === 'A').length}{' '}
-                      <span className="text-xs font-normal text-[#966317]">ราย</span>
-                    </div>
-                    <div className="text-[11px] text-[#A6752C] mt-1">กดเพื่อกรอง Priority A</div>
-                  </button>
-          
-                  <button type="button"
-                    onClick={() => setActiveSubTab('calendar')}
-                    className="text-left bg-white p-4 rounded-2xl border border-[#DFE6DC] shadow-2xs hover:border-[#2D5A43] hover:bg-[#F6FAF5] transition-all cursor-pointer">
-                    <div className="flex items-center justify-between text-xs text-[#1D5E34] font-medium mb-1">
-                      <span>นัดหมายในปฏิทิน</span>
-                      <Calendar className="w-4 h-4 text-[#2D5A43]" />
-                    </div>
-                    <div className="text-2xl sm:text-3xl font-bold text-[#1B432E]">
-                      {appointments.length}{' '}
-                      <span className="text-xs font-normal text-[#6F887A]">นัดหมาย</span>
-                    </div>
-                    <div className="text-[11px] text-[#4F715E] mt-1">
-                      กดเพื่อเปิดปฏิทิน · รอเข้าพบ {appointments.filter((a) => a.status === 'scheduled').length}
-                    </div>
-                  </button>
-          
-                  <button type="button"
-                    onClick={() => {
-                      setOverviewFilter('engaged'); setSelectedPriority('All'); setSelectedStage('All'); setAppointmentFilter('All');
-                    }}
-                    className={`text-left p-4 rounded-2xl border shadow-2xs transition-all cursor-pointer ${overviewFilter==='engaged'?'border-[#237A40] bg-emerald-50 ring-2 ring-emerald-100':'bg-white border-[#DFE6DC] hover:border-[#237A40]'}`}>
-                    <div className="flex items-center justify-between text-xs text-[#305C42] font-medium mb-1">
-                      <span>อยู่ระหว่างติดตาม</span>
-                      <CheckCircle2 className="w-4 h-4 text-[#237A40]" />
-                    </div>
-                    <div className="text-2xl sm:text-3xl font-bold text-[#1E7438]">
-                      {leadsList.filter((l) => ['ติดต่อแล้ว','นัดเข้าพบ','ติดตามต่อ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership'].includes(getLeadStage(l))).length}{' '}
-                      <span className="text-xs font-normal text-[#6F887A]">ราย</span>
-                    </div>
-                    <div className="text-[11px] text-[#34784C] mt-1">กดเพื่อดูงานที่กำลังดำเนินการ</div>
-                  </button>
-                </div></div>
-                </details>
-          
-          
-        </>
+        <div className="bg-white rounded-2xl border border-[#DDE7DC] p-3 sm:p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <div className="text-sm font-bold text-[#183A28]">ภาพรวมงาน B2B</div>
+              <div className="text-[11px] text-[#728A7C]">กดตัวเลขเพื่อกรองรายการด้านล่างได้ทันที</div>
+            </div>
+            <button
+              onClick={() => setIsExportModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl border border-[#D9E3D7] text-[#496655] text-xs font-bold flex items-center gap-1.5 hover:bg-[#F6F9F5]"
+            >
+              <Download className="w-3.5 h-3.5" /> Export
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <button type="button"
+              onClick={() => {
+                setOverviewFilter('All');
+                setSelectedPriority('All');
+                setSelectedStage('All');
+                setAppointmentFilter('All');
+                setSearchTerm('');
+              }}
+              className="text-left rounded-2xl border border-[#DFE6DC] bg-[#FAFBF9] p-3 hover:border-[#2D5A43] transition-all">
+              <div className="text-[10px] text-[#6D8276]">ลูกค้าทั้งหมด</div>
+              <div className="text-2xl font-bold text-[#173827]">{directoryStats.total}</div>
+              <div className="text-[10px] text-[#7A8D81]">หน่วยงาน</div>
+            </button>
+
+            <button type="button"
+              onClick={() => {
+                setOverviewFilter('All');
+                setSelectedPriority('All');
+                setSelectedStage('ติดต่อแล้ว');
+                setAppointmentFilter('All');
+              }}
+              className={`text-left rounded-2xl border p-3 transition-all ${selectedStage==='ติดต่อแล้ว' ? 'border-lime-400 bg-lime-50 ring-2 ring-lime-100' : 'border-[#DFE6DC] bg-white hover:border-lime-300'}`}>
+              <div className="text-[10px] text-lime-700">ติดต่อแล้ว</div>
+              <div className="text-2xl font-bold text-lime-700">{directoryStats.stageCounts['ติดต่อแล้ว'] || 0}</div>
+              <div className="text-[10px] text-lime-700/70">เจ้า</div>
+            </button>
+
+            <button type="button"
+              onClick={() => {
+                setOverviewFilter('All');
+                setSelectedPriority('All');
+                setSelectedStage('All');
+                setAppointmentFilter('hasAppointment');
+              }}
+              className={`text-left rounded-2xl border p-3 transition-all ${appointmentFilter==='hasAppointment' ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-100' : 'border-[#DFE6DC] bg-white hover:border-blue-300'}`}>
+              <div className="text-[10px] text-blue-700">มีนัดแล้ว</div>
+              <div className="text-2xl font-bold text-blue-700">{directoryStats.withAppointment}</div>
+              <div className="text-[10px] text-blue-700/70">เจ้า</div>
+            </button>
+
+            <button type="button"
+              onClick={() => {
+                setOverviewFilter('All');
+                setSelectedPriority('All');
+                setSelectedStage('ติดตามต่อ');
+                setAppointmentFilter('All');
+              }}
+              className={`text-left rounded-2xl border p-3 transition-all ${selectedStage==='ติดตามต่อ' ? 'border-violet-400 bg-violet-50 ring-2 ring-violet-100' : 'border-[#DFE6DC] bg-white hover:border-violet-300'}`}>
+              <div className="text-[10px] text-violet-700">ติดตามต่อ</div>
+              <div className="text-2xl font-bold text-violet-700">{directoryStats.stageCounts['ติดตามต่อ'] || 0}</div>
+              <div className="text-[10px] text-violet-700/70">เจ้า</div>
+            </button>
+          </div>
+        </div>
       )}
 
       {/* 4. TAB CONTENT */}
@@ -1162,7 +1206,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
               <span className="font-semibold text-[#617B6D] shrink-0">สถานะงาน:</span>
               <button onClick={() => { setSelectedStage('All'); setOverviewFilter('All'); }}
-                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${selectedStage==='All'?'bg-[#235838] text-white':'bg-[#F5F7F3] text-[#4A6455]'}`}>ทั้งหมด</button>
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${selectedStage==='All'?'bg-[#235838] text-white':'bg-[#F5F7F3] text-[#4A6455]'}`}>ทั้งหมด ({directoryStats.total})</button>
               {PIPELINE_STAGES.filter((item) => !['ปิดการขาย','ปิดการขายไม่สำเร็จ'].includes(item.stage)).map((item) => (
                 <button key={item.stage} onClick={() => { setSelectedStage(item.stage); setOverviewFilter('All'); }}
                   className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold border ${
@@ -1170,7 +1214,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                       ? item.stage==='ติดตามต่อ' ? 'bg-violet-600 text-white border-violet-600' : 'bg-[#235838] text-white border-[#235838]'
                       : item.stage==='ติดตามต่อ' ? 'bg-violet-50 text-violet-700 border-violet-100' : 'bg-[#F8FAF7] text-[#4A6455] border-[#E5EBE2]'
                   }`}>
-                  {item.stage}
+                  {item.stage} <span className="opacity-70">({directoryStats.stageCounts[item.stage] || 0})</span>
                 </button>
               ))}
             </div>
@@ -1178,20 +1222,26 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
               <span className="font-semibold text-[#617B6D] shrink-0">สถานะนัด:</span>
               <button onClick={() => setAppointmentFilter('All')}
-                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='All'?'bg-[#235838] text-white':'bg-[#F5F7F3] text-[#4A6455]'}`}>ทั้งหมด</button>
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='All'?'bg-[#235838] text-white':'bg-[#F5F7F3] text-[#4A6455]'}`}>ทั้งหมด ({directoryStats.total})</button>
               <button onClick={() => { setAppointmentFilter('ready'); setSelectedStage('ติดต่อแล้ว'); }}
-                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='ready'?'bg-blue-600 text-white':'bg-blue-50 text-blue-700 border border-blue-100'}`}>พร้อมนัดหมาย</button>
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='ready'?'bg-blue-600 text-white':'bg-blue-50 text-blue-700 border border-blue-100'}`}>พร้อมนัดหมาย ({directoryStats.ready})</button>
               <button onClick={() => setAppointmentFilter('hasAppointment')}
-                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='hasAppointment'?'bg-emerald-600 text-white':'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}>มีนัดแล้ว</button>
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='hasAppointment'?'bg-emerald-600 text-white':'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}>มีนัดแล้ว ({directoryStats.withAppointment})</button>
               <button onClick={() => setAppointmentFilter('noAppointment')}
-                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='noAppointment'?'bg-slate-600 text-white':'bg-slate-50 text-slate-700 border border-slate-200'}`}>ยังไม่มีนัด</button>
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='noAppointment'?'bg-slate-600 text-white':'bg-slate-50 text-slate-700 border border-slate-200'}`}>ยังไม่มีนัด ({directoryStats.withoutAppointment})</button>
             </div>
 
             <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
               <span className="font-semibold text-[#617B6D] shrink-0">Priority:</span>
               {(['All','A','B','C'] as const).map((p)=><button key={p} onClick={()=>{ setSelectedPriority(p); setOverviewFilter('All'); }}
                 className={`px-2.5 py-1 rounded-lg whitespace-nowrap ${selectedPriority===p?'bg-[#235838] text-white':'bg-[#FAF8F2] text-[#4A6455]'}`}>
-                {p==='All'?'ทั้งหมด':`Priority ${p}`}
+                {p==='All'
+                  ? `ทั้งหมด (${directoryStats.total})`
+                  : p==='A'
+                  ? `Priority A (${directoryStats.priorityA})`
+                  : p==='B'
+                  ? `Priority B (${directoryStats.priorityB})`
+                  : `Priority C (${directoryStats.priorityC})`}
               </button>)}
               {(searchTerm || selectedPriority !== 'All' || selectedStage !== 'All' || appointmentFilter !== 'All') && (
                 <button type="button"
@@ -1308,6 +1358,35 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                           </>
                         )}
                       </div>
+                      {(() => {
+                        const timeline = getCurrentCycleTimeline(lead);
+                        if (!timeline.length || getLeadStage(lead) === 'ยังไม่ติดต่อ') return null;
+                        return (
+                          <div className="flex items-center gap-1.5 flex-wrap text-[10px] pt-1">
+                            <span className="font-bold text-[#60766A]">⏱ เส้นทาง:</span>
+                            {timeline.map((item, index) => (
+                              <React.Fragment key={`${lead.id}-${item.stage}-${index}`}>
+                                {index > 0 && <span className="text-[#A8B4AD]">→</span>}
+                                <span
+                                  className={`px-2 py-0.5 rounded-full border font-semibold ${
+                                    item.current
+                                      ? item.stage === 'ติดตามต่อ'
+                                        ? 'bg-violet-50 text-violet-700 border-violet-200'
+                                        : item.stage === 'ส่งใบเสนอราคาแล้ว'
+                                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                        : item.stage === 'นัดเข้าพบ'
+                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                        : 'bg-[#EEF5EC] text-[#2E6543] border-[#D6E7D2]'
+                                      : 'bg-slate-50 text-slate-600 border-slate-200'
+                                  }`}
+                                >
+                                  {item.stage} {item.days} วัน{item.current ? 'แล้ว' : ''}
+                                </span>
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
