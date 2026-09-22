@@ -150,7 +150,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
   const getLeadFollowUpAlert = (lead: B2BLead) => {
     const stage = getLeadStage(lead);
-    if (!['ติดต่อแล้ว', 'นัดเข้าพบ', 'ส่งใบเสนอราคาแล้ว'].includes(stage)) return null;
+    if (!['ติดต่อแล้ว', 'นัดเข้าพบ', 'ติดตามต่อ', 'ส่งใบเสนอราคาแล้ว'].includes(stage)) return null;
 
     const latest = getLatestLeadActivity(lead);
     if (!latest) return null;
@@ -167,6 +167,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     }
     if (stage === 'นัดเข้าพบ' && diffDays >= 3 && !hasUpcomingAppointment) {
       return `สถานะนัดเข้าพบค้าง ${diffDays} วัน ควรตรวจสอบนัดล่าสุด`;
+    }
+    if (stage === 'ติดตามต่อ' && diffDays >= 3) {
+      return `ติดตามต่อ ${diffDays} วัน ควรอัปเดตผล`;
     }
     if (stage === 'ส่งใบเสนอราคาแล้ว' && diffDays >= 5) {
       return `ส่งใบเสนอราคาแล้ว ${diffDays} วัน ควรติดตามผล`;
@@ -463,7 +466,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     const updatedLead: B2BLead = {
       ...linkedLead,
       ...(shouldAdvanceToVisited
-        ? { pipelineStage: 'เข้าพบแล้ว', contactStatus: 'เข้าพบแล้ว' }
+        ? { pipelineStage: 'ติดตามต่อ', contactStatus: 'ติดตามต่อ' }
         : {}),
       updatedAt: localDateKey(),
       history: [
@@ -475,7 +478,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           action: 'เข้าพบแล้ว',
           changes: [
             ...(shouldAdvanceToVisited
-              ? [`สถานะการติดตาม: "${oldStage}" → "เข้าพบแล้ว"`]
+              ? [`สถานะการติดตาม: "${oldStage}" → "ติดตามต่อ"`]
               : []),
             `บันทึกผลนัดวันที่ ${apt.date} เวลา ${apt.time}`,
             ...(resultNote.trim() ? [`ผลการเข้าพบ: ${resultNote.trim()}`] : []),
@@ -1061,62 +1064,47 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           <div className="bg-white rounded-2xl border border-[#E1E8DE] p-3 space-y-2">
             <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
               <span className="font-semibold text-[#617B6D] shrink-0">สถานะงาน:</span>
-              <button
-                onClick={() => {
-                  setAppointmentFilter('All');
-                  setSelectedStage('All');
-                }}
-                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='All'?'bg-[#235838] text-white':'bg-[#F5F7F3] text-[#4A6455]'}`}
-              >
-                ทั้งหมด
-              </button>
-              <button
-                onClick={() => { setAppointmentFilter('ready'); setSelectedStage('ติดต่อแล้ว'); }}
-                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='ready'?'bg-blue-600 text-white':'bg-blue-50 text-blue-700 border border-blue-100'}`}
-              >
-                พร้อมนัดหมาย
-              </button>
-              <button
-                onClick={() => {
-                  setAppointmentFilter('hasAppointment');
-                  setSelectedStage('All');
-                }}
-                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='hasAppointment'?'bg-emerald-600 text-white':'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}
-              >
-                มีนัดแล้ว
-              </button>
-              <button
-                onClick={() => {
-                  setAppointmentFilter('noAppointment');
-                  setSelectedStage('All');
-                }}
-                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='noAppointment'?'bg-slate-600 text-white':'bg-slate-50 text-slate-700 border border-slate-200'}`}
-              >
-                ยังไม่มีนัด
-              </button>
+              <button onClick={() => setSelectedStage('All')}
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${selectedStage==='All'?'bg-[#235838] text-white':'bg-[#F5F7F3] text-[#4A6455]'}`}>ทั้งหมด</button>
+              {PIPELINE_STAGES.map((item) => (
+                <button key={item.stage} onClick={() => setSelectedStage(item.stage)}
+                  className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold border ${
+                    selectedStage===item.stage
+                      ? item.stage==='ติดตามต่อ' ? 'bg-violet-600 text-white border-violet-600' : 'bg-[#235838] text-white border-[#235838]'
+                      : item.stage==='ติดตามต่อ' ? 'bg-violet-50 text-violet-700 border-violet-100' : 'bg-[#F8FAF7] text-[#4A6455] border-[#E5EBE2]'
+                  }`}>
+                  {item.stage}
+                </button>
+              ))}
             </div>
 
             <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
-              <span className="font-semibold text-[#617B6D] shrink-0">ตัวกรอง:</span>
+              <span className="font-semibold text-[#617B6D] shrink-0">สถานะนัด:</span>
+              <button onClick={() => setAppointmentFilter('All')}
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='All'?'bg-[#235838] text-white':'bg-[#F5F7F3] text-[#4A6455]'}`}>ทั้งหมด</button>
+              <button onClick={() => { setAppointmentFilter('ready'); setSelectedStage('ติดต่อแล้ว'); }}
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='ready'?'bg-blue-600 text-white':'bg-blue-50 text-blue-700 border border-blue-100'}`}>พร้อมนัดหมาย</button>
+              <button onClick={() => setAppointmentFilter('hasAppointment')}
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='hasAppointment'?'bg-emerald-600 text-white':'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}>มีนัดแล้ว</button>
+              <button onClick={() => setAppointmentFilter('noAppointment')}
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='noAppointment'?'bg-slate-600 text-white':'bg-slate-50 text-slate-700 border border-slate-200'}`}>ยังไม่มีนัด</button>
+            </div>
+
+            <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
+              <span className="font-semibold text-[#617B6D] shrink-0">Priority:</span>
               {(['All','A','B','C'] as const).map((p)=><button key={p} onClick={()=>setSelectedPriority(p)}
                 className={`px-2.5 py-1 rounded-lg whitespace-nowrap ${selectedPriority===p?'bg-[#235838] text-white':'bg-[#FAF8F2] text-[#4A6455]'}`}>
-                {p==='All'?'ทุก Priority':`Priority ${p}`}
+                {p==='All'?'ทั้งหมด':`Priority ${p}`}
               </button>)}
-              <select value={selectedStage} onChange={(e)=>setSelectedStage(e.target.value)} className="px-2.5 py-1 rounded-lg border bg-white">
-                <option value="All">ทุกสถานะ</option>
-                {PIPELINE_STAGES.map(st=><option key={st.stage} value={st.stage}>{st.stage}</option>)}
-              </select>
               {(searchTerm || selectedPriority !== 'All' || selectedStage !== 'All' || appointmentFilter !== 'All') && (
-                <button
-                  type="button"
+                <button type="button"
                   onClick={() => {
                     setSearchTerm('');
                     setSelectedPriority('All');
                     setSelectedStage('All');
                     setAppointmentFilter('All');
                   }}
-                  className="px-2.5 py-1 rounded-lg whitespace-nowrap text-rose-700 bg-rose-50 border border-rose-100 font-semibold"
-                >
+                  className="px-2.5 py-1 rounded-lg whitespace-nowrap text-rose-700 bg-rose-50 border border-rose-100 font-semibold">
                   ล้างตัวกรอง
                 </button>
               )}
@@ -1237,6 +1225,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                           ? 'bg-lime-50 text-lime-800 border-lime-200'
                           : getLeadStage(lead) === 'นัดเข้าพบ'
                           ? 'bg-blue-50 text-blue-800 border-blue-200'
+                          : getLeadStage(lead) === 'ติดตามต่อ'
+                          ? 'bg-violet-50 text-violet-800 border-violet-200'
                           : getLeadStage(lead) === 'ส่งใบเสนอราคาแล้ว'
                           ? 'bg-amber-50 text-amber-800 border-amber-200'
                           : getLeadStage(lead) === 'ตกลง Partnership'
