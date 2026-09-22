@@ -124,8 +124,10 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     ].slice(0, 100);
   };
 
-  const getLeadStage = (lead: B2BLead) =>
-    lead.pipelineStage || lead.contactStatus || 'ยังไม่ติดต่อ';
+  const getLeadStage = (lead: B2BLead) => {
+    const raw = lead.pipelineStage || lead.contactStatus || 'ยังไม่ติดต่อ';
+    return raw === 'เข้าพบแล้ว' ? 'ติดตามต่อ' : raw;
+  };
 
   const getLatestLeadActivity = (lead: B2BLead) => {
     const latestHistory = lead.history?.[0];
@@ -210,6 +212,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   // In-App Confirmation Modals state (avoiding window.confirm which is blocked in sandboxed iframes)
   const [appointmentToDelete, setAppointmentToDelete] = useState<B2BAppointment | null>(null);
   const [leadToDelete, setLeadToDelete] = useState<B2BLead | null>(null);
+  const [closureToDelete, setClosureToDelete] = useState<{ leadId: string; closureId: string } | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -739,22 +742,45 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     const target = leadsList.find((l) => l.id === leadId);
     if (!target) return;
 
-    const oldStage = target.pipelineStage || target.contactStatus || 'ยังไม่ติดต่อ';
-    if (oldStage === newStage) return;
+    const oldStage = getLeadStage(target);
+    const isClosure = newStage === 'ปิดการขาย' || newStage === 'ปิดการขายไม่สำเร็จ';
+    if (!isClosure && oldStage === newStage) return;
+
+    const now = new Date().toISOString();
+    const closure = isClosure
+      ? {
+          id: `close_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          outcome: newStage === 'ปิดการขาย' ? 'success' as const : 'unsuccessful' as const,
+          closedAt: now,
+          closedById: actorId,
+          closedByName: actorName,
+          previousStage: oldStage,
+        }
+      : null;
 
     const updatedLead: B2BLead = {
       ...target,
-      pipelineStage: newStage,
-      contactStatus: newStage,
+      pipelineStage: isClosure ? 'ยังไม่ติดต่อ' : newStage,
+      contactStatus: isClosure ? 'ยังไม่ติดต่อ' : newStage,
+      ...(isClosure ? { appointmentDate: undefined, appointmentTime: undefined } : {}),
+      ...(closure ? { salesClosures: [...(target.salesClosures || []), closure] } : {}),
       updatedAt: localDateKey(),
       history: [
         {
           id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          timestamp: new Date().toISOString(),
+          timestamp: now,
           actorId,
           actorName,
-          action: 'เปลี่ยนสถานะการติดตาม',
-          changes: [`สถานะการติดตาม: "${oldStage}" → "${newStage}"`],
+          action: isClosure
+            ? (newStage === 'ปิดการขาย' ? 'ปิดการขายสำเร็จ' : 'ปิดการขายไม่สำเร็จ')
+            : 'เปลี่ยนสถานะการติดตาม',
+          changes: isClosure
+            ? [
+                `ผลรอบการขาย: ${newStage}`,
+                `สถานะก่อนปิดรอบ: "${oldStage}"`,
+                'เริ่มวงจรใหม่: สถานะปัจจุบัน → "ยังไม่ติดต่อ"',
+              ]
+            : [`สถานะการติดตาม: "${oldStage}" → "${newStage}"`],
         },
         ...(target.history || []),
       ].slice(0, 100),
@@ -767,6 +793,55 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     }
     if (activeLeadModal && activeLeadModal.id === leadId) {
       setActiveLeadModal(updatedLead);
+    }
+  };
+
+  const confirmDeleteClosure = async () => {
+    if (!closureToDelete || !isAdmin || isDeleting) return;
+    const target = leadsList.find((lead) => lead.id === closureToDelete.leadId);
+    if (!target) {
+      setClosureToDelete(null);
+      return;
+    }
+    const closure = (target.salesClosures || []).find((item) => item.id === closureToDelete.closureId);
+    if (!closure) {
+      setClosureToDelete(null);
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const updatedLead: B2BLead = {
+        ...target,
+        salesClosures: (target.salesClosures || []).filter((item) => item.id !== closure.id),
+        updatedAt: localDateKey(),
+        history: [
+          {
+            id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            timestamp: new Date().toISOString(),
+            actorId,
+            actorName,
+            action: 'ลบรอบการขาย',
+            changes: [
+              `ลบรอบ ${closure.outcome === 'success' ? 'ปิดการขายสำเร็จ' : 'ปิดการขายไม่สำเร็จ'} วันที่ ${closure.closedAt}`,
+              'ลบเฉพาะสถิติรอบการขาย ไม่ลบองค์กรและนัดหมาย',
+            ],
+          },
+          ...(target.history || []),
+        ].slice(0, 100),
+      };
+      const result = await saveCentralB2BLead(updatedLead, currentRole);
+      if (!result.success) {
+        setDeleteError(result.error || 'ลบรอบการขายไม่สำเร็จ');
+        return;
+      }
+      if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(updatedLead);
+      setClosureToDelete(null);
+    } catch {
+      setDeleteError('ลบรอบการขายไม่สำเร็จ กรุณาลองใหม่');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -1066,7 +1141,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               <span className="font-semibold text-[#617B6D] shrink-0">สถานะงาน:</span>
               <button onClick={() => setSelectedStage('All')}
                 className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${selectedStage==='All'?'bg-[#235838] text-white':'bg-[#F5F7F3] text-[#4A6455]'}`}>ทั้งหมด</button>
-              {PIPELINE_STAGES.map((item) => (
+              {PIPELINE_STAGES.filter((item) => !['ปิดการขาย','ปิดการขายไม่สำเร็จ'].includes(item.stage)).map((item) => (
                 <button key={item.stage} onClick={() => setSelectedStage(item.stage)}
                   className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold border ${
                     selectedStage===item.stage
@@ -1190,6 +1265,18 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                           <span className="bg-[#EEF5EC] text-[#1E7438] px-2 py-0.5 rounded font-semibold border border-[#D2E7CE]">
                             📅 นัด: {lead.appointmentDate} {lead.appointmentTime || ''}
                           </span>
+                        )}
+                        {(lead.salesClosures?.length || 0) > 0 && (
+                          <>
+                            <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-semibold border border-emerald-100">
+                              ✓ ปิดสำเร็จ {lead.salesClosures?.filter((item) => item.outcome === 'success').length || 0} ครั้ง
+                            </span>
+                            {(lead.salesClosures?.filter((item) => item.outcome === 'unsuccessful').length || 0) > 0 && (
+                              <span className="bg-rose-50 text-rose-700 px-2 py-0.5 rounded font-semibold border border-rose-100">
+                                ✕ ไม่สำเร็จ {lead.salesClosures?.filter((item) => item.outcome === 'unsuccessful').length || 0} ครั้ง
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
@@ -1388,6 +1475,51 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                 <p><strong>ข้อเสนอ:</strong> {activeLeadModal.featuredOffers?.length ? activeLeadModal.featuredOffers.join(', ') : (activeLeadModal.offer || activeLeadModal.proposalOffer || 'ยังไม่ระบุ')}</p>
                 <p><strong>ขั้นตอนถัดไป:</strong> {activeLeadModal.nextAction || 'ยังไม่ระบุ'}</p>
               </div>
+            </div>
+
+            <div className="rounded-2xl border border-[#E3EAE0] bg-white p-3.5 space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <div className="text-xs font-bold text-[#315A43]">สรุปรอบการขาย</div>
+                  <div className="text-[11px] text-[#718579]">เมื่อปิดรอบ ระบบจะเก็บผลไว้และกลับสถานะปัจจุบันเป็น “ยังไม่ติดต่อ” เพื่อเริ่มรอบใหม่</div>
+                </div>
+                <div className="flex gap-2 text-[11px] font-bold">
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
+                    สำเร็จ {(activeLeadModal.salesClosures || []).filter((item) => item.outcome === 'success').length}
+                  </span>
+                  <span className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-100">
+                    ไม่สำเร็จ {(activeLeadModal.salesClosures || []).filter((item) => item.outcome === 'unsuccessful').length}
+                  </span>
+                </div>
+              </div>
+
+              {(activeLeadModal.salesClosures || []).length > 0 && (
+                <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                  {[...(activeLeadModal.salesClosures || [])].reverse().map((closure, index) => (
+                    <div key={closure.id} className="flex items-center justify-between gap-2 rounded-xl bg-[#F8FAF7] border border-[#EDF1EB] px-3 py-2 text-[11px]">
+                      <div>
+                        <div className={`font-bold ${closure.outcome === 'success' ? 'text-emerald-700' : 'text-rose-700'}`}>
+                          {closure.outcome === 'success' ? 'ปิดการขายสำเร็จ' : 'ปิดการขายไม่สำเร็จ'}
+                        </div>
+                        <div className="text-[#718579]">
+                          {new Date(closure.closedAt).toLocaleString('th-TH')}
+                          {closure.closedByName ? ` · โดย ${closure.closedByName}` : ''}
+                        </div>
+                      </div>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => setClosureToDelete({ leadId: activeLeadModal.id, closureId: closure.id })}
+                          className="p-1.5 rounded-lg text-red-500 hover:bg-red-50"
+                          title="ลบรอบนี้"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {isAdmin && activeLeadModal.history && activeLeadModal.history.length > 0 && (
@@ -1721,6 +1853,31 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               >
                 <Trash2 className="w-4 h-4" />
                 <span>{isDeleting ? 'กำลังลบ…' : 'ยืนยันการลบ'}</span>
+              </button>
+            </div>
+            {deleteError && <p role="alert" className="text-sm text-red-600">{deleteError}</p>}
+          </div>
+        </div>
+      )}
+
+      {closureToDelete && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 max-w-sm sm:max-w-md w-full shadow-2xl border border-red-100 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center text-red-600 mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-bold text-[#1F3E2D]">ลบรอบการขายนี้?</h3>
+              <p className="text-xs text-[#527060]">เฉพาะ Administrator เท่านั้น การลบจะกระทบเฉพาะสถิติรอบนี้ ไม่ลบองค์กรและไม่นัดหมายเดิม</p>
+            </div>
+            <div className="flex items-center gap-2.5 pt-2">
+              <button type="button" disabled={isDeleting} onClick={() => setClosureToDelete(null)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-xs font-bold">
+                ยกเลิก
+              </button>
+              <button type="button" disabled={isDeleting} onClick={confirmDeleteClosure}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-xs font-bold flex items-center justify-center gap-1.5">
+                <Trash2 className="w-4 h-4" /> {isDeleting ? 'กำลังลบ…' : 'ยืนยันลบรอบ'}
               </button>
             </div>
             {deleteError && <p role="alert" className="text-sm text-red-600">{deleteError}</p>}
