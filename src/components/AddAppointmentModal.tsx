@@ -79,7 +79,8 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
     [leads, selectedLeadId, leadName]
   );
 
-  const currentStage = selectedLead?.pipelineStage || selectedLead?.contactStatus || 'ยังไม่ติดต่อ';
+  const rawCurrentStage = selectedLead?.pipelineStage || selectedLead?.contactStatus || 'ยังไม่ติดต่อ';
+  const currentStage = rawCurrentStage === 'เข้าพบแล้ว' ? 'ติดตามต่อ' : rawCurrentStage;
   const isClosedAppointment = editAppointment?.status === 'completed' || editAppointment?.status === 'cancelled';
   const trackingOptions = editAppointment?.status === 'completed'
     ? PIPELINE_STAGES.filter((item) => ['ติดตามต่อ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership','ปิดการขาย','ปิดการขายไม่สำเร็จ'].includes(item.stage))
