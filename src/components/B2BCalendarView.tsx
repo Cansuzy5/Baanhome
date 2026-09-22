@@ -75,7 +75,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
     if (stage === 'ปิดการขาย') return 'bg-emerald-100 text-emerald-800';
     if (stage === 'ตกลง Partnership') return 'bg-teal-100 text-teal-800';
     if (stage === 'ส่งใบเสนอราคาแล้ว') return 'bg-amber-100 text-amber-800';
-    if (stage === 'เข้าพบแล้ว') return 'bg-emerald-100 text-emerald-800';
+    if (stage === 'ติดตามต่อ') return 'bg-violet-100 text-violet-800';
     if (stage === 'นัดเข้าพบ') return 'bg-blue-100 text-blue-800';
     if (stage === 'ติดต่อแล้ว') return 'bg-lime-100 text-lime-800';
     return 'bg-slate-100 text-slate-700';
@@ -549,7 +549,10 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                               {!PIPELINE_STAGES.some((item) => item.stage === stage) && (
                                 <option value={stage}>{stage} (ข้อมูลเดิม)</option>
                               )}
-                              {PIPELINE_STAGES.map((item) => (
+                              {(apt.status === 'completed'
+                                ? PIPELINE_STAGES.filter((item) => ['ติดตามต่อ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership','ปิดการขาย'].includes(item.stage))
+                                : PIPELINE_STAGES
+                              ).map((item) => (
                                 <option key={item.stage} value={item.stage}>{item.stage}</option>
                               ))}
                             </select>
