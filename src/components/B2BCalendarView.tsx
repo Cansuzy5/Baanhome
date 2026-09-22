@@ -29,6 +29,7 @@ interface B2BCalendarViewProps {
   onEditAppointment: (appointment: B2BAppointment) => void;
   onDeleteAppointment: (appointmentId: string) => void;
   onUpdateLeadStage: (leadId: string, stage: B2BPipelineStatus | string, sourceAppointmentId?: string) => void;
+  onCloseDeal: (leadId: string, appointmentId: string, outcome: 'success' | 'unsuccessful') => void;
   onSelectLeadForSearch?: (leadName: string) => void;
 }
 
@@ -56,6 +57,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   onEditAppointment,
   onDeleteAppointment,
   onUpdateLeadStage,
+  onCloseDeal,
   onSelectLeadForSearch,
 }) => {
   // Current view year & month - default to September 2026 based on metadata
@@ -709,7 +711,18 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                             <span className="text-[#72877B] font-semibold">สถานะติดตาม:</span>
                             <select
                               value={stage}
-                              onChange={(e) => onUpdateLeadStage(lead.id, e.target.value, apt.id)}
+                              onChange={(e) => {
+                                const nextStage = e.target.value;
+                                if (nextStage === 'ปิดการขาย' || nextStage === 'ปิดการขายไม่สำเร็จ') {
+                                  onCloseDeal(
+                                    lead.id,
+                                    apt.id,
+                                    nextStage === 'ปิดการขาย' ? 'success' : 'unsuccessful'
+                                  );
+                                  return;
+                                }
+                                onUpdateLeadStage(lead.id, nextStage, apt.id);
+                              }}
                               className={`max-w-[190px] px-2 py-1 rounded-lg border border-[#D5E2D2] font-bold ${stageClass(stage)}`}
                             >
                               {!getPostVisitForwardStages(stage).some((item) => item.stage === stage) && (
@@ -776,11 +789,11 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 border border-slate-200">
                           {closureDateLabel(apt) ? `ปิดดีล ${closureDateLabel(apt)}` : 'จบรอบแล้ว'}
                         </span>
-                      ) : (
+                      ) : apt.status === 'completed' ? (
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${stageClass(getLeadStage(apt))}`}>
                           {getLeadStage(apt)}
                         </span>
-                      )}
+                      ) : null}
                       <button
                         type="button"
                         onClick={(e) => {
