@@ -599,8 +599,31 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                   <div
                     key={apt.id}
                     onClick={() => onEditAppointment(apt)}
-                    className="p-3.5 rounded-2xl bg-white border border-[#DEE9DC] hover:border-[#2D5A43] transition-all space-y-2 shadow-xs cursor-pointer"
+                    className={`p-3.5 rounded-2xl border transition-all space-y-2 shadow-xs cursor-pointer ${
+                      getAppointmentClosure(apt)?.outcome === 'success'
+                        ? 'bg-emerald-50 border-2 border-emerald-700'
+                        : getAppointmentClosure(apt)?.outcome === 'unsuccessful'
+                        ? 'bg-rose-50 border-2 border-rose-700'
+                        : 'bg-white border-[#DEE9DC] hover:border-[#2D5A43]'
+                    }`}
                   >
+                    {(() => {
+                      const closure = getAppointmentClosure(apt);
+                      if (!closure) return null;
+                      const success = closure.outcome === 'success';
+                      return (
+                        <div className={`rounded-xl px-3 py-2 flex items-center justify-between gap-2 ${
+                          success ? 'bg-emerald-700 text-white' : 'bg-rose-700 text-white'
+                        }`}>
+                          <span className="text-xs font-extrabold">
+                            {success ? '✓ ปิดดีลสำเร็จ' : '✕ ปิดดีลไม่สำเร็จ'}
+                          </span>
+                          <span className="text-[11px] font-bold">
+                            วันที่ปิดดีล: {closureDateLabel(apt) || 'ไม่ระบุวันที่'}
+                          </span>
+                        </div>
+                      );
+                    })()}
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#EEF5EC] text-[#24523B]">
@@ -682,29 +705,10 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                           จัดการนัด
                         </button>
                       </div>
-                      {(() => {
-                        const closure = getAppointmentClosure(apt);
-                        if (!closure) return null;
-                        const success = closure.outcome === 'success';
-                        return (
-                          <div className={`rounded-xl border px-3 py-2.5 ${success ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
-                            <div className={`text-xs font-extrabold ${success ? 'text-emerald-800' : 'text-rose-800'}`}>
-                              {success ? '✓ ปิดดีลสำเร็จ' : closure.outcome === 'unsuccessful' ? '✕ ปิดดีลไม่สำเร็จ' : 'จบรอบแล้ว'}
-                            </div>
-                            <div className={`mt-1 text-[11px] font-bold ${success ? 'text-emerald-700' : 'text-rose-700'}`}>
-                              วันที่ปิดดีล: {closureDateLabel(apt) || 'ไม่ระบุวันที่'}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                      {(() => {
+                      {apt.status === 'completed' && !getAppointmentClosure(apt) && (() => {
                         const lead = getLeadForAppointment(apt);
                         const stage = getLeadStage(apt);
-                        const closure = getAppointmentClosure(apt);
-                        if (!lead || closure) return null;
-
-                        // Sales follow-up is only meaningful after staff confirms an actual visit.
-                        if (apt.status !== 'completed') return null;
+                        if (!lead) return null;
 
                         return (
                           <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#EEF4ED]">
