@@ -550,7 +550,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                                 <option value={stage}>{stage} (ข้อมูลเดิม)</option>
                               )}
                               {(apt.status === 'completed'
-                                ? PIPELINE_STAGES.filter((item) => ['ติดตามต่อ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership','ปิดการขาย'].includes(item.stage))
+                                ? PIPELINE_STAGES.filter((item) => ['ติดตามต่อ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership','ปิดการขาย','ปิดการขายไม่สำเร็จ'].includes(item.stage))
                                 : PIPELINE_STAGES
                               ).map((item) => (
                                 <option key={item.stage} value={item.stage}>{item.stage}</option>
