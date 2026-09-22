@@ -63,8 +63,32 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   const [selectedDateStr, setSelectedDateStr] = useState<string>(() => localDateKey());
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
-  const getLeadForAppointment = (apt: B2BAppointment) =>
-    leads.find((lead) => apt.leadId ? lead.id === apt.leadId : lead.name === apt.leadName);
+  const normalizeLeadName = (value?: string) =>
+    (value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('th-TH');
+
+  const getLeadForAppointment = (apt: B2BAppointment) => {
+    // Prefer a valid ID. If a legacy appointment carries a stale/non-existent ID,
+    // fall back to a unique normalized organization name (and phone when needed).
+    if (apt.leadId) {
+      const byId = leads.find((lead) => lead.id === apt.leadId);
+      if (byId) return byId;
+    }
+
+    const sameName = leads.filter(
+      (lead) => normalizeLeadName(lead.name) === normalizeLeadName(apt.leadName)
+    );
+    if (sameName.length === 1) return sameName[0];
+
+    if (apt.phone) {
+      const normalizedPhone = apt.phone.replace(/\D/g, '');
+      const byPhone = sameName.find(
+        (lead) => (lead.phone || '').replace(/\D/g, '') === normalizedPhone
+      );
+      if (byPhone) return byPhone;
+    }
+
+    return undefined;
+  };
 
   const getLeadStage = (apt: B2BAppointment) => {
     const lead = getLeadForAppointment(apt);
@@ -87,7 +111,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
     const lead = getLeadForAppointment(apt);
     if (!lead?.salesClosures?.length) return undefined;
 
-    const anchorRaw = apt.createdAt || `${apt.date}T${apt.time || '00:00'}:00`;
+    const anchorRaw = apt.completedAt || apt.createdAt || `${apt.date}T${apt.time || '00:00'}:00`;
     const anchor = new Date(anchorRaw).getTime();
     if (!Number.isFinite(anchor)) return undefined;
 
