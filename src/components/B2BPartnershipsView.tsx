@@ -146,8 +146,27 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     return `ผ่านมาแล้ว ${Math.abs(diffDays)} วัน`;
   };
 
-  const appointmentBelongsToLead = (apt: B2BAppointment, lead: B2BLead) =>
-    apt.leadId ? apt.leadId === lead.id : apt.leadName === lead.name;
+  const normalizeLeadName = (value?: string) =>
+    (value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('th-TH');
+
+  const appointmentBelongsToLead = (apt: B2BAppointment, lead: B2BLead) => {
+    if (apt.leadId) {
+      if (apt.leadId === lead.id) return true;
+      const referencedLeadStillExists = leadsList.some((item) => item.id === apt.leadId);
+      if (referencedLeadStillExists) return false;
+    }
+
+    if (normalizeLeadName(apt.leadName) !== normalizeLeadName(lead.name)) return false;
+    const sameNameLeads = leadsList.filter(
+      (item) => normalizeLeadName(item.name) === normalizeLeadName(lead.name)
+    );
+    if (sameNameLeads.length <= 1) return true;
+
+    if (apt.phone && lead.phone) {
+      return apt.phone.replace(/\D/g, '') === lead.phone.replace(/\D/g, '');
+    }
+    return false;
+  };
 
   const getScheduledAppointmentForLead = (
     lead: B2BLead,
