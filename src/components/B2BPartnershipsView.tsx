@@ -453,8 +453,18 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       completedAt: new Date().toISOString(),
       updatedAt: localDateKey(),
     };
+
+    const oldStage = getLeadStage(linkedLead);
+    const shouldAdvanceToVisited =
+      oldStage === 'ยังไม่ติดต่อ' ||
+      oldStage === 'ติดต่อแล้ว' ||
+      oldStage === 'นัดเข้าพบ';
+
     const updatedLead: B2BLead = {
       ...linkedLead,
+      ...(shouldAdvanceToVisited
+        ? { pipelineStage: 'เข้าพบแล้ว', contactStatus: 'เข้าพบแล้ว' }
+        : {}),
       updatedAt: localDateKey(),
       history: [
         {
@@ -464,6 +474,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           actorName,
           action: 'เข้าพบแล้ว',
           changes: [
+            ...(shouldAdvanceToVisited
+              ? [`สถานะการติดตาม: "${oldStage}" → "เข้าพบแล้ว"`]
+              : []),
             `บันทึกผลนัดวันที่ ${apt.date} เวลา ${apt.time}`,
             ...(resultNote.trim() ? [`ผลการเข้าพบ: ${resultNote.trim()}`] : []),
           ],
