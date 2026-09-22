@@ -191,6 +191,8 @@ export interface B2BAppointment {
   completedAt?: string;
   cancelledAt?: string;
   salesCycleClosedAt?: string; // retained history: appointment belongs to a closed sales cycle
+  salesCycleClosureId?: string; // links this appointment to the exact archived sales round
+  salesCycleOutcome?: 'success' | 'unsuccessful'; // outcome of that archived round
   rescheduleHistory?: AppointmentRescheduleEntry[];
   assignedStaff?: string;
   priority?: 'A' | 'B' | 'C';
