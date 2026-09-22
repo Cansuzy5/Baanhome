@@ -63,6 +63,122 @@ function appointmentBelongsToLead(current: B2BData, appointment: any, lead: any)
 export function applyB2BMutation(current: B2BData, body: any): B2BData {
   if (!body || typeof body !== 'object') throw new Error('Invalid B2B request');
 
+  // Calendar close action: make the clicked appointment the authoritative anchor.
+  // This avoids stale lead links/revisions in old test data and makes the operation
+  // idempotent: clicking close again on an already archived appointment will not
+  // create another sales-closure record.
+  if (body.action === 'closeCycleFromAppointment') {
+    if (
+      typeof body.appointmentId !== 'string' ||
+      !body.appointmentId ||
+      typeof body.closedAt !== 'string' ||
+      !body.closedAt ||
+      typeof body.closureId !== 'string' ||
+      !body.closureId ||
+      !['success', 'unsuccessful'].includes(body.outcome)
+    ) {
+      throw new Error('Missing close-cycle appointment data');
+    }
+
+    // api/sync/b2b.ts performs a lightweight dry validation against an empty set
+    // before the Firestore transaction. The real transaction below will have data.
+    if (current.appointments.length === 0 && current.leads.length === 0) return current;
+
+    const sourceAppointment = current.appointments.find(item => item.id === body.appointmentId);
+    if (!sourceAppointment) throw new Error('ไม่พบนัดหมายที่ต้องการปิดดีล');
+
+    if (sourceAppointment.salesCycleClosedAt) {
+      return current;
+    }
+
+    let lead = current.leads.find(item => sourceAppointment.leadId && item.id === sourceAppointment.leadId);
+    if (
+      lead &&
+      sourceAppointment.leadName &&
+      normalizeLeadName(lead.name) !== normalizeLeadName(sourceAppointment.leadName)
+    ) {
+      lead = undefined;
+    }
+
+    if (!lead) {
+      const sameName = current.leads.filter(
+        item => normalizeLeadName(item?.name) === normalizeLeadName(sourceAppointment.leadName)
+      );
+      if (sameName.length === 1) {
+        lead = sameName[0];
+      } else {
+        const sourcePhone = String(sourceAppointment.phone || '').replace(/\D/g, '');
+        if (sourcePhone) {
+          lead = sameName.find(
+            item => String(item?.phone || '').replace(/\D/g, '') === sourcePhone
+          );
+        }
+      }
+    }
+
+    if (!lead) throw new Error('ไม่พบหน่วยงานที่ผูกกับนัดหมายนี้');
+
+    const currentStage =
+      lead.pipelineStage === 'เข้าพบแล้ว'
+        ? 'ติดตามต่อ'
+        : (lead.pipelineStage || lead.contactStatus || 'ยังไม่ติดต่อ');
+
+    const closure = {
+      id: body.closureId,
+      outcome: body.outcome,
+      closedAt: body.closedAt,
+      closedById: body.actorId || '',
+      closedByName: body.actorName || '',
+      previousStage: currentStage,
+    };
+
+    const updatedLead = {
+      ...lead,
+      pipelineStage: 'ยังไม่ติดต่อ',
+      contactStatus: 'ยังไม่ติดต่อ',
+      appointmentDate: undefined,
+      appointmentTime: undefined,
+      salesClosures: [...(Array.isArray(lead.salesClosures) ? lead.salesClosures : []), closure],
+      updatedAt: body.closedAt,
+      history: [
+        {
+          id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          timestamp: body.closedAt,
+          actorId: body.actorId || '',
+          actorName: body.actorName || '',
+          action: body.outcome === 'success' ? 'ปิดการขายสำเร็จ' : 'ปิดการขายไม่สำเร็จ',
+          changes: [
+            `ผลรอบการขาย: ${body.outcome === 'success' ? 'ปิดการขาย' : 'ปิดการขายไม่สำเร็จ'}`,
+            `สถานะก่อนปิดรอบ: "${currentStage}"`,
+            'เริ่มวงจรใหม่: สถานะปัจจุบัน → "ยังไม่ติดต่อ"',
+          ],
+        },
+        ...(Array.isArray(lead.history) ? lead.history : []),
+      ].slice(0, 100),
+    };
+
+    const leads = upsert(current.leads, updatedLead, lead._revision);
+    const appointments = current.appointments.map(appointment => {
+      const sameCycleLead =
+        appointment.id === sourceAppointment.id ||
+        appointmentBelongsToLead(current, appointment, lead);
+
+      if (!sameCycleLead || appointment.salesCycleClosedAt) return appointment;
+
+      return {
+        ...appointment,
+        leadId: lead.id,
+        leadName: lead.name,
+        salesCycleClosedAt: body.closedAt,
+        salesCycleClosureId: body.closureId,
+        salesCycleOutcome: body.outcome,
+        _revision: Number(appointment._revision || 0) + 1,
+      };
+    });
+
+    return { leads, appointments };
+  }
+
   // Closing a sales cycle preserves every appointment and its history.
   // Any appointment for this organization that has not already been archived
   // belongs to the cycle being closed, regardless of whether it was completed,
