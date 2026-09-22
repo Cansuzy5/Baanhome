@@ -20,6 +20,7 @@ import {
 import { B2BAppointment, B2BLead, B2BPipelineStatus } from '../types';
 import { exportAppointmentsToCsv } from '../utils/b2bExport';
 import { PIPELINE_STAGES } from '../data/b2bPartnerships';
+import { localDateKey } from '../utils/dateUtils';
 
 interface B2BCalendarViewProps {
   appointments: B2BAppointment[];
@@ -59,7 +60,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
 }) => {
   // Current view year & month - default to September 2026 based on metadata
   const [currentDate, setCurrentDate] = useState(() => new Date());
-  const [selectedDateStr, setSelectedDateStr] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [selectedDateStr, setSelectedDateStr] = useState<string>(() => localDateKey());
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
   const getLeadForAppointment = (apt: B2BAppointment) =>
@@ -79,6 +80,15 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
     return 'bg-slate-100 text-slate-700';
   };
 
+  const appointmentClass = (apt: B2BAppointment) => {
+    if (apt.status === 'completed') return 'bg-emerald-100 text-emerald-800 border-l-2 border-emerald-500';
+    if (apt.status === 'cancelled') return 'bg-slate-100 text-slate-600 border-l-2 border-slate-400';
+    return 'bg-blue-100 text-blue-800 border-l-2 border-blue-500';
+  };
+
+  const appointmentLabel = (apt: B2BAppointment) =>
+    apt.status === 'completed' ? 'เข้าพบแล้ว' : apt.status === 'cancelled' ? 'ยกเลิกนัด' : 'นัดเข้าพบ';
+
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
@@ -94,11 +104,11 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   const handleJumpToToday = () => {
     const today = new Date();
     setCurrentDate(today);
-    setSelectedDateStr(today.toISOString().slice(0, 10));
+    setSelectedDateStr(localDateKey(today));
   };
 
   // Calendar Grid Calculation
-  const { calendarDays, appointmentsByDate } = useMemo(() => {
+  const { calendarDays, appointmentsByDate, movedAppointmentsByDate } = useMemo(() => {
     const firstDayIndex = new Date(year, month, 1).getDay();
     const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
     const totalDaysInPrevMonth = new Date(year, month, 0).getDate();
@@ -120,7 +130,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
         date: d,
         monthType: 'prev',
         dateStr,
-        isToday: dateStr === new Date().toISOString().slice(0, 10),
+        isToday: dateStr === localDateKey(),
       });
     }
 
@@ -131,7 +141,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
         date: i,
         monthType: 'current',
         dateStr,
-        isToday: dateStr === new Date().toISOString().slice(0, 10),
+        isToday: dateStr === localDateKey(),
       });
     }
 
@@ -145,20 +155,30 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
         date: i,
         monthType: 'next',
         dateStr,
-        isToday: dateStr === new Date().toISOString().slice(0, 10),
+        isToday: dateStr === localDateKey(),
       });
     }
 
-    // Map appointments by date
+    // Current appointments plus non-destructive reschedule traces.
     const apptMap: Record<string, B2BAppointment[]> = {};
+    const movedMap: Record<string, Array<{ appointmentId: string; leadName: string; fromTime: string; toDate: string; toTime: string }>> = {};
     appointments.forEach((apt) => {
-      if (!apptMap[apt.date]) {
-        apptMap[apt.date] = [];
-      }
+      if (!apptMap[apt.date]) apptMap[apt.date] = [];
       apptMap[apt.date].push(apt);
+
+      (apt.rescheduleHistory || []).forEach((move) => {
+        if (!movedMap[move.fromDate]) movedMap[move.fromDate] = [];
+        movedMap[move.fromDate].push({
+          appointmentId: apt.id,
+          leadName: apt.leadName,
+          fromTime: move.fromTime,
+          toDate: move.toDate,
+          toTime: move.toTime,
+        });
+      });
     });
 
-    return { calendarDays: days, appointmentsByDate: apptMap };
+    return { calendarDays: days, appointmentsByDate: apptMap, movedAppointmentsByDate: movedMap };
   }, [year, month, appointments]);
 
   // Appointments on selected date
@@ -297,7 +317,9 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
           <div className="grid grid-cols-7 gap-1.5 flex-1">
             {calendarDays.map((item, idx) => {
               const dayAppointments = appointmentsByDate[item.dateStr] || [];
+              const movedAppointments = movedAppointmentsByDate[item.dateStr] || [];
               const hasApts = dayAppointments.length > 0;
+              const hasEntries = hasApts || movedAppointments.length > 0;
               const isSelected = item.dateStr === selectedDateStr;
 
               return (
@@ -305,7 +327,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                   key={`${item.dateStr}-${idx}`}
                   onClick={() => {
                     setSelectedDateStr(item.dateStr);
-                    if (!hasApts) onAddAppointment(item.dateStr);
+                    if (!hasEntries) onAddAppointment(item.dateStr);
                   }}
                   className={`min-h-[64px] sm:min-h-[74px] p-1.5 rounded-2xl flex flex-col justify-between text-left transition-all border relative ${
                     item.monthType !== 'current'
@@ -330,9 +352,9 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                       {item.date}
                     </span>
 
-                    {hasApts && (
+                    {hasEntries && (
                       <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-[#1B3E2D] text-white">
-                        {dayAppointments.length}
+                        {dayAppointments.length + movedAppointments.length}
                       </span>
                     )}
                   </div>
@@ -342,15 +364,24 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                     {dayAppointments.slice(0, 2).map((apt) => (
                       <div
                         key={apt.id}
-                        className={`text-[9px] px-1 py-0.5 rounded truncate font-medium ${stageClass(getLeadStage(apt))}`}
-                        title={`${apt.time} - ${apt.leadName}`}
+                        className={`text-[9px] px-1 py-0.5 rounded truncate font-medium ${appointmentClass(apt)}`}
+                        title={`${apt.time} - ${apt.leadName} - ${appointmentLabel(apt)}`}
                       >
-                        {apt.time} {apt.leadName.replace('สำนักงาน', 'สนง.').slice(0, 10)}...
+                        {apt.time} {appointmentLabel(apt)} · {apt.leadName.replace('สำนักงาน', 'สนง.').slice(0, 8)}
                       </div>
                     ))}
-                    {dayAppointments.length > 2 && (
+                    {dayAppointments.length < 2 && movedAppointments.slice(0, 2 - dayAppointments.length).map((move) => (
+                      <div
+                        key={`${move.appointmentId}-${move.fromTime}-${move.toDate}`}
+                        className="text-[9px] px-1 py-0.5 rounded truncate font-medium bg-slate-100 text-slate-500 border-l-2 border-slate-400"
+                        title={`เลื่อนจากวันนี้ไป ${move.toDate} ${move.toTime}`}
+                      >
+                        {move.fromTime} เลื่อนแล้ว → {move.toDate.slice(5)}
+                      </div>
+                    ))}
+                    {dayAppointments.length + movedAppointments.length > 2 && (
                       <div className="text-[9px] text-[#7B9786] font-bold">
-                        +{dayAppointments.length - 2} รายการ
+                        +{dayAppointments.length + movedAppointments.length - 2} รายการ
                       </div>
                     )}
                   </div>
@@ -359,8 +390,14 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
             })}
           </div>
 
+          <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-[#6D8276]">
+            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-blue-500" /> นัดเข้าพบ</span>
+            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> เข้าพบแล้ว</span>
+            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-slate-400" /> เลื่อนแล้ว / ยกเลิก</span>
+          </div>
+
           {/* Quick Date Summary */}
-          <div className="mt-4 pt-3 border-t border-[#EEF4ED] flex items-center justify-between text-xs text-[#5D7B69]">
+          <div className="mt-3 pt-3 border-t border-[#EEF4ED] flex items-center justify-between text-xs text-[#5D7B69]">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-[#2D5A43] inline-block" />
               <span>วันที่เลือก: <strong>{selectedDateStr}</strong></span>
@@ -486,25 +523,18 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                       )}
                     </div>
 
-                    {/* Unified organization pipeline status */}
                     <div className="flex items-center justify-between pt-1 text-[11px]" onClick={(e) => e.stopPropagation()}>
-                      <span className="text-[#809B8B]">สถานะองค์กร:</span>
-                      {(() => {
-                        const lead = getLeadForAppointment(apt);
-                        const stage = getLeadStage(apt);
-                        return lead ? (
-                          <select
-                            value={stage}
-                            onChange={(e) => onUpdateLeadStage(lead.id, e.target.value)}
-                            className="text-[11px] px-2 py-0.5 rounded-lg border border-[#D5E2D2] bg-[#FAFBF9] text-[#1B3E2D] font-semibold"
-                          >
-                            {!PIPELINE_STAGES.some((item) => item.stage === stage) && <option value={stage}>{stage} (ข้อมูลเดิม)</option>}
-                            {PIPELINE_STAGES.map((item) => <option key={item.stage} value={item.stage}>{item.stage}</option>)}
-                          </select>
-                        ) : <span className="text-[#9A8C74]">ไม่พบข้อมูลองค์กร</span>;
-                      })()}
+                      <span className={`font-bold px-2 py-1 rounded-full ${appointmentClass(apt)}`}>{appointmentLabel(apt)}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}
+                        className="px-2.5 py-1 rounded-lg bg-[#1B3E2D] text-white font-bold"
+                      >
+                        จัดการนัด
+                      </button>
                     </div>
                   </div>
+                ))}               </div>
                 ))}
               </div>
             )}
@@ -548,6 +578,9 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                       📅 {apt.date} | ⏰ {apt.time} น.
                     </span>
                     <div className="flex items-center gap-1.5">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${appointmentClass(apt)}`}>
+                        {appointmentLabel(apt)}
+                      </span>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${stageClass(getLeadStage(apt))}`}>
                         {getLeadStage(apt)}
                       </span>
