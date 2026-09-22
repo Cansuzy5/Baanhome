@@ -95,7 +95,11 @@ function mutate(body: unknown, allowed: boolean): Promise<{ success: boolean; er
     writes++; revision++;
     try {
       const result = await request(body);
-      // onSnapshot supplies authoritative current data after the transaction.
+      // Publish the transaction response immediately. This keeps the next queued edit
+      // on the same device aligned with the server revision before onSnapshot arrives.
+      if (Array.isArray(result.leads) && Array.isArray(result.appointments)) {
+        publish({ leads: result.leads, appointments: result.appointments });
+      }
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message || 'บันทึกไม่สำเร็จ' };
@@ -106,19 +110,33 @@ function mutate(body: unknown, allowed: boolean): Promise<{ success: boolean; er
   return result;
 }
 export function saveCentralB2BLead(lead: B2BLead, role?: UserRole) {
-  return mutate({ action: 'upsert', collection: 'leads', item: lead }, canUserEditOperational(role));
+  return mutate(
+    { action: 'upsert', collection: 'leads', item: lead, expectedRevision: lead._revision },
+    canUserEditOperational(role)
+  );
 }
 export function deleteCentralB2BLead(id: string, role?: UserRole) {
   return mutate({ action: 'delete', collection: 'leads', id }, canUserManageSystem(role));
 }
 export function saveCentralB2BAppointment(appointment: B2BAppointment, role?: UserRole) {
-  return mutate({ action: 'upsert', collection: 'appointments', item: appointment }, canUserEditOperational(role));
+  return mutate(
+    { action: 'upsert', collection: 'appointments', item: appointment, expectedRevision: appointment._revision },
+    canUserEditOperational(role)
+  );
 }
 export function saveCentralB2BWorkflow(
   payload: { lead?: B2BLead; appointment?: B2BAppointment; deleteAppointmentId?: string },
   role?: UserRole
 ) {
-  return mutate({ action: 'workflow', ...payload }, canUserEditOperational(role));
+  return mutate(
+    {
+      action: 'workflow',
+      ...payload,
+      expectedLeadRevision: payload.lead?._revision,
+      expectedAppointmentRevision: payload.appointment?._revision,
+    },
+    canUserEditOperational(role)
+  );
 }
 export function deleteCentralB2BAppointment(id: string, role?: UserRole) {
   return mutate({ action: 'delete', collection: 'appointments', id }, canUserManageSystem(role));
