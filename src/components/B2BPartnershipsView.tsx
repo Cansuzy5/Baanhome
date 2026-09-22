@@ -129,6 +129,21 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     return raw === 'เข้าพบแล้ว' ? 'ติดตามต่อ' : raw;
   };
 
+  const getAppointmentRelativeLabel = (date?: string) => {
+    if (!date) return '';
+    const todayKey = localDateKey();
+    const parseKey = (key: string) => {
+      const [y, m, d] = key.split('-').map(Number);
+      return Date.UTC(y, m - 1, d);
+    };
+    const diffDays = Math.round((parseKey(date) - parseKey(todayKey)) / 86400000);
+    if (diffDays === 0) return 'วันนี้';
+    if (diffDays === 1) return 'พรุ่งนี้';
+    if (diffDays > 1) return `อีก ${diffDays} วัน`;
+    if (diffDays === -1) return 'เมื่อวาน';
+    return `ผ่านมาแล้ว ${Math.abs(diffDays)} วัน`;
+  };
+
   const getLatestLeadActivity = (lead: B2BLead) => {
     const latestHistory = lead.history?.[0];
     const rawDate = latestHistory?.timestamp || lead.updatedAt || '';
@@ -1262,8 +1277,15 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                           </span>
                         )}
                         {lead.appointmentDate && (
-                          <span className="bg-[#EEF5EC] text-[#1E7438] px-2 py-0.5 rounded font-semibold border border-[#D2E7CE]">
+                          <span className={`px-2 py-0.5 rounded font-semibold border ${
+                            getAppointmentRelativeLabel(lead.appointmentDate).startsWith('ผ่านมาแล้ว') || getAppointmentRelativeLabel(lead.appointmentDate) === 'เมื่อวาน'
+                              ? 'bg-slate-50 text-slate-700 border-slate-200'
+                              : getAppointmentRelativeLabel(lead.appointmentDate) === 'วันนี้'
+                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                              : 'bg-[#EEF5EC] text-[#1E7438] border-[#D2E7CE]'
+                          }`}>
                             📅 นัด: {lead.appointmentDate} {lead.appointmentTime || ''}
+                            <span className="ml-1">• {getAppointmentRelativeLabel(lead.appointmentDate)}</span>
                           </span>
                         )}
                         {(lead.salesClosures?.length || 0) > 0 && (
