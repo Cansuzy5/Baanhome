@@ -144,12 +144,12 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   const appointmentClass = (apt: B2BAppointment) => {
     const closure = getAppointmentClosure(apt);
     if (closure?.outcome === 'success') {
-      return 'bg-emerald-100 text-emerald-900 border-l-2 border-emerald-700';
+      return 'bg-emerald-700 text-white border-l-2 border-emerald-900';
     }
     if (closure?.outcome === 'unsuccessful') {
-      return 'bg-rose-100 text-rose-800 border-l-2 border-rose-600';
+      return 'bg-rose-700 text-white border-l-2 border-rose-900';
     }
-    if (closure) return 'bg-slate-100 text-slate-600 border-l-2 border-slate-400';
+    if (closure) return 'bg-slate-600 text-white border-l-2 border-slate-800';
     if (apt.status === 'completed') return 'bg-emerald-100 text-emerald-800 border-l-2 border-emerald-500';
     if (apt.status === 'rescheduled') return 'bg-amber-100 text-amber-800 border-l-2 border-amber-500';
     if (apt.status === 'cancelled') return 'bg-rose-100 text-rose-700 border-l-2 border-rose-500';
@@ -161,10 +161,10 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
     const closure = getAppointmentClosure(apt);
     if (closure) {
       return closure.outcome === 'success'
-        ? 'ปิดการขายแล้ว'
+        ? 'ปิดดีลสำเร็จ'
         : closure.outcome === 'unsuccessful'
-        ? 'ปิดการขายไม่สำเร็จ'
-        : 'รอบนี้ปิดแล้ว';
+        ? 'ปิดดีลไม่สำเร็จ'
+        : 'จบรอบแล้ว';
     }
     return apt.status === 'completed'
       ? 'เข้าพบแล้ว'
@@ -175,6 +175,18 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
       : apt.status === 'not_met'
       ? 'ไม่ได้เข้าพบ'
       : 'รอเข้าพบ';
+  };
+
+  const appointmentCalendarLabel = (apt: B2BAppointment) => {
+    const closure = getAppointmentClosure(apt);
+    if (closure?.outcome === 'success') return '✓ ปิดดีล';
+    if (closure?.outcome === 'unsuccessful') return '✕ ไม่สำเร็จ';
+    if (closure) return 'จบรอบ';
+    if (apt.status === 'completed') return 'เข้าพบแล้ว';
+    if (apt.status === 'rescheduled') return 'เลื่อนนัด';
+    if (apt.status === 'cancelled') return 'ยกเลิก';
+    if (apt.status === 'not_met') return 'ไม่ได้พบ';
+    return 'รอเข้าพบ';
   };
 
   const closureDateLabel = (apt: B2BAppointment) => {
@@ -386,8 +398,8 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
 
       {/* Main Grid: Calendar on Left, Selected Day & Agenda on Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Calendar Section (7 Cols) */}
-        <div className="lg:col-span-8 bg-white rounded-2xl p-4 sm:p-5 border border-[#E3ECE1] shadow-sm flex flex-col">
+        {/* Calendar Section: wider for busy days */}
+        <div className="lg:col-span-9 bg-white rounded-2xl p-4 sm:p-5 border border-[#E3ECE1] shadow-sm flex flex-col">
           {/* Calendar Header Navigation */}
           <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#EEF4ED]">
             <div className="flex items-center gap-2">
@@ -454,7 +466,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                     setSelectedDateStr(item.dateStr);
                     if (!hasEntries) onAddAppointment(item.dateStr);
                   }}
-                  className={`min-h-[64px] sm:min-h-[74px] p-1.5 rounded-2xl flex flex-col justify-between text-left transition-all border relative ${
+                  className={`min-h-[92px] sm:min-h-[122px] xl:min-h-[152px] p-1.5 rounded-2xl flex flex-col justify-between text-left transition-all border relative ${
                     item.monthType !== 'current'
                       ? 'bg-[#FBFDFB] text-gray-300 border-transparent hover:border-[#E2ECE0]'
                       : isSelected
@@ -484,29 +496,29 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                     )}
                   </div>
 
-                  {/* Tiny appointment preview pills */}
+                  {/* Busy-day preview: show up to 5 items before collapsing the rest */}
                   <div className="space-y-1 mt-1 w-full overflow-hidden">
-                    {dayAppointments.slice(0, 2).map((apt) => (
+                    {dayAppointments.slice(0, 5).map((apt) => (
                       <div
                         key={apt.id}
-                        className={`text-[9px] px-1 py-0.5 rounded truncate font-medium ${appointmentClass(apt)}`}
+                        className={`text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded truncate font-semibold ${appointmentClass(apt)}`}
                         title={`${apt.time} - ${apt.leadName} - ${appointmentLabel(apt)}`}
                       >
-                        {apt.time} {appointmentLabel(apt)} · {apt.leadName.replace('สำนักงาน', 'สนง.').slice(0, 8)}
+                        {apt.time} {appointmentCalendarLabel(apt)} · {apt.leadName.replace('สำนักงาน', 'สนง.').slice(0, 13)}
                       </div>
                     ))}
-                    {dayAppointments.length < 2 && movedAppointments.slice(0, 2 - dayAppointments.length).map((move) => (
+                    {dayAppointments.length < 5 && movedAppointments.slice(0, 5 - dayAppointments.length).map((move) => (
                       <div
                         key={`${move.appointmentId}-${move.fromTime}-${move.toDate}`}
-                        className="text-[9px] px-1 py-0.5 rounded truncate font-medium bg-slate-100 text-slate-500 border-l-2 border-slate-400"
+                        className="text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded truncate font-medium bg-slate-100 text-slate-500 border-l-2 border-slate-400"
                         title={`เลื่อนจากวันนี้ไป ${move.toDate} ${move.toTime}`}
                       >
                         {move.fromTime} เลื่อนแล้ว → {move.toDate.slice(5)}
                       </div>
                     ))}
-                    {dayAppointments.length + movedAppointments.length > 2 && (
-                      <div className="text-[9px] text-[#7B9786] font-bold">
-                        +{dayAppointments.length + movedAppointments.length - 2} รายการ
+                    {dayAppointments.length + movedAppointments.length > 5 && (
+                      <div className="text-[9px] sm:text-[10px] text-[#547361] font-bold px-1">
+                        + อีก {dayAppointments.length + movedAppointments.length - 5} นัด
                       </div>
                     )}
                   </div>
@@ -521,8 +533,8 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
             <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-amber-500" /> เลื่อนนัด</span>
             <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-rose-500" /> ยกเลิกนัด</span>
             <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-slate-500" /> ไม่ได้เข้าพบ</span>
-            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-emerald-700" /> ปิดการขายแล้ว</span>
-            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-rose-600" /> ปิดการขายไม่สำเร็จ</span>
+            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-emerald-700" /> ปิดดีลสำเร็จ</span>
+            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-rose-700" /> ปิดดีลไม่สำเร็จ</span>
           </div>
 
           {/* Quick Date Summary */}
@@ -541,8 +553,8 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
           </div>
         </div>
 
-        {/* Right Section: Day Schedule & Upcoming Agenda (5 Cols) */}
-        <div className="lg:col-span-4 space-y-3">
+        {/* Right Section: selected day details */}
+        <div className="lg:col-span-3 space-y-3">
           {/* Selected Date Focus Card */}
           <div className="bg-[#FAFBF9] rounded-3xl p-5 border border-[#E3ECE1] shadow-sm">
             <div className="flex items-center justify-between mb-3">
@@ -575,7 +587,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                 </button>
               </div>
             ) : (
-              <div className="space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
+              <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1">
                 {selectedDateAppointments.map((apt) => (
                   <div
                     key={apt.id}
@@ -666,11 +678,15 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                       {(() => {
                         const closure = getAppointmentClosure(apt);
                         if (!closure) return null;
+                        const success = closure.outcome === 'success';
                         return (
-                          <div className="rounded-xl bg-[#F7FAF6] border border-[#E1E9DF] px-2.5 py-2 text-[10px] text-[#5B7465]">
-                            รอบนี้{closure.outcome === 'success' ? 'ปิดการขายสำเร็จ' : closure.outcome === 'unsuccessful' ? 'ปิดการขายไม่สำเร็จ' : 'ปิดแล้ว'}
-                            {closureDateLabel(apt) ? ` เมื่อ ${closureDateLabel(apt)}` : ''}
-                            <span className="block mt-0.5 text-[#819187]">สถานะองค์กรปัจจุบันเริ่มรอบใหม่แยกจากประวัตินัดนี้</span>
+                          <div className={`rounded-xl border px-3 py-2.5 ${success ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
+                            <div className={`text-xs font-extrabold ${success ? 'text-emerald-800' : 'text-rose-800'}`}>
+                              {success ? '✓ ปิดดีลสำเร็จ' : closure.outcome === 'unsuccessful' ? '✕ ปิดดีลไม่สำเร็จ' : 'จบรอบแล้ว'}
+                            </div>
+                            <div className={`mt-1 text-[11px] font-bold ${success ? 'text-emerald-700' : 'text-rose-700'}`}>
+                              วันที่ปิดดีล: {closureDateLabel(apt) || 'ไม่ระบุวันที่'}
+                            </div>
                           </div>
                         );
                       })()}
@@ -678,18 +694,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                         const lead = getLeadForAppointment(apt);
                         const stage = getLeadStage(apt);
                         const closure = getAppointmentClosure(apt);
-                        if (!lead) return null;
-
-                        if (closure) {
-                          return (
-                            <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#EEF4ED]">
-                              <span className="text-[#72877B] font-semibold">ผลรอบการขาย:</span>
-                              <span className={`px-2 py-1 rounded-lg font-bold ${appointmentClass(apt)}`}>
-                                {appointmentLabel(apt)}
-                              </span>
-                            </div>
-                          );
-                        }
+                        if (!lead || closure) return null;
 
                         // Sales follow-up is only meaningful after staff confirms an actual visit.
                         if (apt.status !== 'completed') return null;
@@ -764,7 +769,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                       </span>
                       {getAppointmentClosure(apt) ? (
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 border border-slate-200">
-                          {closureDateLabel(apt) ? `ปิดเมื่อ ${closureDateLabel(apt)}` : 'รอบที่ปิดแล้ว'}
+                          {closureDateLabel(apt) ? `ปิดดีล ${closureDateLabel(apt)}` : 'จบรอบแล้ว'}
                         </span>
                       ) : (
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${stageClass(getLeadStage(apt))}`}>
