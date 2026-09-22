@@ -1471,7 +1471,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                 <p><strong>ผู้ประสานงานบ้านโฮม:</strong> {activeLeadModal.baanHomeCoordinatorName || 'ยังไม่ระบุ'}</p>
                 <p><strong>เบอร์ติดต่อ:</strong> {activeLeadModal.baanHomeCoordinatorPhone || 'ยังไม่ระบุ'}</p>
                 <p><strong>Priority:</strong> {activeLeadModal.priority}</p>
-                <p><strong>สถานะติดตาม:</strong> {activeLeadModal.pipelineStage || activeLeadModal.contactStatus || 'ยังไม่ระบุ'}</p>
+                <p><strong>สถานะติดตาม:</strong> {getLeadStage(activeLeadModal)}</p>
                 <p><strong>ข้อเสนอ:</strong> {activeLeadModal.featuredOffers?.length ? activeLeadModal.featuredOffers.join(', ') : (activeLeadModal.offer || activeLeadModal.proposalOffer || 'ยังไม่ระบุ')}</p>
                 <p><strong>ขั้นตอนถัดไป:</strong> {activeLeadModal.nextAction || 'ยังไม่ระบุ'}</p>
               </div>
