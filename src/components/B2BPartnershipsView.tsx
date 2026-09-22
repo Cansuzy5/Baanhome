@@ -182,6 +182,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   const [selectedPriority, setSelectedPriority] = useState<'All' | 'A' | 'B' | 'C'>('All');
   const [selectedStage, setSelectedStage] = useState<string>('All');
   const [selectedOrgType, setSelectedOrgType] = useState<string>('All');
+  const [appointmentFilter, setAppointmentFilter] = useState<'All' | 'ready' | 'hasAppointment' | 'noAppointment'>('All');
 
   // Lead Detail Modal & clipboard states
   const [activeLeadModal, setActiveLeadModal] = useState<B2BLead | null>(null);
@@ -698,6 +699,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         reasonText.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (lead.contactPerson && lead.contactPerson.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (lead.contactPosition && lead.contactPosition.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (lead.phone && lead.phone.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (lead.email && lead.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (lead.lineId && lead.lineId.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (lead.baanHomeCoordinatorName && lead.baanHomeCoordinatorName.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const matchesPriority =
@@ -709,9 +713,23 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       const matchesOrgType =
         selectedOrgType === 'All' || orgTypeText === selectedOrgType;
 
-      return matchesSearch && matchesPriority && matchesStage && matchesOrgType;
+      const activeAppointmentsForLead = appointments.filter(
+        (apt) =>
+          apt.status === 'scheduled' &&
+          ((apt.leadId && apt.leadId === lead.id) || apt.leadName === lead.name)
+      );
+      const hasAppointment = activeAppointmentsForLead.length > 0;
+      const isReadyForAppointment = stageText === 'ติดต่อแล้ว' && !hasAppointment;
+
+      const matchesAppointment =
+        appointmentFilter === 'All' ||
+        (appointmentFilter === 'ready' && isReadyForAppointment) ||
+        (appointmentFilter === 'hasAppointment' && hasAppointment) ||
+        (appointmentFilter === 'noAppointment' && !hasAppointment);
+
+      return matchesSearch && matchesPriority && matchesStage && matchesOrgType && matchesAppointment;
     });
-  }, [leadsList, searchTerm, selectedPriority, selectedStage, selectedOrgType]);
+  }, [leadsList, appointments, searchTerm, selectedPriority, selectedStage, selectedOrgType, appointmentFilter]);
 
   const handleUpdateLeadStage = async (leadId: string, newStage: B2BPipelineStatus | string) => {
     if (!isOperatorOrAdmin) {
@@ -837,7 +855,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           <div className="relative">
             <Search className="w-4 h-4 text-[#738C7D] absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)}
-              placeholder="ค้นหาชื่อหน่วยงาน ผู้ติดต่อลูกค้า ประเภทงาน หรือข้อเสนอ..."
+              placeholder="ค้นหาชื่อหน่วยงาน ผู้ติดต่อ เบอร์โทร ประเภทงาน หรือผู้ประสานงาน..."
               className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm rounded-xl border border-[#D5E0D2] focus:outline-none focus:ring-2 focus:ring-[#235838] bg-[#FAFBF9]" />
           </div>
         )}
@@ -1052,16 +1070,60 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             ) : null;
           })()}
 
-          <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
-            <span className="font-semibold text-[#617B6D] shrink-0">ตัวกรอง:</span>
-            {(['All','A','B','C'] as const).map((p)=><button key={p} onClick={()=>setSelectedPriority(p)}
-              className={`px-2.5 py-1 rounded-lg whitespace-nowrap ${selectedPriority===p?'bg-[#235838] text-white':'bg-[#FAF8F2] text-[#4A6455]'}`}>
-              {p==='All'?'ทุก Priority':`Priority ${p}`}
-            </button>)}
-            <select value={selectedStage} onChange={(e)=>setSelectedStage(e.target.value)} className="px-2.5 py-1 rounded-lg border bg-white">
-              <option value="All">ทุกสถานะ</option>
-              {PIPELINE_STAGES.map(st=><option key={st.stage} value={st.stage}>{st.stage}</option>)}
-            </select>
+          <div className="bg-white rounded-2xl border border-[#E1E8DE] p-3 space-y-2">
+            <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
+              <span className="font-semibold text-[#617B6D] shrink-0">สถานะงาน:</span>
+              <button
+                onClick={() => setAppointmentFilter('All')}
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='All'?'bg-[#235838] text-white':'bg-[#F5F7F3] text-[#4A6455]'}`}
+              >
+                ทั้งหมด
+              </button>
+              <button
+                onClick={() => { setAppointmentFilter('ready'); setSelectedStage('ติดต่อแล้ว'); }}
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='ready'?'bg-blue-600 text-white':'bg-blue-50 text-blue-700 border border-blue-100'}`}
+              >
+                พร้อมนัดหมาย
+              </button>
+              <button
+                onClick={() => setAppointmentFilter('hasAppointment')}
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='hasAppointment'?'bg-emerald-600 text-white':'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}
+              >
+                มีนัดแล้ว
+              </button>
+              <button
+                onClick={() => setAppointmentFilter('noAppointment')}
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='noAppointment'?'bg-slate-600 text-white':'bg-slate-50 text-slate-700 border border-slate-200'}`}
+              >
+                ยังไม่มีนัด
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
+              <span className="font-semibold text-[#617B6D] shrink-0">ตัวกรอง:</span>
+              {(['All','A','B','C'] as const).map((p)=><button key={p} onClick={()=>setSelectedPriority(p)}
+                className={`px-2.5 py-1 rounded-lg whitespace-nowrap ${selectedPriority===p?'bg-[#235838] text-white':'bg-[#FAF8F2] text-[#4A6455]'}`}>
+                {p==='All'?'ทุก Priority':`Priority ${p}`}
+              </button>)}
+              <select value={selectedStage} onChange={(e)=>setSelectedStage(e.target.value)} className="px-2.5 py-1 rounded-lg border bg-white">
+                <option value="All">ทุกสถานะ</option>
+                {PIPELINE_STAGES.map(st=><option key={st.stage} value={st.stage}>{st.stage}</option>)}
+              </select>
+              {(searchTerm || selectedPriority !== 'All' || selectedStage !== 'All' || appointmentFilter !== 'All') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setSelectedPriority('All');
+                    setSelectedStage('All');
+                    setAppointmentFilter('All');
+                  }}
+                  className="px-2.5 py-1 rounded-lg whitespace-nowrap text-rose-700 bg-rose-50 border border-rose-100 font-semibold"
+                >
+                  ล้างตัวกรอง
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Leads Listing */}
@@ -1069,6 +1131,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             <div className="flex items-center justify-between text-xs text-[#526D5E] px-1">
               <span>
                 พบ <strong>{filteredLeads.length}</strong> หน่วยงาน (จากทั้งหมด {leadsList.length} แห่ง)
+                {appointmentFilter === 'ready' && <span className="ml-2 text-blue-700">• ติดต่อแล้วและยังไม่มีนัด</span>}
               </span>
               <button
                 onClick={() => setIsExportModalOpen(true)}
