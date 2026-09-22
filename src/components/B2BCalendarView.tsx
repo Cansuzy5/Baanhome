@@ -599,31 +599,13 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                   <div
                     key={apt.id}
                     onClick={() => onEditAppointment(apt)}
-                    className={`p-3.5 rounded-2xl border transition-all space-y-2 shadow-xs cursor-pointer ${
-                      getAppointmentClosure(apt)?.outcome === 'success'
-                        ? 'bg-emerald-50 border-2 border-emerald-700'
-                        : getAppointmentClosure(apt)?.outcome === 'unsuccessful'
-                        ? 'bg-rose-50 border-2 border-rose-700'
-                        : 'bg-white border-[#DEE9DC] hover:border-[#2D5A43]'
-                    }`}
+                    className="p-3.5 rounded-2xl bg-white border border-[#DEE9DC] hover:border-[#2D5A43] transition-all space-y-2 shadow-xs cursor-pointer"
                   >
-                    {(() => {
-                      const closure = getAppointmentClosure(apt);
-                      if (!closure) return null;
-                      const success = closure.outcome === 'success';
-                      return (
-                        <div className={`rounded-xl px-3 py-2 flex items-center justify-between gap-2 ${
-                          success ? 'bg-emerald-700 text-white' : 'bg-rose-700 text-white'
-                        }`}>
-                          <span className="text-xs font-extrabold">
-                            {success ? '✓ ปิดดีลสำเร็จ' : '✕ ปิดดีลไม่สำเร็จ'}
-                          </span>
-                          <span className="text-[11px] font-bold">
-                            วันที่ปิดดีล: {closureDateLabel(apt) || 'ไม่ระบุวันที่'}
-                          </span>
-                        </div>
-                      );
-                    })()}
+                    {getAppointmentClosure(apt) && (
+                      <div className="text-[11px] font-bold text-[#557064]">
+                        {appointmentLabel(apt)} · วันที่ปิดดีล {closureDateLabel(apt) || 'ไม่ระบุวันที่'}
+                      </div>
+                    )}
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#EEF5EC] text-[#24523B]">
