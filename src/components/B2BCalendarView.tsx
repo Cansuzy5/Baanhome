@@ -83,6 +83,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   };
 
   const appointmentClass = (apt: B2BAppointment) => {
+    if (apt.salesCycleClosedAt) return 'bg-slate-100 text-slate-600 border-l-2 border-slate-400';
     if (apt.status === 'completed') return 'bg-emerald-100 text-emerald-800 border-l-2 border-emerald-500';
     if (apt.status === 'rescheduled') return 'bg-amber-100 text-amber-800 border-l-2 border-amber-500';
     if (apt.status === 'cancelled') return 'bg-rose-100 text-rose-700 border-l-2 border-rose-500';
@@ -91,7 +92,9 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   };
 
   const appointmentLabel = (apt: B2BAppointment) =>
-    apt.status === 'completed'
+    apt.salesCycleClosedAt
+      ? 'นัดจากรอบที่ปิดแล้ว'
+      : apt.status === 'completed'
       ? 'เข้าพบแล้ว'
       : apt.status === 'rescheduled'
       ? 'เลื่อนนัด'
