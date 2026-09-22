@@ -66,10 +66,11 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   const getLeadForAppointment = (apt: B2BAppointment) =>
     leads.find((lead) => (apt.leadId && lead.id === apt.leadId) || lead.name === apt.leadName);
 
-  const getLeadStage = (apt: B2BAppointment) =>
-    getLeadForAppointment(apt)?.pipelineStage ||
-    getLeadForAppointment(apt)?.contactStatus ||
-    'ยังไม่ติดต่อ';
+  const getLeadStage = (apt: B2BAppointment) => {
+    const lead = getLeadForAppointment(apt);
+    const raw = lead?.pipelineStage || lead?.contactStatus || 'ยังไม่ติดต่อ';
+    return raw === 'เข้าพบแล้ว' ? 'ติดตามต่อ' : raw;
+  };
 
   const stageClass = (stage: string) => {
     if (stage === 'ปิดการขาย') return 'bg-emerald-100 text-emerald-800';
