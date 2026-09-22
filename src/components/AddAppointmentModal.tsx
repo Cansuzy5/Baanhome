@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { B2BAppointment, B2BLead, B2BPipelineStatus } from '../types';
 import { localDateKey } from '../utils/dateUtils';
+import { PIPELINE_STAGES } from '../data/b2bPartnerships';
 
 interface AddAppointmentModalProps {
   isOpen: boolean;
@@ -21,6 +22,7 @@ interface AddAppointmentModalProps {
   onReschedule: (appointment: B2BAppointment, newDate: string, newTime: string, reason: string) => Promise<boolean>;
   onComplete: (appointment: B2BAppointment, resultNote: string) => Promise<boolean>;
   onCancelAppointment: (appointment: B2BAppointment, reason: string) => Promise<boolean>;
+  onUpdateLeadStage: (leadId: string, stage: B2BPipelineStatus | string) => void | Promise<void>;
   leads: B2BLead[];
   editAppointment?: B2BAppointment | null;
   defaultDate?: string;
@@ -47,6 +49,7 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
   onReschedule,
   onComplete,
   onCancelAppointment,
+  onUpdateLeadStage,
   leads,
   editAppointment,
   defaultDate,
@@ -241,6 +244,38 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
                 </span>
               </div>
 
+              {selectedLead && (
+                <div className="rounded-xl bg-white border border-[#D9E5D7] p-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <div className="text-xs font-bold text-[#315A43]">สถานะการติดตามองค์กร</div>
+                      <div className="text-[11px] text-[#73877B]">ใช้สถานะชุดเดียวกับหน้ารายชื่อองค์กร เปลี่ยนที่นี่แล้วอีกหน้าจะเปลี่ยนตาม</div>
+                    </div>
+                    <select
+                      value={currentStage}
+                      disabled={isSaving}
+                      onChange={async (e) => {
+                        const nextStage = e.target.value;
+                        setSaveError('');
+                        try {
+                          await onUpdateLeadStage(selectedLead.id, nextStage);
+                        } catch {
+                          setSaveError('เปลี่ยนสถานะไม่สำเร็จ กรุณาลองใหม่');
+                        }
+                      }}
+                      className="w-full sm:w-auto min-w-[190px] px-3 py-2 rounded-xl border border-[#D5E2D2] bg-white text-xs font-bold text-[#345945]"
+                    >
+                      {!PIPELINE_STAGES.some((item) => item.stage === currentStage) && (
+                        <option value={currentStage}>{currentStage} (ข้อมูลเดิม)</option>
+                      )}
+                      {PIPELINE_STAGES.map((item) => (
+                        <option key={item.stage} value={item.stage}>{item.stage}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
               {!isClosedAppointment && (
                 <div className="grid grid-cols-3 gap-2">
                   <button type="button" onClick={() => setActionMode(actionMode === 'complete' ? 'none' : 'complete')} className="py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold flex items-center justify-center gap-1">
@@ -289,7 +324,7 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
                 <div className="rounded-xl bg-white border border-rose-200 p-3 space-y-2">
                   <div className="text-xs font-bold text-rose-700">ยกเลิกนัดหมาย</div>
                   <label className="space-y-1 block"><span className="text-xs font-bold">เหตุผล (ไม่บังคับ)</span><textarea rows={2} value={reason} onChange={e=>setReason(e.target.value)} className="w-full px-3 py-2 rounded-xl border"/></label>
-                  <div className="text-[11px] text-rose-700">ถ้าไม่มีนัดอื่นและองค์กรยังอยู่ขั้น “นัดเข้าพบ” ระบบจะกลับเป็น “ติดต่อแล้ว” อัตโนมัติ</div>
+                  <div className="text-[11px] text-rose-700">การยกเลิกนัดจะไม่เปลี่ยนสถานะการติดตามองค์กรอัตโนมัติ หน้างานเลือกสถานะตามจริงได้เอง</div>
                   <button type="button" disabled={isSaving} onClick={() => runAction(() => onCancelAppointment(editAppointment, reason))} className="w-full py-2 rounded-xl bg-rose-600 text-white text-xs font-bold disabled:opacity-50">
                     ยืนยันยกเลิกนัด
                   </button>
