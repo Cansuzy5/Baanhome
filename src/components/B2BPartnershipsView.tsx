@@ -1074,7 +1074,10 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
               <span className="font-semibold text-[#617B6D] shrink-0">สถานะงาน:</span>
               <button
-                onClick={() => setAppointmentFilter('All')}
+                onClick={() => {
+                  setAppointmentFilter('All');
+                  setSelectedStage('All');
+                }}
                 className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='All'?'bg-[#235838] text-white':'bg-[#F5F7F3] text-[#4A6455]'}`}
               >
                 ทั้งหมด
@@ -1086,13 +1089,19 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                 พร้อมนัดหมาย
               </button>
               <button
-                onClick={() => setAppointmentFilter('hasAppointment')}
+                onClick={() => {
+                  setAppointmentFilter('hasAppointment');
+                  setSelectedStage('All');
+                }}
                 className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='hasAppointment'?'bg-emerald-600 text-white':'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}
               >
                 มีนัดแล้ว
               </button>
               <button
-                onClick={() => setAppointmentFilter('noAppointment')}
+                onClick={() => {
+                  setAppointmentFilter('noAppointment');
+                  setSelectedStage('All');
+                }}
                 className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${appointmentFilter==='noAppointment'?'bg-slate-600 text-white':'bg-slate-50 text-slate-700 border border-slate-200'}`}
               >
                 ยังไม่มีนัด
