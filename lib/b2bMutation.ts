@@ -41,6 +41,33 @@ function deleteById(items: any[], id: unknown, expectedRevision?: number): any[]
 export function applyB2BMutation(current: B2BData, body: any): B2BData {
   if (!body || typeof body !== 'object') throw new Error('Invalid B2B request');
 
+  // Closing a sales cycle preserves every appointment and its history, while
+  // marking still-scheduled appointments as belonging to the closed cycle.
+  if (body.action === 'closeCycle') {
+    if (!body.lead || typeof body.closedAt !== 'string' || !body.closedAt) {
+      throw new Error('Missing close-cycle data');
+    }
+    const leads = upsert(current.leads, body.lead, body.expectedLeadRevision);
+    const appointments = current.appointments.map(appointment => {
+      const belongsToLead = appointment.leadId
+        ? appointment.leadId === body.lead.id
+        : appointment.leadName === body.lead.name;
+      if (
+        !belongsToLead ||
+        appointment.status !== 'scheduled' ||
+        appointment.salesCycleClosedAt
+      ) {
+        return appointment;
+      }
+      return {
+        ...appointment,
+        salesCycleClosedAt: body.closedAt,
+        _revision: Number(appointment._revision || 0) + 1,
+      };
+    });
+    return { leads, appointments };
+  }
+
   // One transaction can update an organization and one appointment together.
   if (body.action === 'workflow') {
     let leads = current.leads;
