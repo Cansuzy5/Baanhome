@@ -125,7 +125,12 @@ export function saveCentralB2BAppointment(appointment: B2BAppointment, role?: Us
   );
 }
 export function saveCentralB2BWorkflow(
-  payload: { lead?: B2BLead; appointment?: B2BAppointment; deleteAppointmentId?: string },
+  payload: {
+    lead?: B2BLead;
+    appointment?: B2BAppointment;
+    deleteAppointmentId?: string;
+    expectedAppointmentRevision?: number;
+  },
   role?: UserRole
 ) {
   return mutate(
@@ -133,7 +138,8 @@ export function saveCentralB2BWorkflow(
       action: 'workflow',
       ...payload,
       expectedLeadRevision: payload.lead?._revision,
-      expectedAppointmentRevision: payload.appointment?._revision,
+      expectedAppointmentRevision:
+        payload.appointment?._revision ?? payload.expectedAppointmentRevision,
     },
     canUserEditOperational(role)
   );
