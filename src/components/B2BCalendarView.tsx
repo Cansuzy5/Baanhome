@@ -83,6 +83,12 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   };
 
   const appointmentClass = (apt: B2BAppointment) => {
+    if (apt.salesCycleClosedAt && apt.salesCycleOutcome === 'success') {
+      return 'bg-emerald-100 text-emerald-900 border-l-2 border-emerald-700';
+    }
+    if (apt.salesCycleClosedAt && apt.salesCycleOutcome === 'unsuccessful') {
+      return 'bg-rose-100 text-rose-800 border-l-2 border-rose-600';
+    }
     if (apt.salesCycleClosedAt) return 'bg-slate-100 text-slate-600 border-l-2 border-slate-400';
     if (apt.status === 'completed') return 'bg-emerald-100 text-emerald-800 border-l-2 border-emerald-500';
     if (apt.status === 'rescheduled') return 'bg-amber-100 text-amber-800 border-l-2 border-amber-500';
@@ -93,7 +99,11 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
 
   const appointmentLabel = (apt: B2BAppointment) =>
     apt.salesCycleClosedAt
-      ? 'นัดจากรอบที่ปิดแล้ว'
+      ? apt.salesCycleOutcome === 'success'
+        ? 'ปิดการขายแล้ว'
+        : apt.salesCycleOutcome === 'unsuccessful'
+        ? 'ปิดการขายไม่สำเร็จ'
+        : 'รอบนี้ปิดแล้ว'
       : apt.status === 'completed'
       ? 'เข้าพบแล้ว'
       : apt.status === 'rescheduled'
@@ -103,6 +113,13 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
       : apt.status === 'not_met'
       ? 'ไม่ได้เข้าพบ'
       : 'รอเข้าพบ';
+
+  const closureDateLabel = (apt: B2BAppointment) => {
+    if (!apt.salesCycleClosedAt) return '';
+    const parsed = new Date(apt.salesCycleClosedAt);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -440,6 +457,8 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
             <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-amber-500" /> เลื่อนนัด</span>
             <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-rose-500" /> ยกเลิกนัด</span>
             <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-slate-500" /> ไม่ได้เข้าพบ</span>
+            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-emerald-700" /> ปิดการขายแล้ว</span>
+            <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-rose-600" /> ปิดการขายไม่สำเร็จ</span>
           </div>
 
           {/* Quick Date Summary */}
@@ -580,10 +599,28 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                           จัดการนัด
                         </button>
                       </div>
+                      {apt.salesCycleClosedAt && (
+                        <div className="rounded-xl bg-[#F7FAF6] border border-[#E1E9DF] px-2.5 py-2 text-[10px] text-[#5B7465]">
+                          รอบนี้{apt.salesCycleOutcome === 'success' ? 'ปิดการขายสำเร็จ' : apt.salesCycleOutcome === 'unsuccessful' ? 'ปิดการขายไม่สำเร็จ' : 'ปิดแล้ว'}
+                          {closureDateLabel(apt) ? ` เมื่อ ${closureDateLabel(apt)}` : ''}
+                          <span className="block mt-0.5 text-[#819187]">สถานะองค์กรปัจจุบันเริ่มรอบใหม่แยกจากประวัตินัดนี้</span>
+                        </div>
+                      )}
                       {(() => {
                         const lead = getLeadForAppointment(apt);
                         const stage = getLeadStage(apt);
-                        return lead ? (
+                        if (!lead) return null;
+                        if (apt.salesCycleClosedAt) {
+                          return (
+                            <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#EEF4ED]">
+                              <span className="text-[#72877B] font-semibold">ผลรอบการขาย:</span>
+                              <span className={`px-2 py-1 rounded-lg font-bold ${appointmentClass(apt)}`}>
+                                {appointmentLabel(apt)}
+                              </span>
+                            </div>
+                          );
+                        }
+                        return (
                           <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#EEF4ED]">
                             <span className="text-[#72877B] font-semibold">สถานะติดตาม:</span>
                             <select
@@ -602,7 +639,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                               ))}
                             </select>
                           </div>
-                        ) : null;
+                        );
                       })()}
                     </div>
                   </div>
@@ -654,9 +691,15 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${appointmentClass(apt)}`}>
                         {appointmentLabel(apt)}
                       </span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${stageClass(getLeadStage(apt))}`}>
-                        {getLeadStage(apt)}
-                      </span>
+                      {apt.salesCycleClosedAt ? (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 border border-slate-200">
+                          {closureDateLabel(apt) ? `ปิดเมื่อ ${closureDateLabel(apt)}` : 'รอบที่ปิดแล้ว'}
+                        </span>
+                      ) : (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${stageClass(getLeadStage(apt))}`}>
+                          {getLeadStage(apt)}
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={(e) => {
