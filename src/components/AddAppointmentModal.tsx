@@ -37,6 +37,7 @@ const stageClass = (stage: string) => {
   if (stage === 'ปิดการขาย') return 'bg-emerald-100 text-emerald-800 border-emerald-200';
   if (stage === 'ตกลง Partnership') return 'bg-teal-100 text-teal-800 border-teal-200';
   if (stage === 'ส่งใบเสนอราคาแล้ว') return 'bg-amber-100 text-amber-800 border-amber-200';
+  if (stage === 'เข้าพบแล้ว') return 'bg-emerald-100 text-emerald-800 border-emerald-200';
   if (stage === 'นัดเข้าพบ') return 'bg-blue-100 text-blue-800 border-blue-200';
   if (stage === 'ติดต่อแล้ว') return 'bg-lime-100 text-lime-800 border-lime-200';
   return 'bg-slate-100 text-slate-700 border-slate-200';
@@ -312,7 +313,7 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
               {actionMode === 'complete' && editAppointment && (
                 <div className="rounded-xl bg-white border border-emerald-200 p-3 space-y-2">
                   <div className="text-xs font-bold text-emerald-800">บันทึกผลหลังเข้าพบ</div>
-                  <div className="text-[11px] text-[#6F8377]">สถานะการติดตามขององค์กรจะไม่เปลี่ยนอัตโนมัติ เลือกเองจากหน้ารายชื่อหรือหน้ารายละเอียดองค์กรได้</div>
+                  <div className="text-[11px] text-[#6F8377]">บันทึกแล้ว สถานะการติดตามจะเป็น “เข้าพบแล้ว” อัตโนมัติ จากนั้นหน้างานเลือกขั้นตอนถัดไปเองได้</div>
                   <label className="space-y-1 block"><span className="text-xs font-bold">ผลการเข้าพบ / สิ่งที่ต้องทำต่อ</span><textarea rows={3} value={resultNote} onChange={e=>setResultNote(e.target.value)} placeholder="เช่น ลูกค้าขอใบเสนอราคา 30 ท่าน" className="w-full px-3 py-2 rounded-xl border"/></label>
                   <button type="button" disabled={isSaving} onClick={() => runAction(() => onComplete(editAppointment, resultNote))} className="w-full py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">
                     บันทึกว่าเข้าพบแล้ว
