@@ -144,15 +144,40 @@ export function saveCentralB2BWorkflow(
     canUserEditOperational(role)
   );
 }
-export function closeCentralB2BSalesCycle(lead: B2BLead, closedAt: string, role?: UserRole) {
+export function closeCentralB2BSalesCycle(
+  lead: B2BLead,
+  closedAt: string,
+  closureId: string,
+  outcome: 'success' | 'unsuccessful',
+  role?: UserRole
+) {
   return mutate(
     {
       action: 'closeCycle',
       lead,
       closedAt,
+      closureId,
+      outcome,
       expectedLeadRevision: lead._revision,
     },
     canUserEditOperational(role)
+  );
+}
+export function deleteCentralB2BSalesClosure(
+  lead: B2BLead,
+  closureId: string,
+  closedAt: string,
+  role?: UserRole
+) {
+  return mutate(
+    {
+      action: 'deleteClosure',
+      lead,
+      closureId,
+      closedAt,
+      expectedLeadRevision: lead._revision,
+    },
+    canUserManageSystem(role)
   );
 }
 export function deleteCentralB2BAppointment(id: string, role?: UserRole) {
