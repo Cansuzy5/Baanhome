@@ -64,7 +64,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
   const getLeadForAppointment = (apt: B2BAppointment) =>
-    leads.find((lead) => (apt.leadId && lead.id === apt.leadId) || lead.name === apt.leadName);
+    leads.find((lead) => apt.leadId ? lead.id === apt.leadId : lead.name === apt.leadName);
 
   const getLeadStage = (apt: B2BAppointment) => {
     const lead = getLeadForAppointment(apt);
