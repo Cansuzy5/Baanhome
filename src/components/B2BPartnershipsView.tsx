@@ -1247,6 +1247,13 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           }}
           onDeleteAppointment={handleDeleteAppointment}
           onUpdateLeadStage={handleUpdateLeadStage}
+          onCloseDeal={(leadId, appointmentId, outcome) =>
+            handleUpdateLeadStage(
+              leadId,
+              outcome === 'success' ? 'ปิดการขาย' : 'ปิดการขายไม่สำเร็จ',
+              appointmentId
+            )
+          }
           onSelectLeadForSearch={onSelectLeadForSearch}
         />
       ) : (
