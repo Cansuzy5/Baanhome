@@ -94,7 +94,8 @@ export interface B2BSalesClosure {
 }
 
 export interface B2BLead {
-  id: string; // e.g. KH-168
+  id: string;
+  _revision?: number; // server-managed optimistic concurrency revision // e.g. KH-168
   name: string; // e.g. สำนักงานพัฒนาฝีมือแรงงานกาฬสินธุ์
   priority: 'A' | 'B' | 'C';
   categoryType?: string; // Training / Government, University, Education, Hospital, etc.
@@ -166,6 +167,7 @@ export interface AppointmentRescheduleEntry {
 
 export interface B2BAppointment {
   id: string;
+  _revision?: number; // server-managed optimistic concurrency revision
   leadId?: string;
   leadName: string;
   date: string; // YYYY-MM-DD
