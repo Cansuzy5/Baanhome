@@ -911,14 +911,14 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   ) => {
     if (!isOperatorOrAdmin) {
       setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Operator และ Administrator เท่านั้นที่สามารถเปลี่ยนสถานะติดตามงานได้');
-      return;
+      return false;
     }
     const target = leadsList.find((l) => l.id === leadId);
-    if (!target) return;
+    if (!target) return false;
 
     const oldStage = getLeadStage(target);
     const isClosure = newStage === 'ปิดการขาย' || newStage === 'ปิดการขายไม่สำเร็จ';
-    if (!isClosure && oldStage === newStage) return;
+    if (!isClosure && oldStage === newStage) return true;
 
     const now = new Date().toISOString();
     const closure = isClosure
@@ -983,11 +983,12 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       : await saveCentralB2BLead(updatedLead, currentRole);
     if (!result.success) {
       setPermissionError(result.error || 'เปลี่ยนสถานะไม่สำเร็จ');
-      return;
+      return false;
     }
     if (!isClosure && activeLeadModal && activeLeadModal.id === leadId) {
       setActiveLeadModal(updatedLead);
     }
+    return true;
   };
 
   const confirmDeleteClosure = async () => {
@@ -1501,35 +1502,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                           </>
                         )}
                       </div>
-                      {(() => {
-                        const timeline = getCurrentCycleTimeline(lead);
-                        if (!timeline.length || getLeadStage(lead) === 'ยังไม่ติดต่อ') return null;
-                        return (
-                          <div className="flex items-center gap-1.5 flex-wrap text-[10px] pt-1">
-                            <span className="font-bold text-[#60766A]">⏱ เส้นทาง:</span>
-                            {timeline.map((item, index) => (
-                              <React.Fragment key={`${lead.id}-${item.stage}-${index}`}>
-                                {index > 0 && <span className="text-[#A8B4AD]">→</span>}
-                                <span
-                                  className={`px-2 py-0.5 rounded-full border font-semibold ${
-                                    item.current
-                                      ? item.stage === 'ติดตามต่อ'
-                                        ? 'bg-violet-50 text-violet-700 border-violet-200'
-                                        : item.stage === 'ส่งใบเสนอราคาแล้ว'
-                                        ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                        : item.stage === 'นัดเข้าพบ'
-                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                        : 'bg-[#EEF5EC] text-[#2E6543] border-[#D6E7D2]'
-                                      : 'bg-slate-50 text-slate-600 border-slate-200'
-                                  }`}
-                                >
-                                  {item.stage} {item.days} วัน{item.current ? 'แล้ว' : ''}
-                                </span>
-                              </React.Fragment>
-                            ))}
-                          </div>
-                        );
-                      })()}
                     </div>
                   </div>
 
