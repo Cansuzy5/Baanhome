@@ -22,7 +22,11 @@ interface AddAppointmentModalProps {
   onReschedule: (appointment: B2BAppointment, newDate: string, newTime: string, reason: string) => Promise<boolean>;
   onComplete: (appointment: B2BAppointment, resultNote: string) => Promise<boolean>;
   onCancelAppointment: (appointment: B2BAppointment, reason: string) => Promise<boolean>;
-  onUpdateLeadStage: (leadId: string, stage: B2BPipelineStatus | string) => void | Promise<void>;
+  onUpdateLeadStage: (
+    leadId: string,
+    stage: B2BPipelineStatus | string,
+    sourceAppointmentId?: string
+  ) => boolean | Promise<boolean>;
   leads: B2BLead[];
   editAppointment?: B2BAppointment | null;
   defaultDate?: string;
@@ -82,9 +86,14 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
   const rawCurrentStage = selectedLead?.pipelineStage || selectedLead?.contactStatus || 'ยังไม่ติดต่อ';
   const currentStage = rawCurrentStage === 'เข้าพบแล้ว' ? 'ติดตามต่อ' : rawCurrentStage;
   const isClosedAppointment = editAppointment?.status === 'completed' || editAppointment?.status === 'cancelled';
-  const trackingOptions = editAppointment?.status === 'completed'
-    ? PIPELINE_STAGES.filter((item) => ['ติดตามต่อ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership','ปิดการขาย','ปิดการขายไม่สำเร็จ'].includes(item.stage))
-    : PIPELINE_STAGES;
+  const postVisitOrder = ['ติดตามต่อ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership'];
+  const currentPostVisitIndex = postVisitOrder.indexOf(currentStage);
+  const allowedPostVisit = new Set([
+    ...(currentPostVisitIndex >= 0 ? postVisitOrder.slice(currentPostVisitIndex) : postVisitOrder),
+    'ปิดการขาย',
+    'ปิดการขายไม่สำเร็จ',
+  ]);
+  const trackingOptions = PIPELINE_STAGES.filter((item) => allowedPostVisit.has(item.stage));
 
   const filteredLeads = useMemo(() => {
     const q = leadName.trim().toLowerCase();
@@ -249,12 +258,12 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
                 </span>
               </div>
 
-              {selectedLead && (
+              {selectedLead && editAppointment.status === 'completed' && !editAppointment.salesCycleClosedAt && (
                 <div className="rounded-xl bg-white border border-[#D9E5D7] p-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
                       <div className="text-xs font-bold text-[#315A43]">สถานะการติดตามองค์กร</div>
-                      <div className="text-[11px] text-[#73877B]">ใช้สถานะชุดเดียวกับหน้ารายชื่อองค์กร เปลี่ยนที่นี่แล้วอีกหน้าจะเปลี่ยนตาม</div>
+                      <div className="text-[11px] text-[#73877B]">แสดงหลังเข้าพบแล้วเท่านั้น</div>
                     </div>
                     <select
                       value={currentStage}
@@ -262,19 +271,26 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
                       onChange={async (e) => {
                         const nextStage = e.target.value;
                         setSaveError('');
+                        setIsSaving(true);
                         try {
-                          await onUpdateLeadStage(selectedLead.id, nextStage);
+                          const ok = await onUpdateLeadStage(selectedLead.id, nextStage, editAppointment.id);
+                          if (!ok) {
+                            setSaveError('เปลี่ยนสถานะไม่สำเร็จ กรุณาลองใหม่');
+                            return;
+                          }
+                          if (nextStage === 'ปิดการขาย' || nextStage === 'ปิดการขายไม่สำเร็จ') {
+                            onClose();
+                          }
                         } catch {
                           setSaveError('เปลี่ยนสถานะไม่สำเร็จ กรุณาลองใหม่');
+                        } finally {
+                          setIsSaving(false);
                         }
                       }}
                       className="w-full sm:w-auto min-w-[190px] px-3 py-2 rounded-xl border border-[#D5E2D2] bg-white text-xs font-bold text-[#345945]"
                     >
-                      {!PIPELINE_STAGES.some((item) => item.stage === currentStage) && (
-                        <option value={currentStage}>{currentStage} (ข้อมูลเดิม)</option>
-                      )}
                       {!trackingOptions.some((item) => item.stage === currentStage) && (
-                        <option value={currentStage}>{currentStage} (แก้ไขย้อนหลัง)</option>
+                        <option value={currentStage}>{currentStage} (ข้อมูลเดิม)</option>
                       )}
                       {trackingOptions.map((item) => (
                         <option key={item.stage} value={item.stage}>{item.stage}</option>
