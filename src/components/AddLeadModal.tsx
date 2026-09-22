@@ -31,7 +31,7 @@ const OFFER_OPTIONS = [
   'ห้องพัก รีสอร์ท',
   'ห้องพัก พูลวิลล่า',
 ] as const;
-const PIPELINE_STAGES = ['ยังไม่ติดต่อ','ติดต่อแล้ว','นัดเข้าพบ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership','ปิดการขาย'];
+const PIPELINE_STAGES = ['ยังไม่ติดต่อ','ติดต่อแล้ว','นัดเข้าพบ','เข้าพบแล้ว','ส่งใบเสนอราคาแล้ว','ตกลง Partnership','ปิดการขาย'];
 
 export const AddLeadModal: React.FC<AddLeadModalProps> = ({
   isOpen, onClose, onSave, editLead, coordinators = [], onManageCoordinators,
