@@ -323,6 +323,24 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     };
   }, []);
 
+  // Keep an open detail modal on the authoritative server revision. Without this,
+  // a successful write could leave the modal holding the pre-save _revision and
+  // the next edit opened from that modal would immediately conflict.
+  useEffect(() => {
+    if (!activeLeadModal) return;
+    const latest = leadsList.find((lead) => lead.id === activeLeadModal.id);
+    if (!latest) {
+      setActiveLeadModal(null);
+      return;
+    }
+    if (
+      latest._revision !== activeLeadModal._revision ||
+      latest.updatedAt !== activeLeadModal.updatedAt
+    ) {
+      setActiveLeadModal(latest);
+    }
+  }, [leadsList, activeLeadModal?.id, activeLeadModal?._revision, activeLeadModal?.updatedAt]);
+
   // Handle Add or Edit Lead
   const handleSaveLead = async (
     lead: B2BLead,
