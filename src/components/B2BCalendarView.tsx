@@ -72,6 +72,41 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
     return raw === 'เข้าพบแล้ว' ? 'ติดตามต่อ' : raw;
   };
 
+  // Prefer explicit cycle metadata. For test/legacy appointments created before
+  // cycle metadata existed, infer the first sales closure that happened after
+  // the appointment was created so historical calendar records still read correctly.
+  const getAppointmentClosure = (apt: B2BAppointment) => {
+    if (apt.salesCycleClosedAt) {
+      return {
+        id: apt.salesCycleClosureId,
+        closedAt: apt.salesCycleClosedAt,
+        outcome: apt.salesCycleOutcome,
+      };
+    }
+
+    const lead = getLeadForAppointment(apt);
+    if (!lead?.salesClosures?.length) return undefined;
+
+    const anchorRaw = apt.createdAt || `${apt.date}T${apt.time || '00:00'}:00`;
+    const anchor = new Date(anchorRaw).getTime();
+    if (!Number.isFinite(anchor)) return undefined;
+
+    return [...lead.salesClosures]
+      .filter((item) => {
+        const closedAt = new Date(item.closedAt).getTime();
+        return Number.isFinite(closedAt) && closedAt >= anchor;
+      })
+      .sort((a, b) => new Date(a.closedAt).getTime() - new Date(b.closedAt).getTime())[0];
+  };
+
+  const getPostVisitForwardStages = (currentStage: string) => {
+    const order = ['ติดตามต่อ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership'];
+    const currentIndex = order.indexOf(currentStage);
+    const allowed = currentIndex >= 0 ? order.slice(currentIndex) : order;
+    const allowedSet = new Set([...allowed, 'ปิดการขาย', 'ปิดการขายไม่สำเร็จ']);
+    return PIPELINE_STAGES.filter((item) => allowedSet.has(item.stage));
+  };
+
   const stageClass = (stage: string) => {
     if (stage === 'ปิดการขาย') return 'bg-emerald-100 text-emerald-800';
     if (stage === 'ตกลง Partnership') return 'bg-teal-100 text-teal-800';
@@ -83,13 +118,14 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   };
 
   const appointmentClass = (apt: B2BAppointment) => {
-    if (apt.salesCycleClosedAt && apt.salesCycleOutcome === 'success') {
+    const closure = getAppointmentClosure(apt);
+    if (closure?.outcome === 'success') {
       return 'bg-emerald-100 text-emerald-900 border-l-2 border-emerald-700';
     }
-    if (apt.salesCycleClosedAt && apt.salesCycleOutcome === 'unsuccessful') {
+    if (closure?.outcome === 'unsuccessful') {
       return 'bg-rose-100 text-rose-800 border-l-2 border-rose-600';
     }
-    if (apt.salesCycleClosedAt) return 'bg-slate-100 text-slate-600 border-l-2 border-slate-400';
+    if (closure) return 'bg-slate-100 text-slate-600 border-l-2 border-slate-400';
     if (apt.status === 'completed') return 'bg-emerald-100 text-emerald-800 border-l-2 border-emerald-500';
     if (apt.status === 'rescheduled') return 'bg-amber-100 text-amber-800 border-l-2 border-amber-500';
     if (apt.status === 'cancelled') return 'bg-rose-100 text-rose-700 border-l-2 border-rose-500';
@@ -97,14 +133,16 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
     return 'bg-blue-100 text-blue-800 border-l-2 border-blue-500';
   };
 
-  const appointmentLabel = (apt: B2BAppointment) =>
-    apt.salesCycleClosedAt
-      ? apt.salesCycleOutcome === 'success'
+  const appointmentLabel = (apt: B2BAppointment) => {
+    const closure = getAppointmentClosure(apt);
+    if (closure) {
+      return closure.outcome === 'success'
         ? 'ปิดการขายแล้ว'
-        : apt.salesCycleOutcome === 'unsuccessful'
+        : closure.outcome === 'unsuccessful'
         ? 'ปิดการขายไม่สำเร็จ'
-        : 'รอบนี้ปิดแล้ว'
-      : apt.status === 'completed'
+        : 'รอบนี้ปิดแล้ว';
+    }
+    return apt.status === 'completed'
       ? 'เข้าพบแล้ว'
       : apt.status === 'rescheduled'
       ? 'เลื่อนนัด'
@@ -113,10 +151,12 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
       : apt.status === 'not_met'
       ? 'ไม่ได้เข้าพบ'
       : 'รอเข้าพบ';
+  };
 
   const closureDateLabel = (apt: B2BAppointment) => {
-    if (!apt.salesCycleClosedAt) return '';
-    const parsed = new Date(apt.salesCycleClosedAt);
+    const closure = getAppointmentClosure(apt);
+    if (!closure?.closedAt) return '';
+    const parsed = new Date(closure.closedAt);
     if (Number.isNaN(parsed.getTime())) return '';
     return parsed.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
   };
@@ -228,9 +268,9 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
         if (filterStatus === 'all') return true;
         if (filterStatus === 'month') return apt.date.startsWith(monthPrefix);
         if (filterStatus === 'closed-success') {
-          const lead = getLeadForAppointment(apt);
-          return (lead?.salesClosures || []).some((item) => item.outcome === 'success');
+          return getAppointmentClosure(apt)?.outcome === 'success';
         }
+        if (getAppointmentClosure(apt)) return false;
         return getLeadStage(apt) === filterStatus;
       })
       .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
@@ -599,18 +639,24 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                           จัดการนัด
                         </button>
                       </div>
-                      {apt.salesCycleClosedAt && (
-                        <div className="rounded-xl bg-[#F7FAF6] border border-[#E1E9DF] px-2.5 py-2 text-[10px] text-[#5B7465]">
-                          รอบนี้{apt.salesCycleOutcome === 'success' ? 'ปิดการขายสำเร็จ' : apt.salesCycleOutcome === 'unsuccessful' ? 'ปิดการขายไม่สำเร็จ' : 'ปิดแล้ว'}
-                          {closureDateLabel(apt) ? ` เมื่อ ${closureDateLabel(apt)}` : ''}
-                          <span className="block mt-0.5 text-[#819187]">สถานะองค์กรปัจจุบันเริ่มรอบใหม่แยกจากประวัตินัดนี้</span>
-                        </div>
-                      )}
+                      {(() => {
+                        const closure = getAppointmentClosure(apt);
+                        if (!closure) return null;
+                        return (
+                          <div className="rounded-xl bg-[#F7FAF6] border border-[#E1E9DF] px-2.5 py-2 text-[10px] text-[#5B7465]">
+                            รอบนี้{closure.outcome === 'success' ? 'ปิดการขายสำเร็จ' : closure.outcome === 'unsuccessful' ? 'ปิดการขายไม่สำเร็จ' : 'ปิดแล้ว'}
+                            {closureDateLabel(apt) ? ` เมื่อ ${closureDateLabel(apt)}` : ''}
+                            <span className="block mt-0.5 text-[#819187]">สถานะองค์กรปัจจุบันเริ่มรอบใหม่แยกจากประวัตินัดนี้</span>
+                          </div>
+                        );
+                      })()}
                       {(() => {
                         const lead = getLeadForAppointment(apt);
                         const stage = getLeadStage(apt);
+                        const closure = getAppointmentClosure(apt);
                         if (!lead) return null;
-                        if (apt.salesCycleClosedAt) {
+
+                        if (closure) {
                           return (
                             <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#EEF4ED]">
                               <span className="text-[#72877B] font-semibold">ผลรอบการขาย:</span>
@@ -620,6 +666,10 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                             </div>
                           );
                         }
+
+                        // Sales follow-up is only meaningful after staff confirms an actual visit.
+                        if (apt.status !== 'completed') return null;
+
                         return (
                           <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#EEF4ED]">
                             <span className="text-[#72877B] font-semibold">สถานะติดตาม:</span>
@@ -628,13 +678,10 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                               onChange={(e) => onUpdateLeadStage(lead.id, e.target.value)}
                               className={`max-w-[190px] px-2 py-1 rounded-lg border border-[#D5E2D2] font-bold ${stageClass(stage)}`}
                             >
-                              {!PIPELINE_STAGES.some((item) => item.stage === stage) && (
+                              {!getPostVisitForwardStages(stage).some((item) => item.stage === stage) && (
                                 <option value={stage}>{stage} (ข้อมูลเดิม)</option>
                               )}
-                              {(apt.status === 'completed'
-                                ? PIPELINE_STAGES.filter((item) => ['ติดตามต่อ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership','ปิดการขาย','ปิดการขายไม่สำเร็จ'].includes(item.stage))
-                                : PIPELINE_STAGES
-                              ).map((item) => (
+                              {getPostVisitForwardStages(stage).map((item) => (
                                 <option key={item.stage} value={item.stage}>{item.stage}</option>
                               ))}
                             </select>
@@ -691,7 +738,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${appointmentClass(apt)}`}>
                         {appointmentLabel(apt)}
                       </span>
-                      {apt.salesCycleClosedAt ? (
+                      {getAppointmentClosure(apt) ? (
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 border border-slate-200">
                           {closureDateLabel(apt) ? `ปิดเมื่อ ${closureDateLabel(apt)}` : 'รอบที่ปิดแล้ว'}
                         </span>
