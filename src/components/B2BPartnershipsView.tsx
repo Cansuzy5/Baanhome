@@ -144,6 +144,26 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     return `ผ่านมาแล้ว ${Math.abs(diffDays)} วัน`;
   };
 
+  const getScheduledAppointmentForLead = (
+    lead: B2BLead,
+    sourceAppointments: B2BAppointment[] = appointments,
+    excludeId?: string
+  ) => {
+    const scheduled = sourceAppointments
+      .filter(
+        (apt) =>
+          apt.id !== excludeId &&
+          apt.status === 'scheduled' &&
+          ((apt.leadId && apt.leadId === lead.id) || apt.leadName === lead.name)
+      )
+      .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+
+    if (!scheduled.length) return undefined;
+
+    const nowKey = `${localDateKey()} ${new Date().toTimeString().slice(0, 5)}`;
+    return scheduled.find((apt) => `${apt.date} ${apt.time}` >= nowKey) || scheduled[scheduled.length - 1];
+  };
+
   const getCurrentCycleTimeline = (lead: B2BLead) => {
     const currentStage = getLeadStage(lead);
     const latestClosureAt = (lead.salesClosures || [])
@@ -530,9 +550,12 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       oldStage === 'ยังไม่ติดต่อ' ||
       oldStage === 'ติดต่อแล้ว' ||
       oldStage === 'นัดเข้าพบ';
+    const nextScheduledAppointment = getScheduledAppointmentForLead(linkedLead, appointments, apt.id);
 
     const updatedLead: B2BLead = {
       ...linkedLead,
+      appointmentDate: nextScheduledAppointment?.date,
+      appointmentTime: nextScheduledAppointment?.time,
       ...(shouldAdvanceToVisited
         ? { pipelineStage: 'ติดตามต่อ', contactStatus: 'ติดตามต่อ' }
         : {}),
@@ -583,15 +606,11 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       updatedAt: localDateKey(),
     };
 
-    const hasOtherActiveAppointment = appointments.some(
-      (item) =>
-        item.id !== apt.id &&
-        item.status === 'scheduled' &&
-        ((item.leadId && item.leadId === linkedLead.id) || item.leadName === linkedLead.name)
-    );
+    const nextScheduledAppointment = getScheduledAppointmentForLead(linkedLead, appointments, apt.id);
     const updatedLead: B2BLead = {
       ...linkedLead,
-      ...(hasOtherActiveAppointment ? {} : { appointmentDate: undefined, appointmentTime: undefined }),
+      appointmentDate: nextScheduledAppointment?.date,
+      appointmentTime: nextScheduledAppointment?.time,
       updatedAt: localDateKey(),
       history: [
         {
@@ -657,18 +676,11 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       );
 
       if (linkedLead) {
-        const remainingAppointments = appointments
-          .filter((apt) => apt.id !== deletingAppointment.id)
-          .filter(
-            (apt) =>
-              (apt.leadId && apt.leadId === linkedLead.id) ||
-              apt.leadName === linkedLead.name
-          )
-          .sort((a, b) =>
-            `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)
-          );
-
-        const nextAppointment = remainingAppointments[0];
+        const nextAppointment = getScheduledAppointmentForLead(
+          linkedLead,
+          appointments,
+          deletingAppointment.id
+        );
         const updatedLead: B2BLead = {
           ...linkedLead,
           // Legacy denormalized appointment fields are refreshed/cleared so
@@ -721,15 +733,44 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       return;
     }
     const target = appointments.find((a) => a.id === appointmentId);
-    if (target) {
-      const updated: B2BAppointment = {
-        ...target,
-        status,
-        updatedAt: localDateKey(),
-      };
+    if (!target) return;
+
+    const linkedLead = leadsList.find(
+      (lead) =>
+        (target.leadId && target.leadId === lead.id) ||
+        target.leadName === lead.name
+    );
+
+    const updated: B2BAppointment = {
+      ...target,
+      status,
+      updatedAt: localDateKey(),
+    };
+
+    if (!linkedLead) {
       const result = await saveCentralB2BAppointment(updated, currentRole);
       if (!result.success) setPermissionError(result.error || 'เปลี่ยนสถานะไม่สำเร็จ');
+      return;
     }
+
+    const sourceAppointments = appointments.map((apt) => apt.id === target.id ? updated : apt);
+    const nextScheduledAppointment = getScheduledAppointmentForLead(linkedLead, sourceAppointments);
+    const updatedLead: B2BLead = {
+      ...linkedLead,
+      appointmentDate: nextScheduledAppointment?.date,
+      appointmentTime: nextScheduledAppointment?.time,
+      updatedAt: localDateKey(),
+    };
+
+    const result = await saveCentralB2BWorkflow(
+      { appointment: updated, lead: updatedLead },
+      currentRole
+    );
+    if (!result.success) {
+      setPermissionError(result.error || 'เปลี่ยนสถานะไม่สำเร็จ');
+      return;
+    }
+    if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(updatedLead);
   };
 
   // Reset to original 101 leads (opens confirmation dialog)
@@ -1333,18 +1374,23 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                             งาน: {lead.eventType || lead.eventRequirements || lead.format || lead.opportunity}
                           </span>
                         )}
-                        {lead.appointmentDate && (
-                          <span className={`px-2 py-0.5 rounded font-semibold border ${
-                            getAppointmentRelativeLabel(lead.appointmentDate).startsWith('ผ่านมาแล้ว') || getAppointmentRelativeLabel(lead.appointmentDate) === 'เมื่อวาน'
-                              ? 'bg-slate-50 text-slate-700 border-slate-200'
-                              : getAppointmentRelativeLabel(lead.appointmentDate) === 'วันนี้'
-                              ? 'bg-amber-50 text-amber-800 border-amber-200'
-                              : 'bg-[#EEF5EC] text-[#1E7438] border-[#D2E7CE]'
-                          }`}>
-                            📅 นัด: {lead.appointmentDate} {lead.appointmentTime || ''}
-                            <span className="ml-1">• {getAppointmentRelativeLabel(lead.appointmentDate)}</span>
-                          </span>
-                        )}
+                        {(() => {
+                          const scheduledAppointment = getScheduledAppointmentForLead(lead);
+                          if (!scheduledAppointment) return null;
+                          const relativeLabel = getAppointmentRelativeLabel(scheduledAppointment.date);
+                          return (
+                            <span className={`px-2 py-0.5 rounded font-semibold border ${
+                              relativeLabel.startsWith('ผ่านมาแล้ว') || relativeLabel === 'เมื่อวาน'
+                                ? 'bg-slate-50 text-slate-700 border-slate-200'
+                                : relativeLabel === 'วันนี้'
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : 'bg-[#EEF5EC] text-[#1E7438] border-[#D2E7CE]'
+                            }`}>
+                              📅 นัด: {scheduledAppointment.date} {scheduledAppointment.time || ''}
+                              <span className="ml-1">• {relativeLabel}</span>
+                            </span>
+                          );
+                        })()}
                         {(lead.salesClosures?.length || 0) > 0 && (
                           <>
                             <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-semibold border border-emerald-100">
