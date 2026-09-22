@@ -1161,10 +1161,10 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           <div className="bg-white rounded-2xl border border-[#E1E8DE] p-3 space-y-2">
             <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
               <span className="font-semibold text-[#617B6D] shrink-0">สถานะงาน:</span>
-              <button onClick={() => setSelectedStage('All'); setOverviewFilter('All')}
+              <button onClick={() => { setSelectedStage('All'); setOverviewFilter('All'); }}
                 className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold ${selectedStage==='All'?'bg-[#235838] text-white':'bg-[#F5F7F3] text-[#4A6455]'}`}>ทั้งหมด</button>
               {PIPELINE_STAGES.filter((item) => !['ปิดการขาย','ปิดการขายไม่สำเร็จ'].includes(item.stage)).map((item) => (
-                <button key={item.stage} onClick={() => setSelectedStage(item.stage); setOverviewFilter('All')}
+                <button key={item.stage} onClick={() => { setSelectedStage(item.stage); setOverviewFilter('All'); }}
                   className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-semibold border ${
                     selectedStage===item.stage
                       ? item.stage==='ติดตามต่อ' ? 'bg-violet-600 text-white border-violet-600' : 'bg-[#235838] text-white border-[#235838]'
@@ -1189,7 +1189,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
             <div className="flex items-center gap-2 overflow-x-auto text-xs pb-1">
               <span className="font-semibold text-[#617B6D] shrink-0">Priority:</span>
-              {(['All','A','B','C'] as const).map((p)=><button key={p} onClick={()=>setSelectedPriority(p); setOverviewFilter('All')}
+              {(['All','A','B','C'] as const).map((p)=><button key={p} onClick={()=>{ setSelectedPriority(p); setOverviewFilter('All'); }}
                 className={`px-2.5 py-1 rounded-lg whitespace-nowrap ${selectedPriority===p?'bg-[#235838] text-white':'bg-[#FAF8F2] text-[#4A6455]'}`}>
                 {p==='All'?'ทั้งหมด':`Priority ${p}`}
               </button>)}
