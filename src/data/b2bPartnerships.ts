@@ -24,7 +24,8 @@ export const PIPELINE_STAGES: PipelineStageSummary[] = [
   { stage: 'ติดตามต่อ', count: 0, description: 'เข้าพบแล้วและอยู่ระหว่างติดตามผลต่อ' },
   { stage: 'ส่งใบเสนอราคาแล้ว', count: 0, description: 'ส่งราคา แพ็กเกจ หรือข้อเสนอแล้ว' },
   { stage: 'ตกลง Partnership', count: 0, description: 'ตกลงความร่วมมือหรือเงื่อนไขหลักแล้ว' },
-  { stage: 'ปิดการขาย', count: 0, description: 'ยืนยันซื้อหรือใช้บริการแล้ว' },
+  { stage: 'ปิดการขาย', count: 0, description: 'ยืนยันซื้อหรือใช้บริการแล้ว ระบบจะบันทึกรอบสำเร็จและเริ่มวงจรใหม่' },
+  { stage: 'ปิดการขายไม่สำเร็จ', count: 0, description: 'รอบนี้ยังไม่สำเร็จ ระบบจะบันทึกผลและเริ่มวงจรใหม่' },
 ];
 
 export const TOP_RECOMMENDED_TARGETS: {
