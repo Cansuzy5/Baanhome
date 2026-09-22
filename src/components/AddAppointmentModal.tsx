@@ -19,9 +19,8 @@ interface AddAppointmentModalProps {
   onClose: () => void;
   onSave: (appointment: B2BAppointment) => Promise<boolean>;
   onReschedule: (appointment: B2BAppointment, newDate: string, newTime: string, reason: string) => Promise<boolean>;
-  onComplete: (appointment: B2BAppointment, nextStage: B2BPipelineStatus, resultNote: string) => Promise<boolean>;
+  onComplete: (appointment: B2BAppointment, resultNote: string) => Promise<boolean>;
   onCancelAppointment: (appointment: B2BAppointment, reason: string) => Promise<boolean>;
-  onUpdateLeadStage: (leadId: string, stage: B2BPipelineStatus | string) => void | Promise<void>;
   leads: B2BLead[];
   editAppointment?: B2BAppointment | null;
   defaultDate?: string;
@@ -48,7 +47,6 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
   onReschedule,
   onComplete,
   onCancelAppointment,
-  onUpdateLeadStage,
   leads,
   editAppointment,
   defaultDate,
@@ -71,7 +69,6 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
   const [newTime, setNewTime] = useState(editAppointment?.time || '10:00');
   const [reason, setReason] = useState('');
   const [resultNote, setResultNote] = useState(editAppointment?.resultNote || '');
-  const [nextStage, setNextStage] = useState<B2BPipelineStatus>('ส่งใบเสนอราคาแล้ว');
 
   const selectedLead = useMemo(
     () => leads.find((lead) => lead.id === selectedLeadId) || leads.find((lead) => lead.name === leadName),
@@ -280,17 +277,9 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
               {actionMode === 'complete' && editAppointment && (
                 <div className="rounded-xl bg-white border border-emerald-200 p-3 space-y-2">
                   <div className="text-xs font-bold text-emerald-800">บันทึกผลหลังเข้าพบ</div>
-                  <label className="space-y-1 block">
-                    <span className="text-xs font-bold">สถานะถัดไป</span>
-                    <select value={nextStage} onChange={e=>setNextStage(e.target.value as B2BPipelineStatus)} className="w-full px-3 py-2 rounded-xl border bg-white">
-                      <option value="นัดเข้าพบ">ยังอยู่ขั้นนัดเข้าพบ</option>
-                      <option value="ส่งใบเสนอราคาแล้ว">ส่งใบเสนอราคาแล้ว</option>
-                      <option value="ตกลง Partnership">ตกลง Partnership</option>
-                      <option value="ปิดการขาย">ปิดการขาย</option>
-                    </select>
-                  </label>
+                  <div className="text-[11px] text-[#6F8377]">สถานะการติดตามขององค์กรจะไม่เปลี่ยนอัตโนมัติ เลือกเองจากหน้ารายชื่อหรือหน้ารายละเอียดองค์กรได้</div>
                   <label className="space-y-1 block"><span className="text-xs font-bold">ผลการเข้าพบ / สิ่งที่ต้องทำต่อ</span><textarea rows={3} value={resultNote} onChange={e=>setResultNote(e.target.value)} placeholder="เช่น ลูกค้าขอใบเสนอราคา 30 ท่าน" className="w-full px-3 py-2 rounded-xl border"/></label>
-                  <button type="button" disabled={isSaving} onClick={() => runAction(() => onComplete(editAppointment, nextStage, resultNote))} className="w-full py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">
+                  <button type="button" disabled={isSaving} onClick={() => runAction(() => onComplete(editAppointment, resultNote))} className="w-full py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">
                     บันทึกว่าเข้าพบแล้ว
                   </button>
                 </div>
@@ -304,30 +293,6 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
                   <button type="button" disabled={isSaving} onClick={() => runAction(() => onCancelAppointment(editAppointment, reason))} className="w-full py-2 rounded-xl bg-rose-600 text-white text-xs font-bold disabled:opacity-50">
                     ยืนยันยกเลิกนัด
                   </button>
-                </div>
-              )}
-
-              {isClosedAppointment && selectedLead && currentStage !== 'ปิดการขาย' && (
-                <div className="rounded-xl bg-white border border-[#DCE7DA] p-3 space-y-2">
-                  <div className="text-xs font-bold text-[#315A43]">อัปเดตสถานะลูกค้าต่อ</div>
-                  <div className="text-[11px] text-[#6F8377]">นัดนี้จบแล้ว แต่กระบวนการขายยังเดินต่อได้</div>
-                  <div className="flex flex-wrap gap-2">
-                    {currentStage === 'นัดเข้าพบ' && (
-                      <button type="button" onClick={() => onUpdateLeadStage(selectedLead.id, 'ส่งใบเสนอราคาแล้ว')} className="px-3 py-1.5 rounded-xl bg-amber-500 text-white text-xs font-bold">
-                        ส่งใบเสนอราคาแล้ว
-                      </button>
-                    )}
-                    {currentStage === 'ส่งใบเสนอราคาแล้ว' && (
-                      <button type="button" onClick={() => onUpdateLeadStage(selectedLead.id, 'ตกลง Partnership')} className="px-3 py-1.5 rounded-xl bg-teal-600 text-white text-xs font-bold">
-                        ตกลง Partnership
-                      </button>
-                    )}
-                    {currentStage === 'ตกลง Partnership' && (
-                      <button type="button" onClick={() => onUpdateLeadStage(selectedLead.id, 'ปิดการขาย')} className="px-3 py-1.5 rounded-xl bg-emerald-700 text-white text-xs font-bold">
-                        ปิดการขาย
-                      </button>
-                    )}
-                  </div>
                 </div>
               )}
 
