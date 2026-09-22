@@ -45,6 +45,7 @@ import {
   deleteCentralB2BLead,
   saveCentralB2BAppointment,
   saveCentralB2BWorkflow,
+  closeCentralB2BSalesCycle,
   deleteCentralB2BAppointment,
   resetCentralB2BToDefault,
   canUserEditOperational,
@@ -144,6 +145,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     return `ผ่านมาแล้ว ${Math.abs(diffDays)} วัน`;
   };
 
+  const appointmentBelongsToLead = (apt: B2BAppointment, lead: B2BLead) =>
+    apt.leadId ? apt.leadId === lead.id : apt.leadName === lead.name;
+
   const getScheduledAppointmentForLead = (
     lead: B2BLead,
     sourceAppointments: B2BAppointment[] = appointments,
@@ -154,7 +158,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         (apt) =>
           apt.id !== excludeId &&
           apt.status === 'scheduled' &&
-          ((apt.leadId && apt.leadId === lead.id) || apt.leadName === lead.name)
+          !apt.salesCycleClosedAt &&
+          appointmentBelongsToLead(apt, lead)
       )
       .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
 
@@ -244,7 +249,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     const diffDays = Math.floor((Date.now() - latest.date.getTime()) / (1000 * 60 * 60 * 24));
     const hasUpcomingAppointment = appointments.some(
       (apt) =>
-        ((apt.leadId && apt.leadId === lead.id) || apt.leadName === lead.name) &&
+        apt.status === 'scheduled' &&
+        !apt.salesCycleClosedAt &&
+        appointmentBelongsToLead(apt, lead) &&
         new Date(`${apt.date}T${apt.time || '00:00'}`).getTime() >= Date.now()
     );
 
@@ -320,10 +327,10 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   const handleSaveLead = async (
     lead: B2BLead,
     scheduleAppointment?: { date: string; time: string; title: string; location: string }
-  ) => {
+  ): Promise<boolean> => {
     if (!isOperatorOrAdmin) {
       setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Operator และ Administrator เท่านั้นที่สามารถแก้ไขข้อมูลลูกค้า B2B ได้');
-      return;
+      return false;
     }
 
     const previousLead = leadsList.find((item) => item.id === lead.id);
@@ -332,30 +339,43 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       history: buildLeadHistory(previousLead, lead, previousLead ? 'แก้ไขข้อมูลหน่วยงาน' : 'สร้างหน่วยงาน'),
     };
 
-    const res = await saveCentralB2BLead(leadWithHistory, currentRole);
-    if (!res.success) {
-      setPermissionError(res.error || 'ไม่สามารถบันทึกข้อมูลได้');
-      return;
-    }
+    const newAppointment: B2BAppointment | undefined = scheduleAppointment
+      ? {
+          id: `APT-${crypto.randomUUID()}`,
+          leadId: leadWithHistory.id,
+          leadName: leadWithHistory.name,
+          date: scheduleAppointment.date,
+          time: scheduleAppointment.time,
+          title: scheduleAppointment.title,
+          location: scheduleAppointment.location,
+          objective: 'นำเสนอแพ็กเกจห้องประชุม & Corporate Rate',
+          status: 'scheduled',
+          contactPerson: leadWithHistory.contactPerson,
+          phone: leadWithHistory.phone,
+          priority: leadWithHistory.priority,
+          createdAt: new Date().toISOString(),
+        }
+      : undefined;
 
-    if (scheduleAppointment) {
-      const newApt: B2BAppointment = {
-        id: `APT-${crypto.randomUUID()}`,
-        leadId: leadWithHistory.id,
-        leadName: leadWithHistory.name,
-        date: scheduleAppointment.date,
-        time: scheduleAppointment.time,
-        title: scheduleAppointment.title,
-        location: scheduleAppointment.location,
-        objective: 'นำเสนอแพ็กเกจห้องประชุม & Corporate Rate',
-        status: 'scheduled',
-        contactPerson: leadWithHistory.contactPerson,
-        phone: leadWithHistory.phone,
-        priority: leadWithHistory.priority,
-        createdAt: localDateKey(),
-      };
-      await saveCentralB2BAppointment(newApt, currentRole);
+    const result = newAppointment
+      ? await saveCentralB2BWorkflow(
+          {
+            lead: {
+              ...leadWithHistory,
+              appointmentDate: newAppointment.date,
+              appointmentTime: newAppointment.time,
+            },
+            appointment: newAppointment,
+          },
+          currentRole
+        )
+      : await saveCentralB2BLead(leadWithHistory, currentRole);
+
+    if (!result.success) {
+      setPermissionError(result.error || 'ไม่สามารถบันทึกข้อมูลได้');
+      return false;
     }
+    return true;
   };
 
   // Handle Delete Lead (opens confirmation dialog)
@@ -395,7 +415,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     }
 
     const linkedLead = leadsList.find((lead) =>
-      (apt.leadId && lead.id === apt.leadId) || lead.name === apt.leadName
+      apt.leadId ? lead.id === apt.leadId : lead.name === apt.leadName
     );
     if (!linkedLead) {
       setPermissionError('ไม่พบข้อมูลองค์กรที่ผูกกับนัดหมาย กรุณาเลือกองค์กรจากฐานข้อมูล');
@@ -468,7 +488,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     if (!newDate || !newTime || (newDate === apt.date && newTime === apt.time)) return false;
 
     const linkedLead = leadsList.find((lead) =>
-      (apt.leadId && lead.id === apt.leadId) || lead.name === apt.leadName
+      apt.leadId ? lead.id === apt.leadId : lead.name === apt.leadName
     );
     if (!linkedLead) return false;
 
@@ -533,7 +553,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   ) => {
     if (!isOperatorOrAdmin) return false;
     const linkedLead = leadsList.find((lead) =>
-      (apt.leadId && lead.id === apt.leadId) || lead.name === apt.leadName
+      apt.leadId ? lead.id === apt.leadId : lead.name === apt.leadName
     );
     if (!linkedLead) return false;
 
@@ -594,7 +614,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   const handleCancelAppointment = async (apt: B2BAppointment, reason: string) => {
     if (!isOperatorOrAdmin) return false;
     const linkedLead = leadsList.find((lead) =>
-      (apt.leadId && lead.id === apt.leadId) || lead.name === apt.leadName
+      apt.leadId ? lead.id === apt.leadId : lead.name === apt.leadName
     );
     if (!linkedLead) return false;
 
@@ -661,63 +681,54 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
     try {
       const deletingAppointment = appointmentToDelete;
-      const result = await deleteCentralB2BAppointment(deletingAppointment.id, currentRole);
-      if (!result.success) {
-        setDeleteError(result.error || 'ลบไม่สำเร็จ');
-        return;
-      }
-
-      // Keep the organization master record consistent with the calendar.
-      // Appointment documents remain the source of truth for schedule data.
-      const linkedLead = leadsList.find(
-        (lead) =>
-          (deletingAppointment.leadId && lead.id === deletingAppointment.leadId) ||
-          lead.name === deletingAppointment.leadName
+      const linkedLead = leadsList.find((lead) =>
+        deletingAppointment.leadId
+          ? lead.id === deletingAppointment.leadId
+          : lead.name === deletingAppointment.leadName
       );
 
+      let result;
+      let updatedLead: B2BLead | undefined;
       if (linkedLead) {
         const nextAppointment = getScheduledAppointmentForLead(
           linkedLead,
           appointments,
           deletingAppointment.id
         );
-        const updatedLead: B2BLead = {
+        updatedLead = {
           ...linkedLead,
-          // Legacy denormalized appointment fields are refreshed/cleared so
-          // the directory never shows a deleted calendar appointment.
-          appointmentDate: nextAppointment?.date || undefined,
-          appointmentTime: nextAppointment?.time || undefined,
-          updatedAt: localDateKey(),
+          appointmentDate: nextAppointment?.date,
+          appointmentTime: nextAppointment?.time,
+          updatedAt: new Date().toISOString(),
+          history: [
+            {
+              id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              timestamp: new Date().toISOString(),
+              actorId,
+              actorName,
+              action: 'ลบนัดหมาย',
+              changes: [`ลบนัดหมายวันที่ ${deletingAppointment.date} เวลา ${deletingAppointment.time}`],
+            },
+            ...(linkedLead.history || []),
+          ].slice(0, 100),
         };
-
-        const changes: string[] = [
-          `ลบนัดหมายวันที่ ${deletingAppointment.date} เวลา ${deletingAppointment.time}`,
-        ];
-
-        updatedLead.history = [
+        result = await saveCentralB2BWorkflow(
           {
-            id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            timestamp: new Date().toISOString(),
-            actorId,
-            actorName,
-            action: 'ลบนัดหมาย',
-            changes,
+            lead: updatedLead,
+            deleteAppointmentId: deletingAppointment.id,
+            expectedAppointmentRevision: deletingAppointment._revision,
           },
-          ...(linkedLead.history || []),
-        ].slice(0, 100);
-
-        const leadResult = await saveCentralB2BLead(updatedLead, currentRole);
-        if (!leadResult.success) {
-          setPermissionError(
-            'ลบนัดหมายสำเร็จ แต่ข้อมูลสรุปขององค์กรยังซิงก์ไม่สำเร็จ กรุณารีเฟรชตรวจสอบอีกครั้ง'
-          );
-        }
-
-        if (activeLeadModal?.id === linkedLead.id) {
-          setActiveLeadModal(updatedLead);
-        }
+          currentRole
+        );
+      } else {
+        result = await deleteCentralB2BAppointment(deletingAppointment.id, currentRole);
       }
 
+      if (!result.success) {
+        setDeleteError(result.error || 'ลบไม่สำเร็จ');
+        return;
+      }
+      if (updatedLead && activeLeadModal?.id === updatedLead.id) setActiveLeadModal(updatedLead);
       setAppointmentToDelete(null);
     } catch {
       setDeleteError('ลบไม่สำเร็จ กรุณาลองใหม่');
@@ -737,8 +748,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
     const linkedLead = leadsList.find(
       (lead) =>
-        (target.leadId && target.leadId === lead.id) ||
-        target.leadName === lead.name
+        target.leadId ? target.leadId === lead.id : target.leadName === lead.name
     );
 
     const updated: B2BAppointment = {
@@ -794,7 +804,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     return leadsList.filter((lead) => {
       const offerText = [lead.featuredOffers?.join(' '), lead.offer, lead.proposalOffer, lead.offerDetails].filter(Boolean).join(' ');
       const formatText = [lead.eventType, lead.eventRequirements, lead.format, lead.opportunity].filter(Boolean).join(' ');
-      const stageText = lead.pipelineStage || lead.contactStatus || 'ยังไม่ติดต่อ';
+      const stageText = getLeadStage(lead);
       const orgTypeText = lead.orgType || lead.categoryType || '';
       const reasonText = lead.reasonsToApproach || '';
 
@@ -825,7 +835,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       const activeAppointmentsForLead = appointments.filter(
         (apt) =>
           apt.status === 'scheduled' &&
-          ((apt.leadId && apt.leadId === lead.id) || apt.leadName === lead.name)
+          !apt.salesCycleClosedAt &&
+          appointmentBelongsToLead(apt, lead)
       );
       const hasAppointment = activeAppointmentsForLead.length > 0;
       const isReadyForAppointment = stageText === 'ติดต่อแล้ว' && !hasAppointment;
@@ -896,7 +907,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       ].slice(0, 100),
     };
 
-    const result = await saveCentralB2BLead(updatedLead, currentRole);
+    const result = isClosure
+      ? await closeCentralB2BSalesCycle(updatedLead, now, currentRole)
+      : await saveCentralB2BLead(updatedLead, currentRole);
     if (!result.success) {
       setPermissionError(result.error || 'เปลี่ยนสถานะไม่สำเร็จ');
       return;
