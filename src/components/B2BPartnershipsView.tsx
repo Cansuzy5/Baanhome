@@ -295,7 +295,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   };
 
   // Handle Add or Edit Appointment.
-  // Calendar activities and organization pipeline are intentionally independent.
+  // Appointment lifecycle is separate from sales progression, except that an active
+  // appointment advances early-stage organizations to "นัดเข้าพบ". Later stages stay manual.
   const handleSaveAppointment = async (apt: B2BAppointment) => {
     if (!isOperatorOrAdmin) {
       setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Operator และ Administrator เท่านั้นที่สามารถบันทึกนัดหมายได้');
@@ -313,21 +314,41 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     const isNewAppointment = !appointments.some((item) => item.id === apt.id);
     let updatedLead: B2BLead | undefined;
 
-    if (isNewAppointment) {
+    // A real active appointment means the organization has reached "นัดเข้าพบ".
+    // Only advance early stages; never downgrade later/manual stages such as quotation,
+    // Partnership, or closed sale when a repeat appointment is added.
+    const currentStage = getLeadStage(linkedLead);
+    const shouldAdvanceToMeeting =
+      apt.status === 'scheduled' &&
+      (currentStage === 'ยังไม่ติดต่อ' || currentStage === 'ติดต่อแล้ว');
+
+    if (isNewAppointment || shouldAdvanceToMeeting) {
+      const changes = [
+        ...(shouldAdvanceToMeeting
+          ? [`สถานะการติดตาม: "${currentStage}" → "นัดเข้าพบ"`]
+          : []),
+        ...(isNewAppointment ? [`สร้างนัดวันที่ ${apt.date} เวลา ${apt.time}`] : []),
+      ];
+
       updatedLead = {
         ...linkedLead,
         appointmentDate: apt.date,
         appointmentTime: apt.time,
+        ...(shouldAdvanceToMeeting
+          ? { pipelineStage: 'นัดเข้าพบ', contactStatus: 'นัดเข้าพบ' }
+          : {}),
         updatedAt: localDateKey(),
         history: [
-          {
-            id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            timestamp: new Date().toISOString(),
-            actorId,
-            actorName,
-            action: 'สร้างนัดหมาย',
-            changes: [`สร้างนัดวันที่ ${apt.date} เวลา ${apt.time}`],
-          },
+          ...(changes.length
+            ? [{
+                id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                timestamp: new Date().toISOString(),
+                actorId,
+                actorName,
+                action: isNewAppointment ? 'สร้างนัดหมาย' : 'ซิงก์สถานะจากนัดหมาย',
+                changes,
+              }]
+            : []),
           ...(linkedLead.history || []),
         ].slice(0, 100),
       };
