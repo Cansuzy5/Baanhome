@@ -38,6 +38,28 @@ function deleteById(items: any[], id: unknown, expectedRevision?: number): any[]
   return items.filter(current => current.id !== id);
 }
 
+function normalizeLeadName(value: unknown): string {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('th-TH');
+}
+
+function appointmentBelongsToLead(current: B2BData, appointment: any, lead: any): boolean {
+  if (appointment?.leadId) {
+    if (appointment.leadId === lead.id) return true;
+    const referencedLeadStillExists = current.leads.some(item => item?.id === appointment.leadId);
+    if (referencedLeadStillExists) return false;
+  }
+
+  if (normalizeLeadName(appointment?.leadName) !== normalizeLeadName(lead?.name)) return false;
+  const sameNameLeads = current.leads.filter(
+    item => normalizeLeadName(item?.name) === normalizeLeadName(lead?.name)
+  );
+  if (sameNameLeads.length <= 1) return true;
+
+  const appointmentPhone = String(appointment?.phone || '').replace(/\D/g, '');
+  const leadPhone = String(lead?.phone || '').replace(/\D/g, '');
+  return Boolean(appointmentPhone && leadPhone && appointmentPhone === leadPhone);
+}
+
 export function applyB2BMutation(current: B2BData, body: any): B2BData {
   if (!body || typeof body !== 'object') throw new Error('Invalid B2B request');
 
@@ -58,13 +80,15 @@ export function applyB2BMutation(current: B2BData, body: any): B2BData {
     }
     const leads = upsert(current.leads, body.lead, body.expectedLeadRevision);
     const appointments = current.appointments.map(appointment => {
-      const belongsToLead = appointment.leadId
-        ? appointment.leadId === body.lead.id
-        : appointment.leadName === body.lead.name;
+      const belongsToLead = appointmentBelongsToLead(current, appointment, body.lead);
       if (!belongsToLead || appointment.salesCycleClosedAt) return appointment;
 
       return {
         ...appointment,
+        // Repair legacy appointments with a stale/missing organization link while
+        // archiving the round so future reads can use the stable ID.
+        leadId: body.lead.id,
+        leadName: body.lead.name,
         salesCycleClosedAt: body.closedAt,
         salesCycleClosureId: body.closureId,
         salesCycleOutcome: body.outcome,
