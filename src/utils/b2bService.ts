@@ -149,6 +149,7 @@ export function closeCentralB2BSalesCycle(
   closedAt: string,
   closureId: string,
   outcome: 'success' | 'unsuccessful',
+  sourceAppointmentId?: string,
   role?: UserRole
 ) {
   return mutate(
@@ -158,6 +159,7 @@ export function closeCentralB2BSalesCycle(
       closedAt,
       closureId,
       outcome,
+      sourceAppointmentId,
       expectedLeadRevision: lead._revision,
     },
     canUserEditOperational(role)
