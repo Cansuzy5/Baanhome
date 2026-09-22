@@ -140,6 +140,18 @@ export interface B2BCoordinator {
 
 export type AppointmentStatus = 'scheduled' | 'completed' | 'not_met' | 'rescheduled' | 'cancelled';
 
+export interface AppointmentRescheduleEntry {
+  id: string;
+  fromDate: string;
+  fromTime: string;
+  toDate: string;
+  toTime: string;
+  reason?: string;
+  changedAt: string;
+  changedById?: string;
+  changedByName?: string;
+}
+
 export interface B2BAppointment {
   id: string;
   leadId?: string;
@@ -160,6 +172,11 @@ export interface B2BAppointment {
     | 'อื่นๆ';
   status: AppointmentStatus;
   notes?: string;
+  resultNote?: string;
+  cancelReason?: string;
+  completedAt?: string;
+  cancelledAt?: string;
+  rescheduleHistory?: AppointmentRescheduleEntry[];
   assignedStaff?: string;
   priority?: 'A' | 'B' | 'C';
   createdAt: string;
