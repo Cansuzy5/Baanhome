@@ -1,7 +1,7 @@
 import { doc, getDocFromServer, runTransaction } from 'firebase/firestore';
 import { getLegacyDb, getOperationalDb } from '../_db.js';
 import { setCorsHeaders } from '../../lib/cors.js';
-import { applyB2BMutation, type B2BData } from '../../lib/b2bMutation.js';
+import { applyB2BMutation, B2BConflictError, type B2BData } from '../../lib/b2bMutation.js';
 const normalize = (value: any): B2BData => ({ leads: Array.isArray(value?.leads) ? value.leads : [], appointments: Array.isArray(value?.appointments) ? value.appointments : [] });
 export default async function handler(req: any, res: any) {
  setCorsHeaders(res); res.setHeader('Cache-Control', 'no-store');
@@ -31,5 +31,11 @@ export default async function handler(req: any, res: any) {
    tx.set(ref,{payload:value,updatedAt:new Date().toISOString()},{merge:true});return value;
   });
   return res.status(200).json({success:true,...next});
- } catch(error) { console.error('Central B2B persistence failed',error);return res.status(503).json({success:false,error:'เชื่อมต่อ Firestore ไม่สำเร็จ ยังยืนยันการบันทึกไม่ได้ กรุณารีเฟรชตรวจสอบก่อนลองอีกครั้ง'}); }
+ } catch(error) {
+  if (error instanceof B2BConflictError) {
+   return res.status(409).json({success:false,error:error.message});
+  }
+  console.error('Central B2B persistence failed',error);
+  return res.status(503).json({success:false,error:'เชื่อมต่อ Firestore ไม่สำเร็จ ยังยืนยันการบันทึกไม่ได้ กรุณารีเฟรชตรวจสอบก่อนลองอีกครั้ง'});
+ }
 }
