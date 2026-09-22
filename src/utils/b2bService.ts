@@ -144,6 +144,29 @@ export function saveCentralB2BWorkflow(
     canUserEditOperational(role)
   );
 }
+export function closeCentralB2BSalesCycleFromAppointment(
+  appointmentId: string,
+  outcome: 'success' | 'unsuccessful',
+  closedAt: string,
+  closureId: string,
+  actorId: string,
+  actorName: string,
+  role?: UserRole
+) {
+  return mutate(
+    {
+      action: 'closeCycleFromAppointment',
+      appointmentId,
+      outcome,
+      closedAt,
+      closureId,
+      actorId,
+      actorName,
+    },
+    canUserEditOperational(role)
+  );
+}
+
 export function closeCentralB2BSalesCycle(
   lead: B2BLead,
   closedAt: string,
