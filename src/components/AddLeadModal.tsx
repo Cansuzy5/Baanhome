@@ -5,7 +5,7 @@ import { B2BLead, B2BCoordinator } from '../types';
 interface AddLeadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (lead: B2BLead) => void | Promise<void>;
+  onSave: (lead: B2BLead) => boolean | Promise<boolean>;
   editLead?: B2BLead | null;
   coordinators?: B2BCoordinator[];
   onManageCoordinators?: () => void;
@@ -161,7 +161,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
       updatedAt:new Date().toISOString().split('T')[0],
     };
     setSaving(true);
-    try{await onSave(lead);onClose();}finally{setSaving(false);}
+    try{const ok=await onSave(lead);if(ok)onClose();}finally{setSaving(false);}
   };
 
   const section=(title:string,children:React.ReactNode)=>(
