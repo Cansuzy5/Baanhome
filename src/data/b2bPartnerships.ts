@@ -21,7 +21,7 @@ export const PIPELINE_STAGES: PipelineStageSummary[] = [
   { stage: 'ยังไม่ติดต่อ', count: 0, description: 'ยังไม่ได้เริ่มติดต่อ' },
   { stage: 'ติดต่อแล้ว', count: 0, description: 'เริ่มพูดคุยหรือมีการประสานงานแล้ว' },
   { stage: 'นัดเข้าพบ', count: 0, description: 'มีนัดเข้าพบหรือนำเสนอ' },
-  { stage: 'เข้าพบแล้ว', count: 0, description: 'เข้าพบลูกค้าแล้ว รอหน้างานอัปเดตขั้นตอนถัดไป' },
+  { stage: 'ติดตามต่อ', count: 0, description: 'เข้าพบแล้วและอยู่ระหว่างติดตามผลต่อ' },
   { stage: 'ส่งใบเสนอราคาแล้ว', count: 0, description: 'ส่งราคา แพ็กเกจ หรือข้อเสนอแล้ว' },
   { stage: 'ตกลง Partnership', count: 0, description: 'ตกลงความร่วมมือหรือเงื่อนไขหลักแล้ว' },
   { stage: 'ปิดการขาย', count: 0, description: 'ยืนยันซื้อหรือใช้บริการแล้ว' },
