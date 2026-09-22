@@ -41,10 +41,19 @@ function deleteById(items: any[], id: unknown, expectedRevision?: number): any[]
 export function applyB2BMutation(current: B2BData, body: any): B2BData {
   if (!body || typeof body !== 'object') throw new Error('Invalid B2B request');
 
-  // Closing a sales cycle preserves every appointment and its history, while
-  // marking still-scheduled appointments as belonging to the closed cycle.
+  // Closing a sales cycle preserves every appointment and its history.
+  // Any appointment for this organization that has not already been archived
+  // belongs to the cycle being closed, regardless of whether it was completed,
+  // cancelled, missed, or still scheduled.
   if (body.action === 'closeCycle') {
-    if (!body.lead || typeof body.closedAt !== 'string' || !body.closedAt) {
+    if (
+      !body.lead ||
+      typeof body.closedAt !== 'string' ||
+      !body.closedAt ||
+      typeof body.closureId !== 'string' ||
+      !body.closureId ||
+      !['success', 'unsuccessful'].includes(body.outcome)
+    ) {
       throw new Error('Missing close-cycle data');
     }
     const leads = upsert(current.leads, body.lead, body.expectedLeadRevision);
@@ -52,16 +61,43 @@ export function applyB2BMutation(current: B2BData, body: any): B2BData {
       const belongsToLead = appointment.leadId
         ? appointment.leadId === body.lead.id
         : appointment.leadName === body.lead.name;
-      if (
-        !belongsToLead ||
-        appointment.status !== 'scheduled' ||
-        appointment.salesCycleClosedAt
-      ) {
-        return appointment;
-      }
+      if (!belongsToLead || appointment.salesCycleClosedAt) return appointment;
+
       return {
         ...appointment,
         salesCycleClosedAt: body.closedAt,
+        salesCycleClosureId: body.closureId,
+        salesCycleOutcome: body.outcome,
+        _revision: Number(appointment._revision || 0) + 1,
+      };
+    });
+    return { leads, appointments };
+  }
+
+  // Admin-only UI calls this through the service after removing one archived
+  // closure from the lead. Clear only appointment markers belonging to that
+  // exact round so other historical rounds remain untouched.
+  if (body.action === 'deleteClosure') {
+    if (!body.lead || typeof body.closureId !== 'string' || !body.closureId) {
+      throw new Error('Missing delete-closure data');
+    }
+    const leads = upsert(current.leads, body.lead, body.expectedLeadRevision);
+    const appointments = current.appointments.map(appointment => {
+      const sameClosure =
+        appointment.salesCycleClosureId === body.closureId ||
+        (!appointment.salesCycleClosureId &&
+          body.closedAt &&
+          appointment.salesCycleClosedAt === body.closedAt);
+      if (!sameClosure) return appointment;
+
+      const {
+        salesCycleClosedAt,
+        salesCycleClosureId,
+        salesCycleOutcome,
+        ...rest
+      } = appointment;
+      return {
+        ...rest,
         _revision: Number(appointment._revision || 0) + 1,
       };
     });
