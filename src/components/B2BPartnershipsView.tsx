@@ -448,7 +448,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         ...(shouldAdvanceToMeeting
           ? { pipelineStage: 'นัดเข้าพบ', contactStatus: 'นัดเข้าพบ' }
           : {}),
-        updatedAt: localDateKey(),
+        updatedAt: new Date().toISOString(),
         history: [
           ...(changes.length
             ? [{
@@ -511,14 +511,14 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
           changedByName: actorName,
         },
       ],
-      updatedAt: localDateKey(),
+      updatedAt: new Date().toISOString(),
     };
 
     const updatedLead: B2BLead = {
       ...linkedLead,
       appointmentDate: newDate,
       appointmentTime: newTime,
-      updatedAt: localDateKey(),
+      updatedAt: new Date().toISOString(),
       history: [
         {
           id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -562,7 +562,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       status: 'completed',
       resultNote: resultNote.trim() || undefined,
       completedAt: new Date().toISOString(),
-      updatedAt: localDateKey(),
+      updatedAt: new Date().toISOString(),
     };
 
     const oldStage = getLeadStage(linkedLead);
@@ -579,7 +579,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       ...(shouldAdvanceToVisited
         ? { pipelineStage: 'ติดตามต่อ', contactStatus: 'ติดตามต่อ' }
         : {}),
-      updatedAt: localDateKey(),
+      updatedAt: new Date().toISOString(),
       history: [
         {
           id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -623,7 +623,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       status: 'cancelled',
       cancelReason: reason.trim() || undefined,
       cancelledAt: new Date().toISOString(),
-      updatedAt: localDateKey(),
+      updatedAt: new Date().toISOString(),
     };
 
     const nextScheduledAppointment = getScheduledAppointmentForLead(linkedLead, appointments, apt.id);
@@ -631,7 +631,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       ...linkedLead,
       appointmentDate: nextScheduledAppointment?.date,
       appointmentTime: nextScheduledAppointment?.time,
-      updatedAt: localDateKey(),
+      updatedAt: new Date().toISOString(),
       history: [
         {
           id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -754,7 +754,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     const updated: B2BAppointment = {
       ...target,
       status,
-      updatedAt: localDateKey(),
+      updatedAt: new Date().toISOString(),
     };
 
     if (!linkedLead) {
@@ -769,7 +769,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       ...linkedLead,
       appointmentDate: nextScheduledAppointment?.date,
       appointmentTime: nextScheduledAppointment?.time,
-      updatedAt: localDateKey(),
+      updatedAt: new Date().toISOString(),
     };
 
     const result = await saveCentralB2BWorkflow(
@@ -885,7 +885,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       contactStatus: isClosure ? 'ยังไม่ติดต่อ' : newStage,
       ...(isClosure ? { appointmentDate: undefined, appointmentTime: undefined } : {}),
       ...(closure ? { salesClosures: [...(target.salesClosures || []), closure] } : {}),
-      updatedAt: localDateKey(),
+      updatedAt: new Date().toISOString(),
       history: [
         {
           id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -938,7 +938,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       const updatedLead: B2BLead = {
         ...target,
         salesClosures: (target.salesClosures || []).filter((item) => item.id !== closure.id),
-        updatedAt: localDateKey(),
+        updatedAt: new Date().toISOString(),
         history: [
           {
             id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -992,7 +992,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   const activeLeadAppointments = useMemo(() => {
     if (!activeLeadModal) return [];
     return appointments.filter(
-      (a) => a.leadId === activeLeadModal.id || a.leadName === activeLeadModal.name
+      (a) => a.leadId ? a.leadId === activeLeadModal.id : a.leadName === activeLeadModal.name
     );
   }, [activeLeadModal, appointments]);
 
@@ -1001,7 +1001,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       appointments.some(
         (apt) =>
           apt.status === 'scheduled' &&
-          ((apt.leadId && apt.leadId === lead.id) || apt.leadName === lead.name)
+          !apt.salesCycleClosedAt &&
+          appointmentBelongsToLead(apt, lead)
       );
 
     const stageCounts = PIPELINE_STAGES.reduce<Record<string, number>>((acc, item) => {
@@ -1633,9 +1634,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               >
                 <Calendar className="w-4 h-4" /> + ลงนัดหมายเพิ่ม
               </button>
-              {activeLeadAppointments.filter((apt) => apt.status === 'scheduled').length > 0 && (
+              {activeLeadAppointments.filter((apt) => apt.status === 'scheduled' && !apt.salesCycleClosedAt).length > 0 && (
                 <span className="text-[11px] font-semibold text-[#2E6B45] bg-[#EEF6EB] border border-[#D4E6D0] px-2.5 py-1 rounded-full">
-                  มีนัดรอเข้าพบ {activeLeadAppointments.filter((apt) => apt.status === 'scheduled').length} นัด
+                  มีนัดรอเข้าพบ {activeLeadAppointments.filter((apt) => apt.status === 'scheduled' && !apt.salesCycleClosedAt).length} นัด
                 </span>
               )}
             </div>
