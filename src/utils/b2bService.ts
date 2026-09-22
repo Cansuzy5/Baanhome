@@ -114,6 +114,12 @@ export function deleteCentralB2BLead(id: string, role?: UserRole) {
 export function saveCentralB2BAppointment(appointment: B2BAppointment, role?: UserRole) {
   return mutate({ action: 'upsert', collection: 'appointments', item: appointment }, canUserEditOperational(role));
 }
+export function saveCentralB2BWorkflow(
+  payload: { lead?: B2BLead; appointment?: B2BAppointment; deleteAppointmentId?: string },
+  role?: UserRole
+) {
+  return mutate({ action: 'workflow', ...payload }, canUserEditOperational(role));
+}
 export function deleteCentralB2BAppointment(id: string, role?: UserRole) {
   return mutate({ action: 'delete', collection: 'appointments', id }, canUserManageSystem(role));
 }
