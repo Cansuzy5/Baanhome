@@ -80,6 +80,9 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
   );
 
   const currentStage = selectedLead?.pipelineStage || selectedLead?.contactStatus || 'ยังไม่ติดต่อ';
+  const activeRound = selectedLead?.opportunityRounds?.find(
+    (round) => round.id === selectedLead.activeOpportunityRoundId
+  );
   const isClosedAppointment = editAppointment?.status === 'completed' || editAppointment?.status === 'cancelled';
 
   const filteredLeads = useMemo(() => {
@@ -217,6 +220,7 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
                   <span className={`inline-flex px-2.5 py-1 rounded-full border font-bold ${stageClass(currentStage)}`}>{currentStage}</span>
                   <p><strong>ผู้ประสานงานบ้านโฮม:</strong> {show(selectedLead.baanHomeCoordinatorName)}</p>
                   <p><strong>ขั้นตอนถัดไป:</strong> {show(selectedLead.nextAction)}</p>
+                  <p><strong>รอบงาน:</strong> {editAppointment?.opportunityRoundName || activeRound?.name || 'ยังไม่เปิดรอบงาน'}</p>
                 </div>
               </div>
               {onEditLead && (
