@@ -86,6 +86,7 @@ export interface B2BLeadHistoryEntry {
 
 export interface B2BSalesClosure {
   id: string;
+  sourceAppointmentId?: string;
   outcome: 'success' | 'unsuccessful';
   closedAt: string;
   closedById?: string;
@@ -299,3 +300,4 @@ export interface UnansweredQuestion {
   targetDoc?: string;
   adminNotes?: string;
 }
+

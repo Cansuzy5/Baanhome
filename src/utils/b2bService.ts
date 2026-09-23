@@ -1,3 +1,4 @@
+import { getActiveSessionUser } from './authService';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 import { B2BLead, B2BAppointment, UserRole } from '../types';
@@ -7,7 +8,8 @@ import { INITIAL_B2B_APPOINTMENTS } from '../data/b2bAppointments';
 const LEADS_STORAGE_KEY = 'baan_home_b2b_leads_v2';
 const APPOINTMENTS_STORAGE_KEY = 'baan_home_b2b_appointments_v2';
 const listeners = new Set<(data: B2BData) => void>();
-type B2BData = { leads: B2BLead[]; appointments: B2BAppointment[] };
+type B2BData = { leads: B2BLead[]; appointments: B2BAppointment[]; version?: number };
+let publishedVersion = -1;
 let revision = 0;
 let writes = 0;
 
@@ -34,6 +36,9 @@ export function getCachedAppointments(): B2BAppointment[] {
   return cached(APPOINTMENTS_STORAGE_KEY, []);
 }
 function publish(data: B2BData) {
+  const version = Number(data.version || 0);
+  if (version < publishedVersion) return;
+  publishedVersion = version;
   if (!Array.isArray(data.leads) || !Array.isArray(data.appointments)) {
     throw new Error('รูปแบบข้อมูล B2B ไม่ถูกต้อง');
   }
@@ -84,7 +89,7 @@ export function subscribeCentralB2B(onUpdate:(data:B2BData)=>void):()=>void {
  const unsubscribe=onSnapshot(doc(db,'systemConfig','b2b'),{includeMetadataChanges:true},snapshot=>{
   if(snapshot.metadata.fromCache||snapshot.metadata.hasPendingWrites)return;
   const value=snapshot.exists()?snapshot.data().payload:null;
-  publish({leads:Array.isArray(value?.leads)?value.leads:[],appointments:Array.isArray(value?.appointments)?value.appointments:[]});
+  publish({leads:Array.isArray(value?.leads)?value.leads:[],appointments:Array.isArray(value?.appointments)?value.appointments:[],version:Number(snapshot.data()?.version || 0)});
  },()=>window.dispatchEvent(new CustomEvent('baanhome-sync-error',{detail:'อ่านข้อมูลนัดหมายจาก Firestore ไม่สำเร็จ ข้อมูลอาจยังไม่ล่าสุด'})));
  return ()=>{unsubscribe();listeners.delete(onUpdate);};
 }
@@ -95,10 +100,27 @@ function mutate(body: unknown, allowed: boolean): Promise<{ success: boolean; er
     writes++; revision++;
     try {
       const result = await request(body);
+      const command = body as any;
+      const deletedAppointmentId = command.action === 'workflow' ? command.deleteAppointmentId
+        : command.action === 'delete' && command.collection === 'appointments' ? command.id : undefined;
+      if (deletedAppointmentId && (!Array.isArray(result.appointments) || result.appointments.some((item: B2BAppointment) => item.id === deletedAppointmentId))) {
+        throw new Error('ยังยืนยันการลบนัดไม่ได้ กรุณารีเฟรชตรวจสอบก่อนลองอีกครั้ง');
+      }
+      if (command.action === 'closeCycleFromAppointment' || command.action === 'closeCycle') {
+        const appointmentId = command.appointmentId || command.sourceAppointmentId;
+        const saved = result.appointments?.find((item: B2BAppointment) => item.id === appointmentId);
+        const lead = result.leads?.find((item: B2BLead) => item.id === saved?.leadId);
+        const closure = lead?.salesClosures?.find((item: any) => item.id === saved?.salesCycleClosureId);
+        if (!saved || saved.status !== 'completed' || !saved.salesCycleClosedAt ||
+            saved.salesCycleOutcome !== command.outcome || !closure ||
+            closure.sourceAppointmentId !== appointmentId || closure.closedAt !== saved.salesCycleClosedAt) {
+          throw new Error('ยังยืนยันการปิดดีลไม่ได้: ข้อมูลนัดที่บันทึกไม่ครบ กรุณารีเฟรชตรวจสอบก่อนลองอีกครั้ง');
+        }
+      }
       // Publish the transaction response immediately. This keeps the next queued edit
       // on the same device aligned with the server revision before onSnapshot arrives.
       if (Array.isArray(result.leads) && Array.isArray(result.appointments)) {
-        publish({ leads: result.leads, appointments: result.appointments });
+        publish({ leads: result.leads, appointments: result.appointments, version: result.version });
       }
       return { success: true };
     } catch (error: any) {
@@ -115,8 +137,8 @@ export function saveCentralB2BLead(lead: B2BLead, role?: UserRole) {
     canUserEditOperational(role)
   );
 }
-export function deleteCentralB2BLead(id: string, role?: UserRole) {
-  return mutate({ action: 'delete', collection: 'leads', id }, canUserManageSystem(role));
+export function deleteCentralB2BLead(id: string, role?: UserRole, password?: string) {
+  return mutate({ action: 'delete', collection: 'leads', id, deleteAuthorization: deleteCredentials(password) }, canUserManageSystem(role));
 }
 export function saveCentralB2BAppointment(appointment: B2BAppointment, role?: UserRole) {
   return mutate(
@@ -131,17 +153,19 @@ export function saveCentralB2BWorkflow(
     deleteAppointmentId?: string;
     expectedAppointmentRevision?: number;
   },
-  role?: UserRole
+  role?: UserRole,
+  password?: string
 ) {
   return mutate(
     {
       action: 'workflow',
+      ...(payload.deleteAppointmentId !== undefined ? {deleteAuthorization: deleteCredentials(password)} : {}),
       ...payload,
       expectedLeadRevision: payload.lead?._revision,
       expectedAppointmentRevision:
         payload.appointment?._revision ?? payload.expectedAppointmentRevision,
     },
-    canUserEditOperational(role)
+    payload.deleteAppointmentId !== undefined ? canUserManageSystem(role) : canUserEditOperational(role)
   );
 }
 export function closeCentralB2BSalesCycleFromAppointment(
@@ -192,11 +216,13 @@ export function deleteCentralB2BSalesClosure(
   lead: B2BLead,
   closureId: string,
   closedAt: string,
-  role?: UserRole
+  role?: UserRole,
+  password?: string
 ) {
   return mutate(
     {
       action: 'deleteClosure',
+      deleteAuthorization: deleteCredentials(password),
       lead,
       closureId,
       closedAt,
@@ -205,9 +231,14 @@ export function deleteCentralB2BSalesClosure(
     canUserManageSystem(role)
   );
 }
-export function deleteCentralB2BAppointment(id: string, role?: UserRole) {
-  return mutate({ action: 'delete', collection: 'appointments', id }, canUserManageSystem(role));
+export function deleteCentralB2BAppointment(id: string, role?: UserRole, password?: string) {
+  return mutate({ action: 'delete', collection: 'appointments', id, deleteAuthorization: deleteCredentials(password) }, canUserManageSystem(role));
 }
 export function resetCentralB2BToDefault(role?: UserRole) {
   return Promise.resolve({success:false,error:'ปิดการรีเซ็ตข้อมูลตัวอย่าง เพื่อป้องกันการทับฐานข้อมูลกลาง กรุณาจัดการรายการที่ต้องการเป็นรายรายการ'});
+}
+
+
+function deleteCredentials(password?: string) {
+  return {userId: getActiveSessionUser()?.id, password};
 }

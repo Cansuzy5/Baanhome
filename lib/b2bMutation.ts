@@ -12,6 +12,7 @@ function upsert(items: any[], item: any, expectedRevision?: number): any[] {
   if (!item || typeof item.id !== 'string' || !item.id.trim()) throw new Error('Missing record ID');
 
   const existing = items.find(current => current.id === item.id);
+  if (existing?.salesCycleClosedAt) throw new B2BConflictError('นัดที่จบรอบแล้วเป็นประวัติ อ่านได้อย่างเดียว');
   const currentRevision = Number(existing?._revision || 0);
   if (
     existing &&
@@ -28,6 +29,7 @@ function upsert(items: any[], item: any, expectedRevision?: number): any[] {
 function deleteById(items: any[], id: unknown, expectedRevision?: number): any[] {
   if (typeof id !== 'string' || !id.trim()) throw new Error('Missing record ID');
   const existing = items.find(current => current.id === id);
+
   if (
     existing &&
     expectedRevision !== undefined &&
@@ -42,25 +44,13 @@ function normalizeLeadName(value: unknown): string {
   return String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('th-TH');
 }
 
-function appointmentBelongsToLead(current: B2BData, appointment: any, lead: any): boolean {
-  if (appointment?.leadId) {
-    if (appointment.leadId === lead.id) return true;
-    const referencedLeadStillExists = current.leads.some(item => item?.id === appointment.leadId);
-    if (referencedLeadStillExists) return false;
-  }
-
-  if (normalizeLeadName(appointment?.leadName) !== normalizeLeadName(lead?.name)) return false;
-  const sameNameLeads = current.leads.filter(
-    item => normalizeLeadName(item?.name) === normalizeLeadName(lead?.name)
-  );
-  if (sameNameLeads.length <= 1) return true;
-
-  const appointmentPhone = String(appointment?.phone || '').replace(/\D/g, '');
-  const leadPhone = String(lead?.phone || '').replace(/\D/g, '');
-  return Boolean(appointmentPhone && leadPhone && appointmentPhone === leadPhone);
+export function isB2BDeletion(body: any): boolean {
+  return body?.action === 'delete' || body?.action === 'deleteClosure' ||
+    (body?.action === 'workflow' && body.deleteAppointmentId !== undefined);
 }
 
-export function applyB2BMutation(current: B2BData, body: any): B2BData {
+export function applyB2BMutation(current: B2BData, body: any, verifiedAdmin = false): B2BData {
+  if (isB2BDeletion(body) && !verifiedAdmin) throw new Error('เฉพาะแอดมินที่ยืนยันตัวตนแล้วเท่านั้นที่ลบได้');
   if (!body || typeof body !== 'object') throw new Error('Invalid B2B request');
 
   // Calendar close action: make the clicked appointment the authoritative anchor.
@@ -80,41 +70,25 @@ export function applyB2BMutation(current: B2BData, body: any): B2BData {
       throw new Error('Missing close-cycle appointment data');
     }
 
-    // api/sync/b2b.ts performs a lightweight dry validation against an empty set
-    // before the Firestore transaction. The real transaction below will have data.
-    if (current.appointments.length === 0 && current.leads.length === 0) return current;
-
     const sourceAppointment = current.appointments.find(item => item.id === body.appointmentId);
     if (!sourceAppointment) throw new Error('ไม่พบนัดหมายที่ต้องการปิดดีล');
 
     if (sourceAppointment.salesCycleClosedAt) {
+      if (sourceAppointment.salesCycleOutcome !== body.outcome || !sourceAppointment.salesCycleClosureId) {
+        throw new Error('นัดนี้จบรอบแล้ว หรือข้อมูลประวัติไม่ครบ กรุณาตรวจสอบประวัติ');
+      }
       return current;
     }
 
-    let lead = current.leads.find(item => sourceAppointment.leadId && item.id === sourceAppointment.leadId);
-    if (
-      lead &&
-      sourceAppointment.leadName &&
-      normalizeLeadName(lead.name) !== normalizeLeadName(sourceAppointment.leadName)
-    ) {
-      lead = undefined;
+    if (sourceAppointment.status !== 'completed') {
+      throw new Error('ต้องบันทึกเข้าพบแล้วก่อนปิดดีล');
     }
-
-    if (!lead) {
-      const sameName = current.leads.filter(
-        item => normalizeLeadName(item?.name) === normalizeLeadName(sourceAppointment.leadName)
-      );
-      if (sameName.length === 1) {
-        lead = sameName[0];
-      } else {
-        const sourcePhone = String(sourceAppointment.phone || '').replace(/\D/g, '');
-        if (sourcePhone) {
-          lead = sameName.find(
-            item => String(item?.phone || '').replace(/\D/g, '') === sourcePhone
-          );
-        }
-      }
-    }
+    const lead = sourceAppointment.leadId
+      ? current.leads.find(item => item.id === sourceAppointment.leadId)
+      : (() => {
+          const matches = current.leads.filter(item => normalizeLeadName(item.name) === normalizeLeadName(sourceAppointment.leadName));
+          return matches.length === 1 ? matches[0] : undefined;
+        })();
 
     if (!lead) throw new Error('ไม่พบหน่วยงานที่ผูกกับนัดหมายนี้');
 
@@ -130,14 +104,14 @@ export function applyB2BMutation(current: B2BData, body: any): B2BData {
       closedById: body.actorId || '',
       closedByName: body.actorName || '',
       previousStage: currentStage,
+      sourceAppointmentId: sourceAppointment.id,
     };
 
     const updatedLead = {
       ...lead,
       pipelineStage: 'ยังไม่ติดต่อ',
       contactStatus: 'ยังไม่ติดต่อ',
-      appointmentDate: undefined,
-      appointmentTime: undefined,
+
       salesClosures: [...(Array.isArray(lead.salesClosures) ? lead.salesClosures : []), closure],
       updatedAt: body.closedAt,
       history: [
@@ -154,16 +128,14 @@ export function applyB2BMutation(current: B2BData, body: any): B2BData {
           ],
         },
         ...(Array.isArray(lead.history) ? lead.history : []),
-      ].slice(0, 100),
+      ],
     };
 
+    delete updatedLead.appointmentDate;
+    delete updatedLead.appointmentTime;
     const leads = upsert(current.leads, updatedLead, lead._revision);
     const appointments = current.appointments.map(appointment => {
-      const sameCycleLead =
-        appointment.id === sourceAppointment.id ||
-        appointmentBelongsToLead(current, appointment, lead);
-
-      if (!sameCycleLead || appointment.salesCycleClosedAt) return appointment;
+      if (appointment.id !== sourceAppointment.id) return appointment;
 
       return {
         ...appointment,
@@ -179,75 +151,21 @@ export function applyB2BMutation(current: B2BData, body: any): B2BData {
     return { leads, appointments };
   }
 
-  // Closing a sales cycle preserves every appointment and its history.
-  // Any appointment for this organization that has not already been archived
-  // belongs to the cycle being closed, regardless of whether it was completed,
-  // cancelled, missed, or still scheduled.
+  // Compatibility entry point; all closures use the exact-appointment handler.
   if (body.action === 'closeCycle') {
-    if (
-      !body.lead ||
-      typeof body.closedAt !== 'string' ||
-      !body.closedAt ||
-      typeof body.closureId !== 'string' ||
-      !body.closureId ||
-      !['success', 'unsuccessful'].includes(body.outcome)
-    ) {
-      throw new Error('Missing close-cycle data');
-    }
-    const leads = upsert(current.leads, body.lead, body.expectedLeadRevision);
-    const appointments = current.appointments.map(appointment => {
-      const isSourceAppointment =
-        typeof body.sourceAppointmentId === 'string' &&
-        body.sourceAppointmentId &&
-        appointment.id === body.sourceAppointmentId;
-      const belongsToLead =
-        isSourceAppointment ||
-        appointmentBelongsToLead(current, appointment, body.lead);
-
-      if (!belongsToLead || appointment.salesCycleClosedAt) return appointment;
-
-      return {
-        ...appointment,
-        // The selected calendar appointment is authoritative for this close action.
-        // Repair its organization link and archive the rest of the same current cycle.
-        leadId: body.lead.id,
-        leadName: body.lead.name,
-        salesCycleClosedAt: body.closedAt,
-        salesCycleClosureId: body.closureId,
-        salesCycleOutcome: body.outcome,
-        _revision: Number(appointment._revision || 0) + 1,
-      };
+    if (!body.sourceAppointmentId) throw new Error('กรุณาเลือกนัดที่เข้าพบแล้วเพื่อปิดรอบ');
+    return applyB2BMutation(current, {
+      ...body, action: 'closeCycleFromAppointment', appointmentId: body.sourceAppointmentId,
     });
-    return { leads, appointments };
   }
 
-  // Admin-only UI calls this through the service after removing one archived
-  // closure from the lead. Clear only appointment markers belonging to that
-  // exact round so other historical rounds remain untouched.
+  // Removing a statistic must never reopen immutable appointment history.
   if (body.action === 'deleteClosure') {
     if (!body.lead || typeof body.closureId !== 'string' || !body.closureId) {
       throw new Error('Missing delete-closure data');
     }
     const leads = upsert(current.leads, body.lead, body.expectedLeadRevision);
-    const appointments = current.appointments.map(appointment => {
-      const sameClosure =
-        appointment.salesCycleClosureId === body.closureId ||
-        (!appointment.salesCycleClosureId &&
-          body.closedAt &&
-          appointment.salesCycleClosedAt === body.closedAt);
-      if (!sameClosure) return appointment;
-
-      const {
-        salesCycleClosedAt,
-        salesCycleClosureId,
-        salesCycleOutcome,
-        ...rest
-      } = appointment;
-      return {
-        ...rest,
-        _revision: Number(appointment._revision || 0) + 1,
-      };
-    });
+    const appointments = current.appointments;
     return { leads, appointments };
   }
 
@@ -300,3 +218,4 @@ export function applyB2BMutation(current: B2BData, body: any): B2BData {
     appointments: Array.isArray(body.appointments) ? body.appointments : current.appointments,
   };
 }
+

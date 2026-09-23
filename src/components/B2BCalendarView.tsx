@@ -23,13 +23,13 @@ import { PIPELINE_STAGES } from '../data/b2bPartnerships';
 import { localDateKey } from '../utils/dateUtils';
 
 interface B2BCalendarViewProps {
+  canDelete?: boolean;
   appointments: B2BAppointment[];
   leads: B2BLead[];
   onAddAppointment: (date?: string) => void;
   onEditAppointment: (appointment: B2BAppointment) => void;
   onDeleteAppointment: (appointmentId: string) => void;
-  onUpdateLeadStage: (leadId: string, stage: B2BPipelineStatus | string, sourceAppointmentId?: string) => void;
-  onCloseDeal: (leadId: string, appointmentId: string, outcome: 'success' | 'unsuccessful') => void;
+  onUpdateLeadStage: (leadId: string, stage: B2BPipelineStatus | string, sourceAppointmentId?: string) => Promise<boolean>;
   onSelectLeadForSearch?: (leadName: string) => void;
 }
 
@@ -52,49 +52,28 @@ const DAYS_SHORT_TH = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', '�
 
 export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   appointments,
+  canDelete = false,
   leads,
   onAddAppointment,
   onEditAppointment,
   onDeleteAppointment,
   onUpdateLeadStage,
-  onCloseDeal,
   onSelectLeadForSearch,
 }) => {
   // Current view year & month - default to September 2026 based on metadata
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [selectedDateStr, setSelectedDateStr] = useState<string>(() => localDateKey());
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [savingAppointmentId, setSavingAppointmentId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState('');
 
   const normalizeLeadName = (value?: string) =>
     (value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('th-TH');
 
   const getLeadForAppointment = (apt: B2BAppointment) => {
-    // Trust leadId only when it still agrees with the appointment identity.
-    // Legacy test records can contain an ID that points to a different existing lead.
-    if (apt.leadId) {
-      const byId = leads.find((lead) => lead.id === apt.leadId);
-      if (
-        byId &&
-        (!apt.leadName || normalizeLeadName(byId.name) === normalizeLeadName(apt.leadName))
-      ) {
-        return byId;
-      }
-    }
-
-    const sameName = leads.filter(
-      (lead) => normalizeLeadName(lead.name) === normalizeLeadName(apt.leadName)
-    );
-    if (sameName.length === 1) return sameName[0];
-
-    if (apt.phone) {
-      const normalizedPhone = apt.phone.replace(/\D/g, '');
-      const byPhone = sameName.find(
-        (lead) => (lead.phone || '').replace(/\D/g, '') === normalizedPhone
-      );
-      if (byPhone) return byPhone;
-    }
-
-    return undefined;
+    if (apt.leadId) return leads.find(lead => lead.id === apt.leadId);
+    const matches = leads.filter(lead => normalizeLeadName(lead.name) === normalizeLeadName(apt.leadName));
+    return matches.length === 1 ? matches[0] : undefined;
   };
 
   const getLeadStage = (apt: B2BAppointment) => {
@@ -103,32 +82,10 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
     return raw === 'เข้าพบแล้ว' ? 'ติดตามต่อ' : raw;
   };
 
-  // Prefer explicit cycle metadata. For test/legacy appointments created before
-  // cycle metadata existed, infer the first sales closure that happened after
-  // the appointment was created so historical calendar records still read correctly.
-  const getAppointmentClosure = (apt: B2BAppointment) => {
-    if (apt.salesCycleClosedAt) {
-      return {
-        id: apt.salesCycleClosureId,
-        closedAt: apt.salesCycleClosedAt,
-        outcome: apt.salesCycleOutcome,
-      };
-    }
-
-    const lead = getLeadForAppointment(apt);
-    if (!lead?.salesClosures?.length) return undefined;
-
-    const anchorRaw = apt.completedAt || apt.createdAt || `${apt.date}T${apt.time || '00:00'}:00`;
-    const anchor = new Date(anchorRaw).getTime();
-    if (!Number.isFinite(anchor)) return undefined;
-
-    return [...lead.salesClosures]
-      .filter((item) => {
-        const closedAt = new Date(item.closedAt).getTime();
-        return Number.isFinite(closedAt) && closedAt >= anchor;
-      })
-      .sort((a, b) => new Date(a.closedAt).getTime() - new Date(b.closedAt).getTime())[0];
-  };
+  // The saved appointment is the sole source for historical deal outcome.
+  const getAppointmentClosure = (apt: B2BAppointment) => apt.salesCycleClosedAt
+    ? { id: apt.salesCycleClosureId, closedAt: apt.salesCycleClosedAt, outcome: apt.salesCycleOutcome }
+    : undefined;
 
   const getPostVisitForwardStages = (currentStage: string) => {
     const order = ['ติดตามต่อ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership'];
@@ -186,8 +143,8 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
 
   const appointmentCalendarLabel = (apt: B2BAppointment) => {
     const closure = getAppointmentClosure(apt);
-    if (closure?.outcome === 'success') return '✓ ปิดดีล';
-    if (closure?.outcome === 'unsuccessful') return '✕ ไม่สำเร็จ';
+    if (closure?.outcome === 'success') return 'ปิดดีลสำเร็จ';
+    if (closure?.outcome === 'unsuccessful') return 'ปิดดีลไม่สำเร็จ';
     if (closure) return 'จบรอบ';
     if (apt.status === 'completed') return 'เข้าพบแล้ว';
     if (apt.status === 'rescheduled') return 'เลื่อนนัด';
@@ -338,6 +295,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
 
   return (
     <div className="space-y-3">
+      {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
       {/* Compact calendar controls: keep the calendar visible in the first viewport */}
       <div className="bg-white rounded-2xl border border-[#DDE7DC] shadow-sm p-3 sm:p-4">
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
@@ -355,37 +313,6 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
               <span className="text-[9px] text-[#789084] block">นัดเดือนนี้</span>
               <span className="text-sm font-bold text-[#173827]">{stats.totalThisMonth}</span>
             </button>
-            <button type="button" onClick={() => setFilterStatus('ติดต่อแล้ว')}
-              className={`px-3 py-1.5 rounded-xl border text-center transition-all ${filterStatus==='ติดต่อแล้ว'?'ring-2 ring-lime-500 bg-lime-100 border-lime-400':'bg-lime-50 border-lime-100 hover:border-lime-300'}`}>
-              <span className="text-[9px] text-lime-700 block">ติดต่อแล้ว</span>
-              <span className="text-sm font-bold text-lime-700">{stats.contacted}</span>
-            </button>
-            <button type="button" onClick={() => setFilterStatus('นัดเข้าพบ')}
-              className={`px-3 py-1.5 rounded-xl border text-center transition-all ${filterStatus==='นัดเข้าพบ'?'ring-2 ring-blue-500 bg-blue-100 border-blue-400':'bg-blue-50 border-blue-100 hover:border-blue-300'}`}>
-              <span className="text-[9px] text-blue-700 block">นัดเข้าพบ</span>
-              <span className="text-sm font-bold text-blue-700">{stats.meeting}</span>
-            </button>
-            <button type="button" onClick={() => setFilterStatus('ติดตามต่อ')}
-              className={`px-3 py-1.5 rounded-xl border text-center transition-all ${filterStatus==='ติดตามต่อ'?'ring-2 ring-violet-500 bg-violet-100 border-violet-400':'bg-violet-50 border-violet-100 hover:border-violet-300'}`}>
-              <span className="text-[9px] text-violet-700 block">ติดตามต่อ</span>
-              <span className="text-sm font-bold text-violet-700">{stats.followUp}</span>
-            </button>
-            <button type="button" onClick={() => setFilterStatus('ส่งใบเสนอราคาแล้ว')}
-              className={`px-3 py-1.5 rounded-xl border text-center transition-all ${filterStatus==='ส่งใบเสนอราคาแล้ว'?'ring-2 ring-amber-500 bg-amber-100 border-amber-400':'bg-amber-50 border-amber-100 hover:border-amber-300'}`}>
-              <span className="text-[9px] text-amber-700 block">ส่งใบเสนอราคา</span>
-              <span className="text-sm font-bold text-amber-700">{stats.quoted}</span>
-            </button>
-            <button type="button" onClick={() => setFilterStatus('ตกลง Partnership')}
-              className={`px-3 py-1.5 rounded-xl border text-center transition-all ${filterStatus==='ตกลง Partnership'?'ring-2 ring-teal-500 bg-teal-100 border-teal-400':'bg-teal-50 border-teal-100 hover:border-teal-300'}`}>
-              <span className="text-[9px] text-teal-700 block">Partnership</span>
-              <span className="text-sm font-bold text-teal-700">{stats.partnership}</span>
-            </button>
-            <button type="button" onClick={() => setFilterStatus('closed-success')}
-              className={`px-3 py-1.5 rounded-xl border text-center transition-all ${filterStatus==='closed-success'?'ring-2 ring-emerald-600 bg-emerald-100 border-emerald-500':'bg-emerald-50 border-emerald-100 hover:border-emerald-300'}`}>
-              <span className="text-[9px] text-emerald-700 block">ปิดสำเร็จ</span>
-              <span className="text-sm font-bold text-emerald-700">{stats.closedSuccess}</span>
-            </button>
-
             <button
               onClick={() => exportAppointmentsToCsv(appointments)}
               className="px-3 py-2 rounded-xl border border-[#D9E3D7] text-[#496655] text-xs font-bold flex items-center gap-1.5 hover:bg-[#F6F9F5]"
@@ -404,9 +331,9 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
       </div>
 
       {/* Main Grid: Calendar on Left, Selected Day & Agenda on Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Calendar Section: wider for busy days */}
-        <div className="lg:col-span-9 bg-white rounded-2xl p-4 sm:p-5 border border-[#E3ECE1] shadow-sm flex flex-col">
+        <div className="lg:col-span-8 bg-white rounded-2xl p-4 sm:p-5 border border-[#E3ECE1] shadow-sm flex flex-col">
           {/* Calendar Header Navigation */}
           <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#EEF4ED]">
             <div className="flex items-center gap-2">
@@ -458,7 +385,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
           </div>
 
           {/* Calendar Day Cells */}
-          <div className="grid grid-cols-7 gap-1.5 flex-1">
+          <div className="grid grid-cols-7 gap-1.5 items-start">
             {calendarDays.map((item, idx) => {
               const dayAppointments = appointmentsByDate[item.dateStr] || [];
               const movedAppointments = movedAppointmentsByDate[item.dateStr] || [];
@@ -473,7 +400,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                     setSelectedDateStr(item.dateStr);
                     if (!hasEntries) onAddAppointment(item.dateStr);
                   }}
-                  className={`min-h-[92px] sm:min-h-[122px] xl:min-h-[152px] p-1.5 rounded-2xl flex flex-col justify-between text-left transition-all border relative ${
+                  className={`min-h-[90px] sm:min-h-[108px] p-1.5 rounded-xl flex flex-col text-left transition-all border relative ${
                     item.monthType !== 'current'
                       ? 'bg-[#FBFDFB] text-gray-300 border-transparent hover:border-[#E2ECE0]'
                       : isSelected
@@ -509,9 +436,9 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                       <div
                         key={apt.id}
                         className={`text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded truncate font-semibold ${appointmentClass(apt)}`}
-                        title={`${apt.time} - ${apt.leadName} - ${appointmentLabel(apt)}`}
+                        title={`${apt.time} - ${apt.leadName} - ${appointmentLabel(apt)}${apt.salesCycleClosedAt ? ` · วันที่ปิดดีล ${closureDateLabel(apt)}` : ''}`}
                       >
-                        {apt.time} {appointmentCalendarLabel(apt)} · {apt.leadName.replace('สำนักงาน', 'สนง.').slice(0, 13)}
+                        {apt.time} {apt.leadName}
                       </div>
                     ))}
                     {dayAppointments.length < 5 && movedAppointments.slice(0, 5 - dayAppointments.length).map((move) => (
@@ -561,7 +488,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
         </div>
 
         {/* Right Section: selected day details */}
-        <div className="lg:col-span-3 space-y-3">
+        <div className="lg:col-span-4 space-y-3">
           {/* Selected Date Focus Card */}
           <div className="bg-[#FAFBF9] rounded-3xl p-5 border border-[#E3ECE1] shadow-sm">
             <div className="flex items-center justify-between mb-3">
@@ -575,7 +502,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
               </div>
               <button
                 onClick={() => onAddAppointment(selectedDateStr)}
-                className="px-3 py-1.5 rounded-xl bg-[#2D5A43] hover:bg-[#204533] text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-colors"
+                className="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-xl bg-[#2D5A43] hover:bg-[#204533] text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>เพิ่มนัด</span>
@@ -623,18 +550,18 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1">
-                        <button
+                        {!apt.salesCycleClosedAt && <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             onEditAppointment(apt);
                           }}
                           className="p-1.5 rounded-lg hover:bg-gray-100 text-[#597866] cursor-pointer transition-colors"
-                          title="แก้ไขนัดหมาย"
+                          disabled={!!apt.salesCycleClosedAt} title="แก้ไขนัดหมาย"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
+                        </button>}
+                        {canDelete && <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -644,7 +571,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                           title="ลบนัดหมาย"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        </button>}
                       </div>
                     </div>
 
@@ -684,7 +611,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                           onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}
                           className="px-2.5 py-1 rounded-lg bg-[#1B3E2D] text-white font-bold"
                         >
-                          จัดการนัด
+                          {apt.salesCycleClosedAt ? 'ดูประวัติ' : 'จัดการนัด'}
                         </button>
                       </div>
                       {apt.status === 'completed' && !getAppointmentClosure(apt) && (() => {
@@ -697,17 +624,17 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                             <span className="text-[#72877B] font-semibold">สถานะติดตาม:</span>
                             <select
                               value={stage}
-                              onChange={(e) => {
+                              disabled={savingAppointmentId !== null}
+                              onChange={async (e) => {
                                 const nextStage = e.target.value;
-                                if (nextStage === 'ปิดการขาย' || nextStage === 'ปิดการขายไม่สำเร็จ') {
-                                  onCloseDeal(
-                                    lead.id,
-                                    apt.id,
-                                    nextStage === 'ปิดการขาย' ? 'success' : 'unsuccessful'
-                                  );
-                                  return;
-                                }
-                                onUpdateLeadStage(lead.id, nextStage, apt.id);
+                                setSavingAppointmentId(apt.id);
+                                setSaveError('');
+                                try {
+                                  const ok = await onUpdateLeadStage(lead.id, nextStage, apt.id);
+                                  if (!ok) setSaveError('บันทึกสถานะไม่สำเร็จ กรุณาตรวจสอบข้อความแจ้งเตือนแล้วลองใหม่');
+                                } catch {
+                                  setSaveError('บันทึกสถานะไม่สำเร็จ กรุณารีเฟรชตรวจสอบก่อนลองอีกครั้ง');
+                                } finally { setSavingAppointmentId(null); }
                               }}
                               className={`max-w-[190px] px-2 py-1 rounded-lg border border-[#D5E2D2] font-bold ${stageClass(stage)}`}
                             >
@@ -728,99 +655,29 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
             )}
           </div>
 
-          {/* All Appointments Timeline Card */}
-          <div className="bg-white rounded-3xl p-5 border border-[#E3ECE1] shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="font-bold text-sm text-[#1B3E2D] flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-[#2D5A43]" />
-                <span>กำหนดการทั้งหมด ({filteredAppointments.length})</span>
-              </h4>
-
-              {/* Status Filter */}
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="text-xs px-2.5 py-1 rounded-xl border border-[#D5E2D2] bg-[#FAFBF9] text-[#345945]"
-              >
-                <option value="all">ทุกสถานะ</option>
-                <option value="month">นัดเดือนนี้</option>
-                {PIPELINE_STAGES.filter((item) => !['ปิดการขาย','ปิดการขายไม่สำเร็จ'].includes(item.stage)).map((item) => <option key={item.stage} value={item.stage}>{item.stage}</option>)}
-                <option value="closed-success">ปิดการขายสำเร็จ</option>
-              </select>
+          <details className="bg-white rounded-2xl p-4 border border-[#E3ECE1]">
+            <summary className="cursor-pointer text-sm font-bold text-[#1B3E2D]">
+              นัดหมายทั้งหมด ({appointments.length})
+            </summary>
+            <select aria-label="กรองนัดหมาย" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+              className="mt-3 w-full rounded-lg border border-[#D5E2D2] px-2 py-1 text-xs">
+              <option value="all">ทุกสถานะ</option><option value="month">นัดเดือนนี้</option>
+              {PIPELINE_STAGES.filter(item => !['ปิดการขาย','ปิดการขายไม่สำเร็จ'].includes(item.stage)).map(item => <option key={item.stage} value={item.stage}>{item.stage}</option>)}
+              <option value="closed-success">ปิดดีลสำเร็จ</option>
+            </select>
+            <div className="mt-2 max-h-80 overflow-y-auto divide-y divide-[#EEF4ED]">
+              {filteredAppointments.map(apt => <button key={apt.id} onClick={() => { setSelectedDateStr(apt.date); onEditAppointment(apt); }}
+                className="w-full text-left py-3 space-y-1 hover:bg-[#F9FCF8]">
+                <div className="text-xs text-[#698675]">{apt.date} · {apt.time} น.</div>
+                <div className="text-sm font-semibold text-[#1B3E2D] truncate">{apt.leadName}</div>
+                <span className={`inline-block text-[11px] px-2 py-0.5 rounded-full ${appointmentClass(apt)}`}>{appointmentLabel(apt)}</span>
+                {apt.salesCycleClosedAt && <div className="text-[11px] text-[#698675]">วันที่ปิดดีล {closureDateLabel(apt)}</div>}
+              </button>)}
             </div>
-
-            <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-              {filteredAppointments.map((apt) => (
-                <div
-                  key={apt.id}
-                  onClick={() => {
-                    setSelectedDateStr(apt.date);
-                    onEditAppointment(apt);
-                  }}
-                  className={`p-3 rounded-2xl border transition-all cursor-pointer text-xs ${
-                    apt.date === selectedDateStr
-                      ? 'border-[#2D5A43] bg-[#F4F9F2]'
-                      : 'border-[#E6EFE4] hover:bg-[#F9FCF8]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-[#1E4330]">
-                      📅 {apt.date} | ⏰ {apt.time} น.
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${appointmentClass(apt)}`}>
-                        {appointmentLabel(apt)}
-                      </span>
-                      {getAppointmentClosure(apt) ? (
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 border border-slate-200">
-                          {closureDateLabel(apt) ? `ปิดดีล ${closureDateLabel(apt)}` : 'จบรอบแล้ว'}
-                        </span>
-                      ) : apt.status === 'completed' ? (
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${stageClass(getLeadStage(apt))}`}>
-                          {getLeadStage(apt)}
-                        </span>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onEditAppointment(apt);
-                        }}
-                        className="p-1 rounded-md hover:bg-gray-200 text-[#597866] cursor-pointer"
-                        title="แก้ไขนัดหมาย"
-                      >
-                        <Edit2 className="w-3 h-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteAppointment(apt.id);
-                        }}
-                        className="p-1 rounded-md hover:bg-red-100 text-red-500 cursor-pointer"
-                        title="ลบนัดหมาย"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <h6 className="font-bold text-[#1B3E2D] truncate">
-                    {apt.leadName}
-                  </h6>
-                  <p className="text-[11px] text-[#5A7967] truncate">
-                    {apt.title}
-                  </p>
-
-                  <div className="flex items-center justify-between text-[10px] text-[#7E9989] mt-1.5 pt-1 border-t border-[#EEF4ED]">
-                    <span>📍 {apt.location.slice(0, 24)}...</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          </details>
         </div>
       </div>
     </div>
   );
 };
+

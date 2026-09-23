@@ -178,7 +178,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       .filter(
         (apt) =>
           apt.id !== excludeId &&
-          apt.status === 'scheduled' &&
+          (apt.status === 'scheduled' || apt.status === 'rescheduled') &&
           !apt.salesCycleClosedAt &&
           appointmentBelongsToLead(apt, lead)
       )
@@ -188,55 +188,6 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
     const nowKey = `${localDateKey()} ${new Date().toTimeString().slice(0, 5)}`;
     return scheduled.find((apt) => `${apt.date} ${apt.time}` >= nowKey) || scheduled[scheduled.length - 1];
-  };
-
-  const getCurrentCycleTimeline = (lead: B2BLead) => {
-    const currentStage = getLeadStage(lead);
-    const latestClosureAt = (lead.salesClosures || [])
-      .map((item) => new Date(item.closedAt).getTime())
-      .filter((value) => Number.isFinite(value))
-      .sort((a, b) => b - a)[0] || 0;
-
-    const events = (lead.history || [])
-      .map((entry) => {
-        const timestamp = new Date(entry.timestamp).getTime();
-        if (!Number.isFinite(timestamp) || timestamp <= latestClosureAt) return null;
-
-        let stage = '';
-        for (const change of entry.changes || []) {
-          const match = change.match(/สถานะการติดตาม:\s*"[^"]*"\s*→\s*"([^"]+)"/);
-          if (match?.[1]) {
-            stage = match[1] === 'เข้าพบแล้ว' ? 'ติดตามต่อ' : match[1];
-            break;
-          }
-        }
-        if (!stage && entry.action === 'เข้าพบแล้ว') stage = 'ติดตามต่อ';
-        return stage ? { stage, timestamp } : null;
-      })
-      .filter((item): item is { stage: string; timestamp: number } => Boolean(item))
-      .sort((a, b) => a.timestamp - b.timestamp);
-
-    const deduped: Array<{ stage: string; timestamp: number }> = [];
-    for (const item of events) {
-      if (deduped[deduped.length - 1]?.stage === item.stage) continue;
-      deduped.push(item);
-    }
-
-    if (deduped.length === 0) {
-      const raw = lead.updatedAt ? new Date(lead.updatedAt).getTime() : NaN;
-      if (!Number.isFinite(raw)) return [];
-      deduped.push({ stage: currentStage, timestamp: raw });
-    } else if (deduped[deduped.length - 1].stage !== currentStage) {
-      const raw = lead.updatedAt ? new Date(lead.updatedAt).getTime() : Date.now();
-      deduped.push({ stage: currentStage, timestamp: Number.isFinite(raw) ? raw : Date.now() });
-    }
-
-    const now = Date.now();
-    return deduped.map((item, index) => {
-      const end = deduped[index + 1]?.timestamp || now;
-      const days = Math.max(0, Math.floor((end - item.timestamp) / 86400000));
-      return { stage: item.stage, days, current: index === deduped.length - 1 };
-    });
   };
 
   const getLatestLeadActivity = (lead: B2BLead) => {
@@ -270,7 +221,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     const diffDays = Math.floor((Date.now() - latest.date.getTime()) / (1000 * 60 * 60 * 24));
     const hasUpcomingAppointment = appointments.some(
       (apt) =>
-        apt.status === 'scheduled' &&
+        (apt.status === 'scheduled' || apt.status === 'rescheduled') &&
         !apt.salesCycleClosedAt &&
         appointmentBelongsToLead(apt, lead) &&
         new Date(`${apt.date}T${apt.time || '00:00'}`).getTime() >= Date.now()
@@ -328,6 +279,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   const [closureToDelete, setClosureToDelete] = useState<{ leadId: string; closureId: string } | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
@@ -336,6 +288,8 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     const unsubscribeB2B = subscribeCentralB2B(({ leads, appointments: apts }) => {
       setLeadsList(leads);
       setAppointments(apts);
+      setEditingApt(previous => previous ? apts.find(item => item.id === previous.id) || previous : null);
+      setActiveLeadModal(previous => previous ? leads.find(item => item.id === previous.id) || previous : null);
     });
     const unsubscribeCoordinators = subscribeB2BCoordinators(setCoordinators);
     return () => {
@@ -426,28 +380,29 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     const target = leadsList.find((l) => l.id === leadId);
     if (target) {
       setDeleteError(null);
-      setLeadToDelete(target);
+      setDeletePassword(''); setLeadToDelete(target);
     }
   };
 
   // Execute confirmed lead deletion
   const confirmDeleteLead = async () => {
-    if (!leadToDelete || isDeleting) return;
+    if (!leadToDelete || !isAdmin || isDeleting) return;
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      const result = await deleteCentralB2BLead(leadToDelete.id, currentRole);
+      const result = await deleteCentralB2BLead(leadToDelete.id, currentRole, deletePassword);
       if (!result.success) { setDeleteError(result.error || 'ลบไม่สำเร็จ'); return; }
       if (activeLeadModal?.id === leadToDelete.id) setActiveLeadModal(null);
       setLeadToDelete(null);
     } catch { setDeleteError('ลบไม่สำเร็จ กรุณาลองใหม่'); }
-    finally { setIsDeleting(false); }
+    finally { setDeletePassword(''); setIsDeleting(false); }
   };
 
   // Handle Add or Edit Appointment.
   // Appointment lifecycle is separate from sales progression, except that an active
   // appointment advances early-stage organizations to "นัดเข้าพบ". Later stages stay manual.
   const handleSaveAppointment = async (apt: B2BAppointment) => {
+    if (apt.salesCycleClosedAt) { setPermissionError('นัดนี้จบรอบแล้ว อ่านประวัติได้อย่างเดียว'); return false; }
     if (!isOperatorOrAdmin) {
       setPermissionError('สิทธิ์ไม่เพียงพอ: เฉพาะ Operator และ Administrator เท่านั้นที่สามารถบันทึกนัดหมายได้');
       return false;
@@ -469,7 +424,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     // Partnership, or closed sale when a repeat appointment is added.
     const currentStage = getLeadStage(linkedLead);
     const shouldAdvanceToMeeting =
-      apt.status === 'scheduled' &&
+      (apt.status === 'scheduled' || apt.status === 'rescheduled') &&
       (currentStage === 'ยังไม่ติดต่อ' || currentStage === 'ติดต่อแล้ว');
 
     if (isNewAppointment || shouldAdvanceToMeeting) {
@@ -513,7 +468,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       return false;
     }
 
-    if (updatedLead && activeLeadModal?.id === updatedLead.id) setActiveLeadModal(updatedLead);
+    if (updatedLead && activeLeadModal?.id === updatedLead.id) setActiveLeadModal(getCachedLeads().find(item => item.id === updatedLead.id) || updatedLead);
     return true;
   };
 
@@ -523,6 +478,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     newTime: string,
     reason: string
   ) => {
+    if (apt.salesCycleClosedAt) { setPermissionError('นัดนี้จบรอบแล้ว อ่านประวัติได้อย่างเดียว'); return false; }
     if (!isOperatorOrAdmin) return false;
     if (!newDate || !newTime || (newDate === apt.date && newTime === apt.time)) return false;
 
@@ -535,7 +491,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       ...apt,
       date: newDate,
       time: newTime,
-      status: 'scheduled',
+      status: 'rescheduled',
       rescheduleHistory: [
         ...(apt.rescheduleHistory || []),
         {
@@ -582,7 +538,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       setPermissionError(result.error || 'เลื่อนนัดไม่สำเร็จ');
       return false;
     }
-    if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(updatedLead);
+    if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(getCachedLeads().find(item => item.id === updatedLead.id) || updatedLead);
     return true;
   };
 
@@ -590,6 +546,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     apt: B2BAppointment,
     resultNote: string
   ) => {
+    if (apt.salesCycleClosedAt) { setPermissionError('นัดนี้จบรอบแล้ว อ่านประวัติได้อย่างเดียว'); return false; }
     if (!isOperatorOrAdmin) return false;
     const linkedLead = leadsList.find((lead) =>
       apt.leadId ? lead.id === apt.leadId : lead.name === apt.leadName
@@ -605,10 +562,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     };
 
     const oldStage = getLeadStage(linkedLead);
-    const shouldAdvanceToVisited =
-      oldStage === 'ยังไม่ติดต่อ' ||
-      oldStage === 'ติดต่อแล้ว' ||
-      oldStage === 'นัดเข้าพบ';
+    const shouldAdvanceToVisited = true;
     const nextScheduledAppointment = getScheduledAppointmentForLead(linkedLead, appointments, apt.id);
 
     const updatedLead: B2BLead = {
@@ -646,11 +600,12 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       setPermissionError(result.error || 'บันทึกผลการเข้าพบไม่สำเร็จ');
       return false;
     }
-    if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(updatedLead);
+    if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(getCachedLeads().find(item => item.id === updatedLead.id) || updatedLead);
     return true;
   };
 
   const handleCancelAppointment = async (apt: B2BAppointment, reason: string) => {
+    if (apt.salesCycleClosedAt) { setPermissionError('นัดนี้จบรอบแล้ว อ่านประวัติได้อย่างเดียว'); return false; }
     if (!isOperatorOrAdmin) return false;
     const linkedLead = leadsList.find((lead) =>
       apt.leadId ? lead.id === apt.leadId : lead.name === apt.leadName
@@ -695,7 +650,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       setPermissionError(result.error || 'ยกเลิกนัดไม่สำเร็จ');
       return false;
     }
-    if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(updatedLead);
+    if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(getCachedLeads().find(item => item.id === updatedLead.id) || updatedLead);
     return true;
   };
 
@@ -708,13 +663,13 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     const target = appointments.find((a) => a.id === appointmentId);
     if (target) {
       setDeleteError(null);
-      setAppointmentToDelete(target);
+      setDeletePassword(''); setAppointmentToDelete(target);
     }
   };
 
   // Execute confirmed appointment deletion
   const confirmDeleteAppointment = async () => {
-    if (!appointmentToDelete || isDeleting) return;
+    if (!appointmentToDelete || !isAdmin || isDeleting) return;
     setIsDeleting(true);
     setDeleteError(null);
 
@@ -728,7 +683,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
       let result;
       let updatedLead: B2BLead | undefined;
-      if (linkedLead) {
+      if (linkedLead && !deletingAppointment.salesCycleClosedAt) {
         const nextAppointment = getScheduledAppointmentForLead(
           linkedLead,
           appointments,
@@ -749,7 +704,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               changes: [`ลบนัดหมายวันที่ ${deletingAppointment.date} เวลา ${deletingAppointment.time}`],
             },
             ...(linkedLead.history || []),
-          ].slice(0, 100),
+          ],
         };
         result = await saveCentralB2BWorkflow(
           {
@@ -757,21 +712,22 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             deleteAppointmentId: deletingAppointment.id,
             expectedAppointmentRevision: deletingAppointment._revision,
           },
-          currentRole
+          currentRole, deletePassword
         );
       } else {
-        result = await deleteCentralB2BAppointment(deletingAppointment.id, currentRole);
+        result = await deleteCentralB2BAppointment(deletingAppointment.id, currentRole, deletePassword);
       }
 
       if (!result.success) {
         setDeleteError(result.error || 'ลบไม่สำเร็จ');
         return;
       }
-      if (updatedLead && activeLeadModal?.id === updatedLead.id) setActiveLeadModal(updatedLead);
+      if (updatedLead && activeLeadModal?.id === updatedLead.id) setActiveLeadModal(getCachedLeads().find(item => item.id === updatedLead.id) || updatedLead);
       setAppointmentToDelete(null);
     } catch {
       setDeleteError('ลบไม่สำเร็จ กรุณาลองใหม่');
     } finally {
+      setDeletePassword('');
       setIsDeleting(false);
     }
   };
@@ -783,7 +739,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       return;
     }
     const target = appointments.find((a) => a.id === appointmentId);
-    if (!target) return;
+    if (!target || target.salesCycleClosedAt) return;
 
     const linkedLead = leadsList.find(
       (lead) =>
@@ -819,7 +775,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       setPermissionError(result.error || 'เปลี่ยนสถานะไม่สำเร็จ');
       return;
     }
-    if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(updatedLead);
+    if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(getCachedLeads().find(item => item.id === updatedLead.id) || updatedLead);
   };
 
   // Reset to original 101 leads (opens confirmation dialog)
@@ -873,7 +829,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
       const activeAppointmentsForLead = appointments.filter(
         (apt) =>
-          apt.status === 'scheduled' &&
+          (apt.status === 'scheduled' || apt.status === 'rescheduled') &&
           !apt.salesCycleClosedAt &&
           appointmentBelongsToLead(apt, lead)
       );
@@ -918,6 +874,21 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
     const oldStage = getLeadStage(target);
     const isClosure = newStage === 'ปิดการขาย' || newStage === 'ปิดการขายไม่สำเร็จ';
+    if (isClosure && !sourceAppointmentId) {
+      const candidates = appointments.filter(item => item.leadId === leadId && item.status === 'completed' && !item.salesCycleClosedAt);
+      if (candidates.length !== 1) {
+        setPermissionError('กรุณาเปิดนัดที่เข้าพบแล้วในปฏิทิน แล้วเลือกปิดดีลจากนัดนั้น');
+        return false;
+      }
+      sourceAppointmentId = candidates[0].id;
+    }
+    if (sourceAppointmentId) {
+      const source = appointments.find(item => item.id === sourceAppointmentId);
+      if (!source || source.status !== 'completed' || source.salesCycleClosedAt || (source.leadId && source.leadId !== leadId)) {
+        setPermissionError('เปลี่ยนสถานะได้เฉพาะนัดที่เข้าพบแล้วและยังไม่จบรอบ');
+        return false;
+      }
+    }
     if (!isClosure && oldStage === newStage) return true;
 
     const now = new Date().toISOString();
@@ -986,7 +957,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       return false;
     }
     if (!isClosure && activeLeadModal && activeLeadModal.id === leadId) {
-      setActiveLeadModal(updatedLead);
+      setActiveLeadModal(getCachedLeads().find(item => item.id === updatedLead.id) || updatedLead);
     }
     return true;
   };
@@ -1030,17 +1001,18 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         updatedLead,
         closure.id,
         closure.closedAt,
-        currentRole
+        currentRole, deletePassword
       );
       if (!result.success) {
         setDeleteError(result.error || 'ลบรอบการขายไม่สำเร็จ');
         return;
       }
-      if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(updatedLead);
+      if (activeLeadModal?.id === updatedLead.id) setActiveLeadModal(getCachedLeads().find(item => item.id === updatedLead.id) || updatedLead);
       setClosureToDelete(null);
     } catch {
       setDeleteError('ลบรอบการขายไม่สำเร็จ กรุณาลองใหม่');
     } finally {
+      setDeletePassword('');
       setIsDeleting(false);
     }
   };
@@ -1077,7 +1049,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     const hasScheduled = (lead: B2BLead) =>
       appointments.some(
         (apt) =>
-          apt.status === 'scheduled' &&
+          (apt.status === 'scheduled' || apt.status === 'rescheduled') &&
           !apt.salesCycleClosedAt &&
           appointmentBelongsToLead(apt, lead)
       );
@@ -1246,15 +1218,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             setEditingApt(apt);
             setIsAddAptModalOpen(true);
           }}
+          canDelete={isAdmin}
           onDeleteAppointment={handleDeleteAppointment}
           onUpdateLeadStage={handleUpdateLeadStage}
-          onCloseDeal={(leadId, appointmentId, outcome) =>
-            handleUpdateLeadStage(
-              leadId,
-              outcome === 'success' ? 'ปิดการขาย' : 'ปิดการขายไม่สำเร็จ',
-              appointmentId
-            )
-          }
           onSelectLeadForSearch={onSelectLeadForSearch}
         />
       ) : (
@@ -1689,9 +1655,9 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               >
                 <Calendar className="w-4 h-4" /> + ลงนัดหมายเพิ่ม
               </button>
-              {activeLeadAppointments.filter((apt) => apt.status === 'scheduled' && !apt.salesCycleClosedAt).length > 0 && (
+              {activeLeadAppointments.filter((apt) => (apt.status === 'scheduled' || apt.status === 'rescheduled') && !apt.salesCycleClosedAt).length > 0 && (
                 <span className="text-[11px] font-semibold text-[#2E6B45] bg-[#EEF6EB] border border-[#D4E6D0] px-2.5 py-1 rounded-full">
-                  มีนัดรอเข้าพบ {activeLeadAppointments.filter((apt) => apt.status === 'scheduled' && !apt.salesCycleClosedAt).length} นัด
+                  มีนัดรอเข้าพบ {activeLeadAppointments.filter((apt) => (apt.status === 'scheduled' || apt.status === 'rescheduled') && !apt.salesCycleClosedAt).length} นัด
                 </span>
               )}
             </div>
@@ -1752,7 +1718,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                       {isAdmin && (
                         <button
                           type="button"
-                          onClick={() => setClosureToDelete({ leadId: activeLeadModal.id, closureId: closure.id })}
+                          onClick={() => { setDeletePassword(''); setDeleteError(null); setClosureToDelete({ leadId: activeLeadModal.id, closureId: closure.id }); }}
                           className="p-1.5 rounded-lg text-red-500 hover:bg-red-50"
                           title="ลบรอบนี้"
                         >
@@ -1852,14 +1818,14 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                         >
                           <Edit2 className="w-3 h-3" />
                         </button>
-                        <button
+                        {isAdmin && <button
                           type="button"
                           onClick={() => handleDeleteAppointment(apt.id)}
                           className="p-1 rounded-md hover:bg-red-100 text-red-500 cursor-pointer"
                           title="ลบนัดหมาย"
                         >
                           <Trash2 className="w-3 h-3" />
-                        </button>
+                        </button>}
                       </div>
                     </div>
                   ))}
@@ -1960,6 +1926,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         onReschedule={handleRescheduleAppointment}
         onComplete={handleCompleteAppointment}
         onCancelAppointment={handleCancelAppointment}
+        onNotMet={async (apt) => handleSaveAppointment({ ...apt, status: 'not_met' })}
         onUpdateLeadStage={handleUpdateLeadStage}
         leads={leadsList}
         editAppointment={editingApt}
@@ -2001,7 +1968,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                 ยืนยันการลบนัดหมาย?
               </h3>
               <p className="text-xs text-[#527060]">
-                ต้องการลบนัดหมายนี้ออกจากปฏิทินและระบบใช่หรือไม่
+                ลบนัดนี้ออกจากปฏิทิน โดยสถิติและประวัติปิดดีลขององค์กรยังคงอยู่
               </p>
             </div>
 
@@ -2018,11 +1985,17 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               )}
             </div>
 
+            <label className="block text-xs text-[#527060]">
+              ยืนยันรหัสผ่านแอดมินก่อนลบ
+              <input type="password" autoComplete="current-password" value={deletePassword}
+                onChange={(event) => setDeletePassword(event.target.value)} disabled={isDeleting}
+                className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2" />
+            </label>
             <div className="flex items-center gap-2.5 pt-2">
               <button
                 type="button"
                 disabled={isDeleting}
-                onClick={() => setAppointmentToDelete(null)}
+                onClick={() => { setDeletePassword(''); setAppointmentToDelete(null); }}
                 className="flex-1 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-bold transition-all cursor-pointer"
               >
                 ยกเลิก
@@ -2069,11 +2042,17 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               )}
             </div>
 
+            <label className="block text-xs text-[#527060]">
+              ยืนยันรหัสผ่านแอดมินก่อนลบ
+              <input type="password" autoComplete="current-password" value={deletePassword}
+                onChange={(event) => setDeletePassword(event.target.value)} disabled={isDeleting}
+                className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2" />
+            </label>
             <div className="flex items-center gap-2.5 pt-2">
               <button
                 type="button"
                 disabled={isDeleting}
-                onClick={() => setLeadToDelete(null)}
+                onClick={() => { setDeletePassword(''); setLeadToDelete(null); }}
                 className="flex-1 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-bold transition-all cursor-pointer"
               >
                 ยกเลิก
@@ -2103,8 +2082,14 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               <h3 className="text-base font-bold text-[#1F3E2D]">ลบรอบการขายนี้?</h3>
               <p className="text-xs text-[#527060]">เฉพาะ Administrator เท่านั้น การลบจะกระทบเฉพาะสถิติรอบนี้ ไม่ลบองค์กรและไม่นัดหมายเดิม</p>
             </div>
+            <label className="block text-xs text-[#527060]">
+              ยืนยันรหัสผ่านแอดมินก่อนลบ
+              <input type="password" autoComplete="current-password" value={deletePassword}
+                onChange={(event) => setDeletePassword(event.target.value)} disabled={isDeleting}
+                className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2" />
+            </label>
             <div className="flex items-center gap-2.5 pt-2">
-              <button type="button" disabled={isDeleting} onClick={() => setClosureToDelete(null)}
+              <button type="button" disabled={isDeleting} onClick={() => { setDeletePassword(''); setClosureToDelete(null); }}
                 className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-xs font-bold">
                 ยกเลิก
               </button>
@@ -2158,3 +2143,4 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     </div>
   );
 };
+
