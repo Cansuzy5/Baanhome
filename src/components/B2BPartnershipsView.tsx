@@ -279,6 +279,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   const [closureToDelete, setClosureToDelete] = useState<{ leadId: string; closureId: string } | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
@@ -379,22 +380,22 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     const target = leadsList.find((l) => l.id === leadId);
     if (target) {
       setDeleteError(null);
-      setLeadToDelete(target);
+      setDeletePassword(''); setLeadToDelete(target);
     }
   };
 
   // Execute confirmed lead deletion
   const confirmDeleteLead = async () => {
-    if (!leadToDelete || isDeleting) return;
+    if (!leadToDelete || !isAdmin || isDeleting) return;
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      const result = await deleteCentralB2BLead(leadToDelete.id, currentRole);
+      const result = await deleteCentralB2BLead(leadToDelete.id, currentRole, deletePassword);
       if (!result.success) { setDeleteError(result.error || 'ลบไม่สำเร็จ'); return; }
       if (activeLeadModal?.id === leadToDelete.id) setActiveLeadModal(null);
       setLeadToDelete(null);
     } catch { setDeleteError('ลบไม่สำเร็จ กรุณาลองใหม่'); }
-    finally { setIsDeleting(false); }
+    finally { setDeletePassword(''); setIsDeleting(false); }
   };
 
   // Handle Add or Edit Appointment.
@@ -662,13 +663,13 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     const target = appointments.find((a) => a.id === appointmentId);
     if (target) {
       setDeleteError(null);
-      setAppointmentToDelete(target);
+      setDeletePassword(''); setAppointmentToDelete(target);
     }
   };
 
   // Execute confirmed appointment deletion
   const confirmDeleteAppointment = async () => {
-    if (!appointmentToDelete || isDeleting) return;
+    if (!appointmentToDelete || !isAdmin || isDeleting) return;
     setIsDeleting(true);
     setDeleteError(null);
 
@@ -682,7 +683,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
 
       let result;
       let updatedLead: B2BLead | undefined;
-      if (linkedLead) {
+      if (linkedLead && !deletingAppointment.salesCycleClosedAt) {
         const nextAppointment = getScheduledAppointmentForLead(
           linkedLead,
           appointments,
@@ -703,7 +704,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               changes: [`ลบนัดหมายวันที่ ${deletingAppointment.date} เวลา ${deletingAppointment.time}`],
             },
             ...(linkedLead.history || []),
-          ].slice(0, 100),
+          ],
         };
         result = await saveCentralB2BWorkflow(
           {
@@ -711,10 +712,10 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             deleteAppointmentId: deletingAppointment.id,
             expectedAppointmentRevision: deletingAppointment._revision,
           },
-          currentRole
+          currentRole, deletePassword
         );
       } else {
-        result = await deleteCentralB2BAppointment(deletingAppointment.id, currentRole);
+        result = await deleteCentralB2BAppointment(deletingAppointment.id, currentRole, deletePassword);
       }
 
       if (!result.success) {
@@ -726,6 +727,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     } catch {
       setDeleteError('ลบไม่สำเร็จ กรุณาลองใหม่');
     } finally {
+      setDeletePassword('');
       setIsDeleting(false);
     }
   };
@@ -999,7 +1001,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
         updatedLead,
         closure.id,
         closure.closedAt,
-        currentRole
+        currentRole, deletePassword
       );
       if (!result.success) {
         setDeleteError(result.error || 'ลบรอบการขายไม่สำเร็จ');
@@ -1010,6 +1012,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     } catch {
       setDeleteError('ลบรอบการขายไม่สำเร็จ กรุณาลองใหม่');
     } finally {
+      setDeletePassword('');
       setIsDeleting(false);
     }
   };
@@ -1215,6 +1218,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
             setEditingApt(apt);
             setIsAddAptModalOpen(true);
           }}
+          canDelete={isAdmin}
           onDeleteAppointment={handleDeleteAppointment}
           onUpdateLeadStage={handleUpdateLeadStage}
           onSelectLeadForSearch={onSelectLeadForSearch}
@@ -1714,7 +1718,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                       {isAdmin && (
                         <button
                           type="button"
-                          onClick={() => setClosureToDelete({ leadId: activeLeadModal.id, closureId: closure.id })}
+                          onClick={() => { setDeletePassword(''); setDeleteError(null); setClosureToDelete({ leadId: activeLeadModal.id, closureId: closure.id }); }}
                           className="p-1.5 rounded-lg text-red-500 hover:bg-red-50"
                           title="ลบรอบนี้"
                         >
@@ -1814,14 +1818,14 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                         >
                           <Edit2 className="w-3 h-3" />
                         </button>
-                        <button
+                        {isAdmin && <button
                           type="button"
                           onClick={() => handleDeleteAppointment(apt.id)}
                           className="p-1 rounded-md hover:bg-red-100 text-red-500 cursor-pointer"
                           title="ลบนัดหมาย"
                         >
                           <Trash2 className="w-3 h-3" />
-                        </button>
+                        </button>}
                       </div>
                     </div>
                   ))}
@@ -1964,7 +1968,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
                 ยืนยันการลบนัดหมาย?
               </h3>
               <p className="text-xs text-[#527060]">
-                ต้องการลบนัดหมายนี้ออกจากปฏิทินและระบบใช่หรือไม่
+                ลบนัดนี้ออกจากปฏิทิน โดยสถิติและประวัติปิดดีลขององค์กรยังคงอยู่
               </p>
             </div>
 
@@ -1981,11 +1985,17 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               )}
             </div>
 
+            <label className="block text-xs text-[#527060]">
+              ยืนยันรหัสผ่านแอดมินก่อนลบ
+              <input type="password" autoComplete="current-password" value={deletePassword}
+                onChange={(event) => setDeletePassword(event.target.value)} disabled={isDeleting}
+                className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2" />
+            </label>
             <div className="flex items-center gap-2.5 pt-2">
               <button
                 type="button"
                 disabled={isDeleting}
-                onClick={() => setAppointmentToDelete(null)}
+                onClick={() => { setDeletePassword(''); setAppointmentToDelete(null); }}
                 className="flex-1 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-bold transition-all cursor-pointer"
               >
                 ยกเลิก
@@ -2032,11 +2042,17 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               )}
             </div>
 
+            <label className="block text-xs text-[#527060]">
+              ยืนยันรหัสผ่านแอดมินก่อนลบ
+              <input type="password" autoComplete="current-password" value={deletePassword}
+                onChange={(event) => setDeletePassword(event.target.value)} disabled={isDeleting}
+                className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2" />
+            </label>
             <div className="flex items-center gap-2.5 pt-2">
               <button
                 type="button"
                 disabled={isDeleting}
-                onClick={() => setLeadToDelete(null)}
+                onClick={() => { setDeletePassword(''); setLeadToDelete(null); }}
                 className="flex-1 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-100 text-gray-700 text-xs font-bold transition-all cursor-pointer"
               >
                 ยกเลิก
@@ -2066,8 +2082,14 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               <h3 className="text-base font-bold text-[#1F3E2D]">ลบรอบการขายนี้?</h3>
               <p className="text-xs text-[#527060]">เฉพาะ Administrator เท่านั้น การลบจะกระทบเฉพาะสถิติรอบนี้ ไม่ลบองค์กรและไม่นัดหมายเดิม</p>
             </div>
+            <label className="block text-xs text-[#527060]">
+              ยืนยันรหัสผ่านแอดมินก่อนลบ
+              <input type="password" autoComplete="current-password" value={deletePassword}
+                onChange={(event) => setDeletePassword(event.target.value)} disabled={isDeleting}
+                className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2" />
+            </label>
             <div className="flex items-center gap-2.5 pt-2">
-              <button type="button" disabled={isDeleting} onClick={() => setClosureToDelete(null)}
+              <button type="button" disabled={isDeleting} onClick={() => { setDeletePassword(''); setClosureToDelete(null); }}
                 className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-xs font-bold">
                 ยกเลิก
               </button>

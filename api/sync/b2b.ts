@@ -1,7 +1,8 @@
+import { verifyDeleteAdministrator, B2BPermissionError } from '../../lib/b2bDeleteAuthorization.js';
 import { doc, getDocFromServer, runTransaction } from 'firebase/firestore';
 import { getLegacyDb, getOperationalDb } from '../_db.js';
 import { setCorsHeaders } from '../../lib/cors.js';
-import { applyB2BMutation, B2BConflictError, type B2BData } from '../../lib/b2bMutation.js';
+import { applyB2BMutation, isB2BDeletion, B2BConflictError, type B2BData } from '../../lib/b2bMutation.js';
 const normalize = (value: any): B2BData => ({ leads: Array.isArray(value?.leads) ? value.leads : [], appointments: Array.isArray(value?.appointments) ? value.appointments : [] });
 export default async function handler(req: any, res: any) {
  setCorsHeaders(res); res.setHeader('Cache-Control', 'no-store');
@@ -27,12 +28,22 @@ export default async function handler(req: any, res: any) {
   if(req.method === 'GET') { const snap=await getDocFromServer(ref);return res.status(200).json({...normalize(snap.exists()?snap.data().payload:null),version:Number(snap.data()?.version || 0)}); }
   const next=await runTransaction(getOperationalDb(),async tx=>{
    const snap=await tx.get(ref);
-   const value=applyB2BMutation(normalize(snap.exists()?snap.data().payload:null),req.body);
+   const deleting = isB2BDeletion(req.body);
+   if (deleting) {
+    const credentials = req.body.deleteAuthorization;
+    if (typeof credentials?.userId !== 'string' || !credentials.userId || credentials.userId.includes('/')) {
+     throw new B2BPermissionError('กรุณายืนยันรหัสผ่านแอดมินก่อนลบ');
+    }
+    const user = await tx.get(doc(getOperationalDb(), 'appUsers', credentials.userId));
+    verifyDeleteAdministrator(user.exists() ? user.data() : null, credentials.password);
+   }
+   const value=applyB2BMutation(normalize(snap.exists()?snap.data().payload:null),req.body,deleting);
    const version=Number(snap.data()?.version || 0)+1;
    tx.set(ref,{payload:value,version,updatedAt:new Date().toISOString()},{merge:true});return {...value,version};
   });
   return res.status(200).json({success:true,...next});
  } catch(error) {
+  if (error instanceof B2BPermissionError) return res.status(403).json({success:false,error:error.message});
   if (error instanceof B2BConflictError) {
    return res.status(409).json({success:false,error:error.message});
   }

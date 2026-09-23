@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -9,21 +10,25 @@ const temp=mkdtempSync(resolve('.b2b-flow-'));
 const storage=new Map();
 globalThis.localStorage={getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v)};
 globalThis.window={dispatchEvent(){}};
+const adminPassword='fixture-only-password';
+let admin={role:'Administrator',status:'active',passwordHash:createHash('sha256').update('BaanHome_Secure_Salt_2026_!'+adminPassword).digest('hex')};
 let payload, version=0, fail=false, snapshot, observed, invalidResponse=false;
 const checkDefined=value=>{if(value===undefined)throw Error('Firestore rejects undefined');if(value&&typeof value==='object')Object.values(value).forEach(checkDefined);};
 globalThis.__db={
- doc:()=>({}),
+ doc:(_db,collection,id)=>({collection,id}),
  getDocFromServer:async()=>({exists:()=>true,data:()=>({payload,version})}),
  onSnapshot:(_ref,_options,callback)=>{snapshot=callback;return()=>{};},
  runTransaction:async(_db,fn)=>{
    let staged;
-   const result=await fn({get:async()=>({exists:()=>true,data:()=>({payload,version})}),set:(_ref,data)=>{checkDefined(data);staged=data;}});
+   const result=await fn({get:async(ref)=>({exists:()=>true,data:()=>ref.collection==='appUsers'?admin:({payload,version})}),set:(_ref,data)=>{checkDefined(data);staged=data;}});
    if(fail)throw Object.assign(Error('offline'),{code:'unavailable'});
    if(staged){payload=staged.payload;version=staged.version;}
    return result;
  }
 };
 const mock={name:'isolated-firestore',setup(b){
+ b.onResolve({filter:/authService$/},args=>({path:args.path,namespace:'mock-auth'}));
+ b.onLoad({filter:/.*/,namespace:'mock-auth'},()=>({contents:`export const getActiveSessionUser=()=>({id:'admin'});`,loader:'js'}));
  b.onResolve({filter:/firebase\/firestore$|\/firebase$|_db\.js$/},args=>({path:args.path,namespace:'mock'}));
  b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:`export const db={}; export const getOperationalDb=()=>db; export const getLegacyDb=()=>db; export const {doc,getDocFromServer,onSnapshot,runTransaction}=globalThis.__db;`,loader:'js'}));
 }};
@@ -82,11 +87,36 @@ try{
  const {B2BCalendarView}=await bundle('src/components/B2BCalendarView.tsx','calendar');
  const {AddAppointmentModal}=await bundle('src/components/AddAppointmentModal.tsx','modal');
  const noop=()=>{};
- const cal=(a)=>renderToStaticMarkup(React.createElement(B2BCalendarView,{appointments:[a],leads:payload.leads,onAddAppointment:noop,onEditAppointment:noop,onDeleteAppointment:noop,onUpdateLeadStage:noop,onCloseDeal:noop}));
+ const cal=(a,canDelete=false)=>renderToStaticMarkup(React.createElement(B2BCalendarView,{appointments:[a],canDelete,leads:payload.leads,onAddAppointment:noop,onEditAppointment:noop,onDeleteAppointment:noop,onUpdateLeadStage:noop,onCloseDeal:noop}));
  assert.ok(cal(archived).includes('ปิดดีลสำเร็จ'));assert.ok(cal(archived).includes('วันที่ปิดดีล'));
  const modal=(a)=>renderToStaticMarkup(React.createElement(AddAppointmentModal,{isOpen:true,editAppointment:a,leads:payload.leads,onClose:noop,onSave:noop,onReschedule:noop,onComplete:noop,onCancelAppointment:noop,onNotMet:noop,onUpdateLeadStage:noop,onEditLead:noop}));
  assert.ok(!modal(appointment).includes('สถานะการติดตามองค์กร'));
  assert.ok(modal({...appointment,status:'completed'}).includes('สถานะการติดตามองค์กร'));
  const closed=modal(archived);assert.ok(closed.includes('ปิดดีลสำเร็จ'));assert.ok(!closed.includes('<select'));assert.ok(!closed.includes('บันทึกรายละเอียด'));
+ // Delete permissions must hold at both service and API, including workflow deletion.
+ const dataBeforeDelete=structuredClone(payload);
+ const post=async(body)=>{const r=await fetch('/api/sync/b2b',{method:'POST',body:JSON.stringify(body)});return {ok:r.ok,...await r.json()};};
+ for(const body of [{action:'delete',collection:'appointments',id:'A'}, {action:'workflow',deleteAppointmentId:'A'}, {action:'deleteClosure',lead:payload.leads[0],closureId:'C'}]) {
+   assert.equal((await post(body)).ok,false,'API denies missing credentials');
+   assert.deepEqual(payload,dataBeforeDelete);
+ }
+ result=await service.saveCentralB2BWorkflow({deleteAppointmentId:'A'},'Operator',adminPassword);
+ assert.equal(result.success,false);
+ result=await service.deleteCentralB2BAppointment('A','Administrator','wrong');assert.equal(result.success,false);
+ admin.role='Operator';
+ result=await service.deleteCentralB2BAppointment('A','Administrator',adminPassword);assert.equal(result.success,false,'server ignores spoofed client role');
+ admin.role='Administrator';admin.status='inactive';
+ result=await service.deleteCentralB2BAppointment('A','Administrator',adminPassword);assert.equal(result.success,false);
+ admin.status='active';fail=true;
+ result=await service.deleteCentralB2BAppointment('A','Administrator',adminPassword);assert.equal(result.success,false);assert.deepEqual(payload,dataBeforeDelete);fail=false;
+ result=await service.deleteCentralB2BAppointment('A','Administrator',adminPassword);assert.equal(result.success,true,result.error);
+ assert.ok(!payload.appointments.some(a=>a.id==='A'));
+ assert.deepEqual(payload.leads,dataBeforeDelete.leads,'deleting closed appointment preserves organization, current cycle and closure statistics');
+ assert.deepEqual(payload.appointments.find(a=>a.id==='B'),dataBeforeDelete.appointments.find(a=>a.id==='B'));
+ const today=new Date();const date=[today.getFullYear(),String(today.getMonth()+1).padStart(2,'0'),String(today.getDate()).padStart(2,'0')].join('-');
+ assert.ok(!cal({...archived,date}).includes('title="ลบนัดหมาย"'));
+ assert.ok(cal({...archived,date},true).includes('title="ลบนัดหมาย"'));
+ assert.ok(cal(archived).includes('<details'));
+ console.log('PASS: administrator deletion, rejected operator/inactive/wrong-password requests, failed transaction, preserved closure statistics, admin-only controls, compact calendar');
  console.log('PASS: exact appointment, success/failure rounds, Firestore-compatible values, API response verification, transaction failure, idempotency, old snapshot rejection, new cycle isolation, archived read-only, rendered dropdown/closure UI');
 }finally{rmSync(temp,{recursive:true,force:true});}

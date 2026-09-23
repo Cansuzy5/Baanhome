@@ -29,7 +29,7 @@ function upsert(items: any[], item: any, expectedRevision?: number): any[] {
 function deleteById(items: any[], id: unknown, expectedRevision?: number): any[] {
   if (typeof id !== 'string' || !id.trim()) throw new Error('Missing record ID');
   const existing = items.find(current => current.id === id);
-  if (existing?.salesCycleClosedAt) throw new B2BConflictError('ห้ามลบนัดที่จบรอบแล้ว');
+
   if (
     existing &&
     expectedRevision !== undefined &&
@@ -44,7 +44,13 @@ function normalizeLeadName(value: unknown): string {
   return String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('th-TH');
 }
 
-export function applyB2BMutation(current: B2BData, body: any): B2BData {
+export function isB2BDeletion(body: any): boolean {
+  return body?.action === 'delete' || body?.action === 'deleteClosure' ||
+    (body?.action === 'workflow' && body.deleteAppointmentId !== undefined);
+}
+
+export function applyB2BMutation(current: B2BData, body: any, verifiedAdmin = false): B2BData {
+  if (isB2BDeletion(body) && !verifiedAdmin) throw new Error('เฉพาะแอดมินที่ยืนยันตัวตนแล้วเท่านั้นที่ลบได้');
   if (!body || typeof body !== 'object') throw new Error('Invalid B2B request');
 
   // Calendar close action: make the clicked appointment the authoritative anchor.
