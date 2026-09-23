@@ -28,8 +28,7 @@ interface B2BCalendarViewProps {
   onAddAppointment: (date?: string) => void;
   onEditAppointment: (appointment: B2BAppointment) => void;
   onDeleteAppointment: (appointmentId: string) => void;
-  onUpdateLeadStage: (leadId: string, stage: B2BPipelineStatus | string, sourceAppointmentId?: string) => void;
-  onCloseDeal: (leadId: string, appointmentId: string, outcome: 'success' | 'unsuccessful') => void;
+  onUpdateLeadStage: (leadId: string, stage: B2BPipelineStatus | string, sourceAppointmentId?: string) => Promise<boolean>;
   onSelectLeadForSearch?: (leadName: string) => void;
 }
 
@@ -57,44 +56,22 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   onEditAppointment,
   onDeleteAppointment,
   onUpdateLeadStage,
-  onCloseDeal,
   onSelectLeadForSearch,
 }) => {
   // Current view year & month - default to September 2026 based on metadata
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [selectedDateStr, setSelectedDateStr] = useState<string>(() => localDateKey());
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [savingAppointmentId, setSavingAppointmentId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState('');
 
   const normalizeLeadName = (value?: string) =>
     (value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('th-TH');
 
   const getLeadForAppointment = (apt: B2BAppointment) => {
-    // Trust leadId only when it still agrees with the appointment identity.
-    // Legacy test records can contain an ID that points to a different existing lead.
-    if (apt.leadId) {
-      const byId = leads.find((lead) => lead.id === apt.leadId);
-      if (
-        byId &&
-        (!apt.leadName || normalizeLeadName(byId.name) === normalizeLeadName(apt.leadName))
-      ) {
-        return byId;
-      }
-    }
-
-    const sameName = leads.filter(
-      (lead) => normalizeLeadName(lead.name) === normalizeLeadName(apt.leadName)
-    );
-    if (sameName.length === 1) return sameName[0];
-
-    if (apt.phone) {
-      const normalizedPhone = apt.phone.replace(/\D/g, '');
-      const byPhone = sameName.find(
-        (lead) => (lead.phone || '').replace(/\D/g, '') === normalizedPhone
-      );
-      if (byPhone) return byPhone;
-    }
-
-    return undefined;
+    if (apt.leadId) return leads.find(lead => lead.id === apt.leadId);
+    const matches = leads.filter(lead => normalizeLeadName(lead.name) === normalizeLeadName(apt.leadName));
+    return matches.length === 1 ? matches[0] : undefined;
   };
 
   const getLeadStage = (apt: B2BAppointment) => {
@@ -103,32 +80,10 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
     return raw === 'เข้าพบแล้ว' ? 'ติดตามต่อ' : raw;
   };
 
-  // Prefer explicit cycle metadata. For test/legacy appointments created before
-  // cycle metadata existed, infer the first sales closure that happened after
-  // the appointment was created so historical calendar records still read correctly.
-  const getAppointmentClosure = (apt: B2BAppointment) => {
-    if (apt.salesCycleClosedAt) {
-      return {
-        id: apt.salesCycleClosureId,
-        closedAt: apt.salesCycleClosedAt,
-        outcome: apt.salesCycleOutcome,
-      };
-    }
-
-    const lead = getLeadForAppointment(apt);
-    if (!lead?.salesClosures?.length) return undefined;
-
-    const anchorRaw = apt.completedAt || apt.createdAt || `${apt.date}T${apt.time || '00:00'}:00`;
-    const anchor = new Date(anchorRaw).getTime();
-    if (!Number.isFinite(anchor)) return undefined;
-
-    return [...lead.salesClosures]
-      .filter((item) => {
-        const closedAt = new Date(item.closedAt).getTime();
-        return Number.isFinite(closedAt) && closedAt >= anchor;
-      })
-      .sort((a, b) => new Date(a.closedAt).getTime() - new Date(b.closedAt).getTime())[0];
-  };
+  // The saved appointment is the sole source for historical deal outcome.
+  const getAppointmentClosure = (apt: B2BAppointment) => apt.salesCycleClosedAt
+    ? { id: apt.salesCycleClosureId, closedAt: apt.salesCycleClosedAt, outcome: apt.salesCycleOutcome }
+    : undefined;
 
   const getPostVisitForwardStages = (currentStage: string) => {
     const order = ['ติดตามต่อ','ส่งใบเสนอราคาแล้ว','ตกลง Partnership'];
@@ -186,8 +141,8 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
 
   const appointmentCalendarLabel = (apt: B2BAppointment) => {
     const closure = getAppointmentClosure(apt);
-    if (closure?.outcome === 'success') return '✓ ปิดดีล';
-    if (closure?.outcome === 'unsuccessful') return '✕ ไม่สำเร็จ';
+    if (closure?.outcome === 'success') return 'ปิดดีลสำเร็จ';
+    if (closure?.outcome === 'unsuccessful') return 'ปิดดีลไม่สำเร็จ';
     if (closure) return 'จบรอบ';
     if (apt.status === 'completed') return 'เข้าพบแล้ว';
     if (apt.status === 'rescheduled') return 'เลื่อนนัด';
@@ -338,6 +293,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
 
   return (
     <div className="space-y-3">
+      {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
       {/* Compact calendar controls: keep the calendar visible in the first viewport */}
       <div className="bg-white rounded-2xl border border-[#DDE7DC] shadow-sm p-3 sm:p-4">
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
@@ -473,7 +429,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                     setSelectedDateStr(item.dateStr);
                     if (!hasEntries) onAddAppointment(item.dateStr);
                   }}
-                  className={`min-h-[92px] sm:min-h-[122px] xl:min-h-[152px] p-1.5 rounded-2xl flex flex-col justify-between text-left transition-all border relative ${
+                  className={`min-h-[180px] sm:min-h-[200px] xl:min-h-[220px] p-1.5 rounded-2xl flex flex-col justify-between text-left transition-all border relative ${
                     item.monthType !== 'current'
                       ? 'bg-[#FBFDFB] text-gray-300 border-transparent hover:border-[#E2ECE0]'
                       : isSelected
@@ -512,6 +468,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                         title={`${apt.time} - ${apt.leadName} - ${appointmentLabel(apt)}`}
                       >
                         {apt.time} {appointmentCalendarLabel(apt)} · {apt.leadName.replace('สำนักงาน', 'สนง.').slice(0, 13)}
+                        {apt.salesCycleClosedAt && <span className="block">วันที่ปิดดีล {closureDateLabel(apt)}</span>}
                       </div>
                     ))}
                     {dayAppointments.length < 5 && movedAppointments.slice(0, 5 - dayAppointments.length).map((move) => (
@@ -630,7 +587,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                             onEditAppointment(apt);
                           }}
                           className="p-1.5 rounded-lg hover:bg-gray-100 text-[#597866] cursor-pointer transition-colors"
-                          title="แก้ไขนัดหมาย"
+                          disabled={!!apt.salesCycleClosedAt} title="แก้ไขนัดหมาย"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
@@ -641,7 +598,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                             onDeleteAppointment(apt.id);
                           }}
                           className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 hover:text-red-700 cursor-pointer transition-colors"
-                          title="ลบนัดหมาย"
+                          disabled={!!apt.salesCycleClosedAt} title="ลบนัดหมาย"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -684,7 +641,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                           onClick={(e) => { e.stopPropagation(); onEditAppointment(apt); }}
                           className="px-2.5 py-1 rounded-lg bg-[#1B3E2D] text-white font-bold"
                         >
-                          จัดการนัด
+                          {apt.salesCycleClosedAt ? 'ดูประวัติ' : 'จัดการนัด'}
                         </button>
                       </div>
                       {apt.status === 'completed' && !getAppointmentClosure(apt) && (() => {
@@ -697,17 +654,17 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                             <span className="text-[#72877B] font-semibold">สถานะติดตาม:</span>
                             <select
                               value={stage}
-                              onChange={(e) => {
+                              disabled={savingAppointmentId !== null}
+                              onChange={async (e) => {
                                 const nextStage = e.target.value;
-                                if (nextStage === 'ปิดการขาย' || nextStage === 'ปิดการขายไม่สำเร็จ') {
-                                  onCloseDeal(
-                                    lead.id,
-                                    apt.id,
-                                    nextStage === 'ปิดการขาย' ? 'success' : 'unsuccessful'
-                                  );
-                                  return;
-                                }
-                                onUpdateLeadStage(lead.id, nextStage, apt.id);
+                                setSavingAppointmentId(apt.id);
+                                setSaveError('');
+                                try {
+                                  const ok = await onUpdateLeadStage(lead.id, nextStage, apt.id);
+                                  if (!ok) setSaveError('บันทึกสถานะไม่สำเร็จ กรุณาตรวจสอบข้อความแจ้งเตือนแล้วลองใหม่');
+                                } catch {
+                                  setSaveError('บันทึกสถานะไม่สำเร็จ กรุณารีเฟรชตรวจสอบก่อนลองอีกครั้ง');
+                                } finally { setSavingAppointmentId(null); }
                               }}
                               className={`max-w-[190px] px-2 py-1 rounded-lg border border-[#D5E2D2] font-bold ${stageClass(stage)}`}
                             >
@@ -787,7 +744,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                           onEditAppointment(apt);
                         }}
                         className="p-1 rounded-md hover:bg-gray-200 text-[#597866] cursor-pointer"
-                        title="แก้ไขนัดหมาย"
+                        disabled={!!apt.salesCycleClosedAt} title="แก้ไขนัดหมาย"
                       >
                         <Edit2 className="w-3 h-3" />
                       </button>
@@ -798,7 +755,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                           onDeleteAppointment(apt.id);
                         }}
                         className="p-1 rounded-md hover:bg-red-100 text-red-500 cursor-pointer"
-                        title="ลบนัดหมาย"
+                        disabled={!!apt.salesCycleClosedAt} title="ลบนัดหมาย"
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -824,3 +781,4 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
     </div>
   );
 };
+

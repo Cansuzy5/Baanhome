@@ -18,6 +18,7 @@ import { PIPELINE_STAGES } from '../data/b2bPartnerships';
 interface AddAppointmentModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onNotMet: (appointment: B2BAppointment) => Promise<boolean>;
   onSave: (appointment: B2BAppointment) => Promise<boolean>;
   onReschedule: (appointment: B2BAppointment, newDate: string, newTime: string, reason: string) => Promise<boolean>;
   onComplete: (appointment: B2BAppointment, resultNote: string) => Promise<boolean>;
@@ -51,6 +52,7 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
   isOpen,
   onClose,
   onSave,
+  onNotMet,
   onReschedule,
   onComplete,
   onCancelAppointment,
@@ -79,7 +81,7 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
   const [resultNote, setResultNote] = useState(editAppointment?.resultNote || '');
 
   const selectedLead = useMemo(
-    () => leads.find((lead) => lead.id === selectedLeadId) || leads.find((lead) => lead.name === leadName),
+    () => selectedLeadId ? leads.find((lead) => lead.id === selectedLeadId) : leads.find((lead) => lead.name === leadName),
     [leads, selectedLeadId, leadName]
   );
 
@@ -108,6 +110,24 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
   }, [leadName, leads]);
 
   if (!isOpen) return null;
+  if (editAppointment?.salesCycleClosedAt) {
+    const label = editAppointment.salesCycleOutcome === 'success' ? 'ปิดดีลสำเร็จ'
+      : editAppointment.salesCycleOutcome === 'unsuccessful' ? 'ปิดดีลไม่สำเร็จ' : 'จบรอบแล้ว';
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+        <div className="bg-white rounded-3xl p-6 max-w-2xl w-full space-y-3">
+          <h2 className="font-bold text-lg">{editAppointment.leadName}</h2>
+          <p className="font-bold">{label} · วันที่ปิดดีล {new Date(editAppointment.salesCycleClosedAt).toLocaleDateString('th-TH')}</p>
+          <p>นัดวันที่ {editAppointment.date} เวลา {editAppointment.time}</p>
+          <p>{editAppointment.title} · {editAppointment.location}</p>
+          <p>{editAppointment.resultNote || editAppointment.notes}</p>
+          <p className="text-sm text-slate-500">ประวัติรอบที่จบแล้ว (อ่านอย่างเดียว)</p>
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl bg-[#1B3E2D] text-white">ปิด</button>
+        </div>
+      </div>
+    );
+  }
+
 
   const chooseLead = (lead: B2BLead) => {
     setSelectedLeadId(lead.id);
@@ -254,7 +274,7 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
                   editAppointment.status === 'cancelled' ? 'bg-slate-200 text-slate-700' :
                   'bg-blue-100 text-blue-800'
                 }`}>
-                  {editAppointment.status === 'completed' ? 'เข้าพบแล้ว' : editAppointment.status === 'cancelled' ? 'ยกเลิกนัดแล้ว' : 'รอเข้าพบ'}
+                  {editAppointment.status === 'completed' ? 'เข้าพบแล้ว' : editAppointment.status === 'cancelled' ? 'ยกเลิกนัดแล้ว' : editAppointment.status === 'not_met' ? 'ไม่ได้เข้าพบ' : editAppointment.status === 'rescheduled' ? 'เลื่อนนัด' : 'รอเข้าพบ'}
                 </span>
               </div>
 
@@ -301,7 +321,8 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
               )}
 
               {!isClosedAppointment && (
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button type="button" disabled={isSaving} onClick={() => runAction(() => onNotMet(editAppointment))} className="py-2 rounded-xl bg-slate-200 text-slate-700 text-xs font-bold">ไม่ได้เข้าพบ</button>
                   <button type="button" onClick={() => setActionMode(actionMode === 'complete' ? 'none' : 'complete')} className="py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold flex items-center justify-center gap-1">
                     <ClipboardCheck className="w-4 h-4"/> เข้าพบแล้ว
                   </button>
@@ -403,3 +424,4 @@ export const AddAppointmentModal: React.FC<AddAppointmentModalProps> = ({
     </div>
   );
 };
+

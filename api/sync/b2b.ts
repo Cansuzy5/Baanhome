@@ -8,7 +8,7 @@ export default async function handler(req: any, res: any) {
  if(req.method === 'OPTIONS') return res.status(200).end();
  if(!['GET','POST'].includes(req.method)) return res.status(405).json({error:'Method Not Allowed'});
  if(req.method === 'POST') {
-  try { if(!req.body?.action) throw new Error('Whole-list replacement is disabled'); applyB2BMutation(normalize(null),req.body); }
+  try { if(!req.body?.action) throw new Error('Whole-list replacement is disabled');  }
   catch(error:any) { return res.status(400).json({error:error.message}); }
  }
  try {
@@ -24,18 +24,21 @@ export default async function handler(req: any, res: any) {
     });
    }
   }
-  if(req.method === 'GET') { const snap=await getDocFromServer(ref);return res.status(200).json(normalize(snap.exists()?snap.data().payload:null)); }
+  if(req.method === 'GET') { const snap=await getDocFromServer(ref);return res.status(200).json({...normalize(snap.exists()?snap.data().payload:null),version:Number(snap.data()?.version || 0)}); }
   const next=await runTransaction(getOperationalDb(),async tx=>{
    const snap=await tx.get(ref);
    const value=applyB2BMutation(normalize(snap.exists()?snap.data().payload:null),req.body);
-   tx.set(ref,{payload:value,updatedAt:new Date().toISOString()},{merge:true});return value;
+   const version=Number(snap.data()?.version || 0)+1;
+   tx.set(ref,{payload:value,version,updatedAt:new Date().toISOString()},{merge:true});return {...value,version};
   });
   return res.status(200).json({success:true,...next});
  } catch(error) {
   if (error instanceof B2BConflictError) {
    return res.status(409).json({success:false,error:error.message});
   }
+  if (error instanceof Error && !('code' in error)) return res.status(400).json({success:false,error:error.message});
   console.error('Central B2B persistence failed',error);
   return res.status(503).json({success:false,error:'เชื่อมต่อ Firestore ไม่สำเร็จ ยังยืนยันการบันทึกไม่ได้ กรุณารีเฟรชตรวจสอบก่อนลองอีกครั้ง'});
  }
 }
+
