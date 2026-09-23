@@ -294,10 +294,10 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   }, [appointments, leads, year, month]);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
       {/* Compact calendar controls: keep the calendar visible in the first viewport */}
-      <div className="bg-white rounded-2xl border border-[#DDE7DC] shadow-sm p-3 sm:p-4">
+      <div className="bg-white rounded-2xl border border-[#DDE7DC] shadow-sm p-2.5 sm:p-3">
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 text-xs font-bold text-[#2D5A43]">
@@ -331,11 +331,11 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
       </div>
 
       {/* Main Grid: Calendar on Left, Selected Day & Agenda on Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start lg:h-[calc(100vh-230px)] lg:min-h-0">
         {/* Calendar Section: wider for busy days */}
-        <div className="lg:col-span-8 bg-white rounded-2xl p-4 sm:p-5 border border-[#E3ECE1] shadow-sm flex flex-col">
+        <div className="lg:col-span-8 bg-white rounded-2xl p-3 sm:p-4 border border-[#E3ECE1] shadow-sm flex flex-col lg:h-full lg:min-h-0">
           {/* Calendar Header Navigation */}
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#EEF4ED]">
+          <div className="flex items-center justify-between mb-2 pb-2 border-b border-[#EEF4ED]">
             <div className="flex items-center gap-2">
               <CalendarIcon className="w-5 h-5 text-[#2D5A43]" />
               <h3 className="font-bold text-base sm:text-lg text-[#1B3E2D]">
@@ -371,11 +371,11 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
           </div>
 
           {/* Days of Week Header */}
-          <div className="grid grid-cols-7 gap-1 text-center mb-2">
+          <div className="grid grid-cols-7 gap-1 text-center mb-1">
             {DAYS_SHORT_TH.map((d, i) => (
               <div
                 key={d}
-                className={`py-1.5 text-xs font-bold ${
+                className={`py-1 text-xs font-bold ${
                   i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-600' : 'text-[#567563]'
                 }`}
               >
@@ -385,7 +385,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
           </div>
 
           {/* Calendar Day Cells */}
-          <div className="grid grid-cols-7 gap-1.5 items-start">
+          <div className="grid grid-cols-7 grid-rows-6 gap-1.5 items-stretch lg:flex-1 lg:min-h-0">
             {calendarDays.map((item, idx) => {
               const dayAppointments = appointmentsByDate[item.dateStr] || [];
               const movedAppointments = movedAppointmentsByDate[item.dateStr] || [];
@@ -400,7 +400,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                     setSelectedDateStr(item.dateStr);
                     if (!hasEntries) onAddAppointment(item.dateStr);
                   }}
-                  className={`min-h-[90px] sm:min-h-[108px] p-1.5 rounded-xl flex flex-col text-left transition-all border relative ${
+                  className={`min-h-[76px] sm:min-h-[84px] lg:min-h-0 lg:h-full p-1.5 rounded-xl flex flex-col text-left transition-all border relative overflow-hidden ${
                     item.monthType !== 'current'
                       ? 'bg-[#FBFDFB] text-gray-300 border-transparent hover:border-[#E2ECE0]'
                       : isSelected
@@ -431,11 +431,11 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                   </div>
 
                   {/* Busy-day preview: show up to 5 items before collapsing the rest */}
-                  <div className="space-y-1 mt-1 w-full overflow-hidden">
+                  <div className="space-y-0.5 mt-1 w-full overflow-hidden">
                     {dayAppointments.slice(0, 5).map((apt) => (
                       <div
                         key={apt.id}
-                        className={`text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded truncate font-semibold ${appointmentClass(apt)}`}
+                        className={`text-[8px] sm:text-[9px] leading-[11px] px-1 py-[1px] rounded truncate font-semibold ${appointmentClass(apt)}`}
                         title={`${apt.time} - ${apt.leadName} - ${appointmentLabel(apt)}${apt.salesCycleClosedAt ? ` · วันที่ปิดดีล ${closureDateLabel(apt)}` : ''}`}
                       >
                         {apt.time} {apt.leadName}
@@ -444,14 +444,14 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                     {dayAppointments.length < 5 && movedAppointments.slice(0, 5 - dayAppointments.length).map((move) => (
                       <div
                         key={`${move.appointmentId}-${move.fromTime}-${move.toDate}`}
-                        className="text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded truncate font-medium bg-slate-100 text-slate-500 border-l-2 border-slate-400"
+                        className="text-[8px] sm:text-[9px] leading-[11px] px-1 py-[1px] rounded truncate font-medium bg-slate-100 text-slate-500 border-l-2 border-slate-400"
                         title={`เลื่อนจากวันนี้ไป ${move.toDate} ${move.toTime}`}
                       >
                         {move.fromTime} เลื่อนแล้ว → {move.toDate.slice(5)}
                       </div>
                     ))}
                     {dayAppointments.length + movedAppointments.length > 5 && (
-                      <div className="text-[9px] sm:text-[10px] text-[#547361] font-bold px-1">
+                      <div className="text-[8px] sm:text-[9px] leading-[11px] text-[#547361] font-bold px-1">
                         + อีก {dayAppointments.length + movedAppointments.length - 5} นัด
                       </div>
                     )}
@@ -461,7 +461,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
             })}
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-[#6D8276]">
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-[#6D8276]">
             <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-blue-500" /> รอเข้าพบ</span>
             <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> เข้าพบแล้ว</span>
             <span className="inline-flex items-center gap-1"><i className="w-2.5 h-2.5 rounded-full bg-amber-500" /> เลื่อนนัด</span>
@@ -472,7 +472,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
           </div>
 
           {/* Quick Date Summary */}
-          <div className="mt-3 pt-3 border-t border-[#EEF4ED] flex items-center justify-between text-xs text-[#5D7B69]">
+          <div className="mt-2 pt-2 border-t border-[#EEF4ED] flex items-center justify-between text-[11px] text-[#5D7B69]">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-[#2D5A43] inline-block" />
               <span>วันที่เลือก: <strong>{selectedDateStr}</strong></span>
@@ -488,9 +488,9 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
         </div>
 
         {/* Right Section: selected day details */}
-        <div className="lg:col-span-4 space-y-3">
+        <div className="lg:col-span-4 space-y-2 lg:h-full lg:min-h-0 lg:overflow-hidden">
           {/* Selected Date Focus Card */}
-          <div className="bg-[#FAFBF9] rounded-3xl p-5 border border-[#E3ECE1] shadow-sm">
+          <div className="bg-[#FAFBF9] rounded-2xl p-4 border border-[#E3ECE1] shadow-sm lg:max-h-full lg:overflow-hidden">
             <div className="flex items-center justify-between mb-3">
               <div>
                 <span className="text-[11px] font-bold text-[#71917E] block">
@@ -521,12 +521,12 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                 </button>
               </div>
             ) : (
-              <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-[calc(100vh-390px)] overflow-y-auto pr-1">
                 {selectedDateAppointments.map((apt) => (
                   <div
                     key={apt.id}
                     onClick={() => onEditAppointment(apt)}
-                    className="p-3.5 rounded-2xl bg-white border border-[#DEE9DC] hover:border-[#2D5A43] transition-all space-y-2 shadow-xs cursor-pointer"
+                    className="p-3 rounded-xl bg-white border border-[#DEE9DC] hover:border-[#2D5A43] transition-all space-y-1.5 shadow-xs cursor-pointer"
                   >
                     {getAppointmentClosure(apt) && (
                       <div className="text-[11px] font-bold text-[#557064]">
