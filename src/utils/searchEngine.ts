@@ -1,3 +1,4 @@
+import { normalizeSearchText, searchTopics } from './searchLanguage';
 import { KnowledgeItem, KnowledgeCategory } from '../types';
 import { isCustomerReady } from './knowledgeFilter';
 
@@ -153,7 +154,8 @@ export function executeInstantSearch(
   query: string,
   items: KnowledgeItem[]
 ): SearchOutcome {
-  const cleanQuery = query.trim().toLowerCase();
+  const cleanQuery = normalizeSearchText(query);
+  const topics = searchTopics(cleanQuery);
   
   if (!cleanQuery) return { results: [] };
 
@@ -174,15 +176,15 @@ export function executeInstantSearch(
     const matchedKeywords: string[] = [];
 
     const itemId = (item.id || '').toLowerCase();
-    const titleStr = (item.title || '').toLowerCase();
-    const keywordsStr = (item.keywords || []).join(' ').toLowerCase();
-    const detailStr = (item.detail || []).join(' ').toLowerCase();
-    const summaryStr = (item.summary || '').toLowerCase();
-    const customerMsgStr = (item.customerMessage || '').toLowerCase();
+    const titleStr = normalizeSearchText(item.title || '');
+    const keywordsStr = normalizeSearchText((item.keywords || []).join(' '));
+    const detailStr = normalizeSearchText((item.detail || []).join(' '));
+    const summaryStr = normalizeSearchText(item.summary || '');
+    const customerMsgStr = normalizeSearchText(item.customerMessage || '');
     const categoryStr = (item.category || '').toLowerCase();
 
     // 1. Direct ID match (Highest priority)
-    if (cleanQuery === itemId || cleanQuery.includes(itemId)) {
+    if (itemId && (cleanQuery === itemId || cleanQuery.includes(itemId))) {
       score += 500;
       matchedKeywords.push('id_exact');
     }
@@ -198,7 +200,7 @@ export function executeInstantSearch(
 
     // 3. Keywords matching (Using safe Thai syllable matching)
     item.keywords?.forEach(kw => {
-      const kwLower = kw.toLowerCase();
+      const kwLower = normalizeSearchText(kw);
       if (thaiIncludes(cleanQuery, kwLower)) {
         score += kwLower.length >= 4 ? 50 : 30;
         matchedKeywords.push(kw);
@@ -211,6 +213,24 @@ export function executeInstantSearch(
       }
     });
 
+    // A service or fixed priority ID alone is not evidence for a policy question.
+    const text = [titleStr, keywordsStr, summaryStr, customerMsgStr].join(' ');
+    const serviceText = [titleStr, customerMsgStr].join(' ');
+    const directId = matchedKeywords.includes('id_exact');
+    const topicHits = topics.filter(terms => terms.some(term => thaiIncludes(text, term))).length;
+    if (!directId && topics.length && !topicHits) continue;
+    const wantsPool = cleanQuery.includes('พูลวิลล่า');
+    const wantsResort = cleanQuery.includes('รีสอร์ท');
+    const poolItem = categoryStr === 'pool-villa' || titleStr.includes('พูลวิลล่า');
+    const resortItem = titleStr.includes('รีสอร์ท') || categoryStr === 'resort-knowledge';
+    if (!directId && wantsPool && !wantsResort && resortItem && !serviceText.includes('พูลวิลล่า')) continue;
+    if (!directId && wantsResort && !wantsPool && poolItem && !serviceText.includes('รีสอร์ท')) continue;
+    if (topicHits) {
+      score += topicHits * 65;
+      score += topics.filter(terms => terms.some(term => thaiIncludes(titleStr, term))).length * 90;
+      matchedKeywords.push('topic_match');
+    }
+
     // 4. Intent mappings & Domain rules
     for (const intent of INTENT_MAPPINGS) {
       if (intent.patterns.test(cleanQuery)) {
@@ -220,7 +240,7 @@ export function executeInstantSearch(
           ...(intent.priorityId ? [intent.priorityId] : [])
         ];
         if (allPriorityIds.some(pid => item.id.toLowerCase().includes(pid.toLowerCase()))) {
-          score += 250;
+          score += 60;
           matchedKeywords.push('intent_priority');
         }
 
@@ -254,6 +274,10 @@ export function executeInstantSearch(
     if (thaiIncludes(detailStr, cleanQuery)) {
       score += 10;
     }
+
+    // Do not fabricate a match solely from readiness/category/priority bonuses.
+    const hasEvidence = matchedKeywords.some(key => !['intent_priority'].includes(key));
+    if (!hasEvidence) continue;
 
     // 6. Bonus for Customer-Ready Items with Customer Messages (Crucial for Q&A!)
     if (isCustomerReady(item)) {
@@ -349,3 +373,4 @@ export async function askGemini(
     };
   }
 }
+
