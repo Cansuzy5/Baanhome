@@ -382,7 +382,7 @@ export const ROLE_PERMISSIONS: Record<
     badgeBg: 'bg-[#FEF6E8]',
     badgeText: 'text-[#9A5B08]',
     badgeBorder: 'border-[#F8DCAB]',
-    allowedTabs: ['qa', 'b2b', 'docs', 'sheets', 'unanswered', 'users', 'arch'],
+    allowedTabs: ['qa', 'b2b', 'docs', 'sheets', 'unanswered', 'users', 'arch', 'analytics'],
     canManageUsers: true,
     canViewSheetsHistory: true,
     canManageB2B: true,

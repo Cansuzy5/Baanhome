@@ -1,3 +1,4 @@
+import nongHomeAnalytics from './api/nong-home-analytics.js';
 import centralB2B from './api/sync/b2b.js';
 import centralUsers from './api/sync/users.js';
 import { applyB2BMutation } from './lib/b2bMutation.js';
@@ -84,6 +85,7 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json());
+  app.post('/api/nong-home-analytics', nongHomeAnalytics);
 
   // AI API Route
   app.post('/api/ask', async (req, res) => {

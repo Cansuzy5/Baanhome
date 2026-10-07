@@ -23,7 +23,7 @@ import { StaffProfile, UserRole } from '../types';
 import { ROLE_PERMISSIONS } from '../utils/authService';
 import { GoogleSheetsDbConfig } from '../utils/googleSheetsDatabase';
 
-export type NavigationTab = 'qa' | 'b2b' | 'sheets' | 'unanswered' | 'docs' | 'arch' | 'users';
+export type NavigationTab = 'qa' | 'b2b' | 'sheets' | 'unanswered' | 'docs' | 'arch' | 'users' | 'analytics';
 
 interface HeaderProps {
   currentStaff: StaffProfile;
@@ -165,6 +165,8 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="whitespace-nowrap">ประวัติ</span>
               </button>
             )}
+
+            {isAdmin && <button id="nav-tab-analytics" onClick={() => onSelectTab('analytics')} className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap ${activeTab === 'analytics' ? 'bg-[#1B3D2F] text-white' : 'text-[#415649] hover:bg-[#F2EFE8]'}`}>สถิติน้องโฮม</button>}
 
             {/* 5. จัดการสิทธิ์ (Visible to: ADMINISTRATOR ONLY) */}
             {isAdmin && (

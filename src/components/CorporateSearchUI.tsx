@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useSearchAnalytics } from '../hooks/useSearchAnalytics';
+import type { StaffProfile } from '../types';
 import { 
   Search, Filter, Loader2, Sparkles, SlidersHorizontal, CheckCircle2, Clock, 
   MapPin, CreditCard, Building2, User, Zap, X, Waves, UtensilsCrossed, 
@@ -17,6 +19,7 @@ import tropicalVillaImg from '../assets/images/tropical_resort_villa_17888405738
 interface CorporateSearchUIProps {
   activeKnowledgeItems: KnowledgeItem[];
   staffName: string;
+  analyticsStaff?: StaffProfile;
   onRecordLog: (query: string, result: SearchResult | null) => void;
   onAskUnanswered: (query: string) => void;
   searchQuery?: string;
@@ -50,6 +53,7 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({
   onSearchChange,
   activeKnowledgeItems,
   staffName,
+  analyticsStaff,
   onRecordLog,
   onAskUnanswered,
   onOpenSheetsSync,
@@ -81,6 +85,10 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({
 
   const aiAbortControllerRef = useRef<AbortController | null>(null);
   const logTimerRef = useRef<any>(null);
+  const analyticsSnapshot = useRef<{ query: string; count: number } | null>(null);
+  useSearchAnalytics(query, analyticsStaff, () =>
+    analyticsSnapshot.current?.query === query ? analyticsSnapshot.current.count : null
+  );
 
   const handleToggleAutoAi = (enabled: boolean) => {
     setAutoAiMode(enabled);
@@ -182,6 +190,7 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({
 
     // Client-side instant search
     const outcome = executeInstantSearch(debouncedQuery, activeKnowledgeItems);
+    analyticsSnapshot.current = { query: debouncedQuery, count: outcome.results?.length || 0 };
     
     // Apply filters
     let filteredResults = outcome.results || [];

@@ -3,8 +3,8 @@ import { MessageSquare, BookOpen, History, Target, ShieldCheck, User } from 'luc
 import { UserRole } from '../types';
 
 interface MobileBottomNavProps {
-  activeTab: 'qa' | 'b2b' | 'sheets' | 'unanswered' | 'docs' | 'arch' | 'users';
-  onSelectTab: (tab: 'qa' | 'b2b' | 'sheets' | 'unanswered' | 'docs' | 'arch' | 'users') => void;
+  activeTab: 'qa' | 'b2b' | 'sheets' | 'unanswered' | 'docs' | 'arch' | 'users' | 'analytics';
+  onSelectTab: (tab: 'qa' | 'b2b' | 'sheets' | 'unanswered' | 'docs' | 'arch' | 'users' | 'analytics') => void;
   currentRole?: UserRole;
   onOpenProfile?: () => void;
 }
@@ -82,6 +82,8 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             <span className="text-[10px] leading-none">B2B (101)</span>
           </button>
         )}
+
+        {currentRole === 'Administrator' && <button type="button" onClick={() => onSelectTab('analytics')} className={`text-[10px] px-2 py-2 rounded-xl ${activeTab === 'analytics' ? 'bg-[#EEF5EC] text-[#1B3D2F] font-bold' : 'text-[#697E72]'}`}>สถิติน้องโฮม</button>}
 
         {/* 4. 👑 จัดการสิทธิ์ผู้ใช้ (Administrator Only) */}
         {currentRole === 'Administrator' ? (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Header, NavigationTab } from './components/Header';
 import { CorporateSearchUI } from './components/CorporateSearchUI';
 import { CategoriesGrid } from './components/CategoriesGrid';
@@ -65,6 +65,8 @@ import {
   ROLE_PERMISSIONS
 } from './utils/authService';
 import { Sparkles, ShieldAlert, Lock, ArrowRight } from 'lucide-react';
+
+const NongHomeAnalyticsView = lazy(() => import('./components/NongHomeAnalyticsView').then(module => ({ default: module.NongHomeAnalyticsView })));
 
 export default function App() {
   // Current Authenticated User (Strict Login Required: anyone opening the link must log in first)
@@ -363,6 +365,7 @@ export default function App() {
                 onSearchChange={setSearchQuery}
                 activeKnowledgeItems={activeKnowledgeItems}
                 staffName={currentStaff.name}
+                analyticsStaff={currentStaff}
                 onOpenSheetsSync={currentRole !== 'Knowledge User' ? () => setShowSheetsSyncModal(true) : undefined}
                 isUsingCustomSheet={isUsingCustomSheet}
                 onRecordLog={(query, result) => {
@@ -505,6 +508,12 @@ export default function App() {
                   }}
                 />
               </div>
+            )}
+
+            {activeTab === 'analytics' && currentRole === 'Administrator' && (
+              <Suspense fallback={<p className="p-6 text-center">กำลังเปิดสถิติ…</p>}>
+                <NongHomeAnalyticsView key={currentStaff.id} staff={currentStaff} legacyLogs={questionLogs} />
+              </Suspense>
             )}
 
             {/* Tab: User Management & RBAC & Audit Logs (Administrator Only) */}
