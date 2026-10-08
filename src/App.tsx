@@ -265,6 +265,7 @@ export default function App() {
   };
 
   const handleSaveUserProfile = (profile: StaffProfile) => {
+    if (profile.id !== currentStaff?.id) setSearchQuery('');
     setActiveSessionUser(profile);
     setCurrentStaff(profile);
     setShowWelcomeGate(false);
@@ -272,11 +273,13 @@ export default function App() {
   };
 
   const handleSelectStaff = (staff: StaffProfile) => {
+    if (staff.id !== currentStaff?.id) setSearchQuery('');
     setActiveSessionUser(staff);
     setCurrentStaff(staff);
   };
 
   const handleLogout = () => {
+    setSearchQuery('');
     setActiveSessionUser(null);
     setCurrentStaff(null);
     setShowWelcomeGate(true);
@@ -363,7 +366,7 @@ export default function App() {
           <>
             {/* Tab: QA Search Engine (All Roles) */}
             {activeTab === 'qa' && (
-              <CorporateSearchUI 
+              <CorporateSearchUI key={currentStaff.id}
                 searchQuery={searchQuery} 
                 onSearchChange={setSearchQuery}
                 activeKnowledgeItems={activeKnowledgeItems}

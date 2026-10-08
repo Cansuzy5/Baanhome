@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { readFileSync, writeFileSync, chmodSync, existsSync } from 'node:fs';
 import { brotliDecompressSync } from 'node:zlib';
 import { spawn } from 'node:child_process';
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '3000'], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -16,20 +16,24 @@ if (!process.env.UI_CHROMIUM_PATH) {
 const browser = await chromium.launch({ executablePath, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'], headless: true });
 const picture = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jrGQAAAAASUVORK5CYII=';
 const item = { id: 'isolated-kb', title: 'อาหารทดสอบแยกจากข้อมูลจริง', category: 'restaurant', keywords: ['อาหาร'], summary: 'รายละเอียดภายใน', detail: ['เงื่อนไข'], customerMessage: 'คำตอบสำหรับลูกค้า', nextActions: [], sourceDoc: 'แหล่งอ้างอิงทดสอบ', lastUpdated: '2026-10-08', status: 'Published', dataStatus: 'Confirmed', aiUsable: 'Yes', audience: 'Both', images: [picture] };
+const menuItem = { ...item, id: 'isolated-menu', title: 'ต้มยำกุ้งทดสอบแยกจากข้อมูลจริง', keywords: ['ต้มยำกุ้ง'], images: [], customerMessage: 'เมนูทดสอบ ไม่ใช่ข้อมูลร้านจริง' };
 const parts = new Map(), entries = {};
 const today = new Date().toISOString().slice(0, 10);
 const leads = [{ id: 'isolated-lead', name: 'องค์กรทดสอบ', priority: 'A', contactPerson: 'ผู้ติดต่อ', phone: '0000000000', pipelineStage: 'ยังไม่ติดต่อ', contactStatus: 'ยังไม่ติดต่อ', salesClosures: [] }];
 const appointments = Array.from({ length: 7 }, (_, index) => ({ id: `isolated-appointment-${index}`, leadId: 'isolated-lead', leadName: 'องค์กรทดสอบ', date: today, time: `${10 + index}:00`, title: 'นัดทดสอบ', location: 'สถานที่ทดสอบ', objective: 'อื่นๆ', status: index === 0 ? 'completed' : 'scheduled', createdAt: `${today}T00:00:00Z`, ...(index === 0 ? { salesCycleOutcome: 'success', salesCycleClosureId: 'isolated-closure', salesCycleClosedAt: `${today}T09:00:00Z` } : {}) }));
 let failSave = false;
+const aiCalls = [];
 const hash = value => createHash('sha256').update(value).digest('hex');
-async function context(role, viewport) {
+async function context(role, viewport, accountId = role) {
   const ctx = await browser.newContext({ viewport });
   await ctx.route('**/*', async route => {
     const url = new URL(route.request().url());
+    if (url.hostname === 'example.invalid') return route.fulfill({ contentType: 'image/png', body: Buffer.from(picture.split(',')[1], 'base64') });
     if (url.hostname !== '127.0.0.1') return route.abort();
     if (!url.pathname.startsWith('/api/')) return route.continue();
     let json = {};
-    if (url.pathname === '/api/sync/knowledge') json = { entries: {}, legacy: { items: [item], sheetUrl: '', lastSynced: '2026-10-08' } };
+    if (url.pathname === '/api/sync/knowledge') json = { entries: {}, legacy: { items: [item, menuItem], sheetUrl: '', lastSynced: '2026-10-08' } };
+    if (url.pathname === '/api/ask') { const request = route.request().postDataJSON(); aiCalls.push(request); json = { answer: 'คำตอบ AI ทดสอบ', referenceIds: request.contextItems.map(item => item.id) }; }
     if (url.pathname === '/api/sync/custom-images') {
       if (route.request().method() === 'GET') json = url.searchParams.has('part') ? { text: parts.get(url.searchParams.get('part')) } : { entries, legacy: {} };
       else {
@@ -42,12 +46,18 @@ async function context(role, viewport) {
     if (url.pathname === '/api/sync/b2b') json = { leads, appointments, success: true };
     await route.fulfill({ json });
   });
-  await ctx.addInitScript(({ role, item, leads, appointments }) => {
-    localStorage.setItem('baanhome_active_session_v1', JSON.stringify({ id: 'isolated-user', username: 'isolated-user', name: 'ผู้ทดสอบ', department: 'ทดสอบ', avatar: '', role, status: 'active' }));
-    localStorage.setItem('nonghome_synced_knowledge_items', JSON.stringify([item]));
+  await ctx.addInitScript(({ role, item, menuItem, leads, appointments, accountId }) => {
+    localStorage.setItem('baanhome_active_session_v1', JSON.stringify({ id: accountId, username: accountId, name: 'ผู้ทดสอบ', department: 'ทดสอบ', avatar: '', role, status: 'active' }));
+    localStorage.setItem('nonghome_synced_knowledge_items', JSON.stringify([item, menuItem]));
     localStorage.setItem('baan_home_b2b_leads_v2', JSON.stringify(leads));
     localStorage.setItem('baan_home_b2b_appointments_v2', JSON.stringify(appointments));
-  }, { role, item, leads, appointments });
+  }, { role, item, menuItem, leads, appointments, accountId });
+  if (process.env.UI_FONT_PATH && existsSync(process.env.UI_FONT_PATH)) {
+    const font = readFileSync(process.env.UI_FONT_PATH).toString('base64');
+    await ctx.addInitScript(font => {
+      document.addEventListener('DOMContentLoaded', () => { const style = document.createElement('style'); style.textContent = `@font-face{font-family:UITestThai;src:url(data:font/ttf;base64,${font})}body,h1,h2,h3,h4,h5,h6{font-family:UITestThai,sans-serif!important}`; document.head.append(style); });
+    }, font);
+  }
   return ctx;
 }
 async function fits(page) { assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'horizontal overflow'); }
@@ -72,7 +82,11 @@ try {
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('#baanhome-navigation').count(), 0);
   assert.equal(await page.locator('input[name="dataType"]').count(), 0);
-  await page.locator('#main-search-input').fill('อาหาร');
+  await page.locator('#main-search-input').fill(item.title);
+  await page.getByRole('button', { name: 'ส่งคำถาม', exact: true }).click();
+  await other.locator('#main-search-input').fill(item.title);
+  await other.getByRole('button', { name: 'ส่งคำถาม', exact: true }).click();
+  await page.screenshot({ path: '/tmp/baanhome-qa-answer.png', fullPage: true });
   await page.getByRole('heading', { name: item.title }).waitFor();
   const card = page.locator('[data-knowledge-id="isolated-kb"]');
   const disclosure = card.locator('details').filter({ has: page.locator('summary', { hasText: 'ดูแหล่งอ้างอิงและข้อมูลเพิ่มเติม' }) });
@@ -151,5 +165,63 @@ try {
   assert.equal(await user.locator('#nav-tab-users-admin').count(), 0);
   await user.keyboard.press('Escape');
   await fits(user);
-  console.log('PASS: desktop/mobile, menu, disclosures, lightbox, save errors, cross-context image refresh, knowledge/B2B/calendar views and role navigation');
+  for (const p of [page, other]) {
+    await p.locator('#navigation-toggle').click();
+    await p.locator('#nav-tab-qa').click();
+    await p.getByRole('button', { name: 'เริ่มบทสนทนาใหม่' }).click();
+    await p.locator('#main-search-input').fill(menuItem.title);
+    await p.getByRole('button', { name: 'ส่งคำถาม', exact: true }).click();
+    await p.locator('[data-knowledge-id="isolated-menu"]').getByText('ภาพประกอบเมนู · ต้มยำกุ้ง', { exact: true }).waitFor();
+    assert.equal(await p.locator('[data-knowledge-id="isolated-menu"] img[src="/menu-illustrations/1.jpg"]').evaluate(img => img.complete && img.naturalWidth > 0), true);
+  }
+  const menuCard = page.locator('[data-knowledge-id="isolated-menu"]');
+  await menuCard.getByRole('button', { name: 'แก้ไขรูปภาพ', exact: true }).click();
+  await page.locator('input[type="file"]').setInputFiles({ name: 'restaurant.png', mimeType: 'image/png', buffer: Buffer.from(picture.split(',')[1], 'base64') });
+  assert.equal(await menuCard.locator('img[src="/menu-illustrations/1.jpg"]').count(), 1, 'starter remains in original card until save; editor now has actual upload');
+  await page.getByRole('button', { name: 'บันทึกรูปภาพ', exact: true }).click();
+  await page.getByRole('button', { name: 'บันทึกรูปภาพ', exact: true }).waitFor({ state: 'hidden' });
+  await other.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await other.locator('[data-knowledge-id="isolated-menu"] img').waitFor();
+  await other.locator('[data-knowledge-id="isolated-menu"]').getByText('รูปจากฐานความรู้', { exact: true }).waitFor();
+  assert.equal(await other.locator('[data-knowledge-id="isolated-menu"] img[src="/menu-illustrations/1.jpg"]').count(), 0);
+  await menuCard.getByRole('button', { name: 'แก้ไขรูปภาพ', exact: true }).click();
+  await page.locator('button[title="ลบรูปนี้"]').click();
+  await page.getByRole('button', { name: 'บันทึกรูปภาพ', exact: true }).click();
+  await page.getByRole('button', { name: 'บันทึกรูปภาพ', exact: true }).waitFor({ state: 'hidden' });
+  await other.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await other.locator('[data-knowledge-id="isolated-menu"]').getByRole('button', { name: 'เพิ่มรูปภาพ', exact: true }).waitFor();
+  assert.equal(await other.locator('[data-knowledge-id="isolated-menu"] img[src="/menu-illustrations/1.jpg"]').count(), 0, 'intentional removal stays empty');
+  await menuCard.getByRole('button', { name: 'เพิ่มรูปภาพ', exact: true }).click();
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'คืนค่ารูปเดิม', exact: true }).click();
+  await page.getByRole('button', { name: 'บันทึกรูปภาพ', exact: true }).waitFor({ state: 'hidden' });
+  await other.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await other.locator('[data-knowledge-id="isolated-menu"]').getByText('ภาพประกอบเมนู · ต้มยำกุ้ง', { exact: true }).waitFor();
+  assert.equal(aiCalls.length, 0, 'typing, submitting local questions and editing photos must not call AI');
+  await page.getByRole('button', { name: 'ให้ AI ช่วยตอบ', exact: true }).click();
+  await page.getByText('คำตอบ AI ทดสอบ', { exact: true }).waitFor();
+  assert.equal(aiCalls.length, 1);
+  assert.equal(aiCalls[0].query, menuItem.title);
+  await page.getByRole('checkbox', { name: 'AI อัตโนมัติ' }).check();
+  await page.locator('#main-search-input').fill('แล้วราคาเท่าไหร่');
+  assert.equal(aiCalls.length, 1, 'automatic mode waits for submit');
+  await page.getByRole('button', { name: 'ส่งคำถาม', exact: true }).click();
+  await page.locator('[data-turn-id]').last().getByText('คำตอบ AI ทดสอบ', { exact: true }).waitFor();
+  assert.equal(aiCalls.length, 2);
+  assert.ok(aiCalls[1].query.includes(menuItem.title));
+  assert.ok(aiCalls[1].query.endsWith('\nแล้วราคาเท่าไหร่'));
+  const history = await page.evaluate(() => localStorage.getItem('baanhome_qa_conversation_v1:Administrator'));
+  await user.evaluate(value => localStorage.setItem('baanhome_qa_conversation_v1:Administrator', value), history);
+  await user.reload();
+  await user.getByRole('heading', { name: 'วันนี้ให้โฮมช่วยเรื่องไหน?' }).waitFor();
+  assert.equal(await user.locator('[data-turn-id]').count(), 0, 'another account cannot see saved admin history on shared browser');
+  await page.reload();
+  await page.locator('[data-turn-id]').nth(1).waitFor();
+  assert.equal(await page.getByText('คำตอบ AI ทดสอบ', { exact: true }).count(), 0, 'do not restore stale generated facts');
+  assert.equal(aiCalls.length, 2, 'reload must not trigger AI');
+  await page.getByRole('button', { name: 'เริ่มบทสนทนาใหม่' }).click();
+  assert.equal(await page.locator('[data-turn-id]').count(), 0);
+  assert.equal(await other.locator('[data-turn-id]').count(), 1, 'reset affects own account only');
+  await other.screenshot({ path: '/tmp/baanhome-menu-mobile.png', fullPage: true });
+  console.log('PASS: desktop/mobile, menu, disclosures, lightbox, save errors, cross-context image refresh, knowledge/B2B/calendar views, role navigation, food starter/replacement/removal/reset, bounded followup AI and private account histories');
 } finally { await browser.close(); server.kill(); }

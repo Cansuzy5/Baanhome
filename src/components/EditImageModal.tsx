@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { X, Upload, Plus, Trash2, Image as ImageIcon, Sparkles, Check, RotateCcw, AlertCircle, ExternalLink } from 'lucide-react';
 import { KnowledgeItem } from '../types';
+import { appendRestaurantImage, getMenuIllustration } from '../utils/menuIllustrations';
 import { getItemImages, getItemImageVersion, saveItemImages, resetItemImages, SAMPLE_IMAGE_PRESETS } from '../utils/itemImageManager';
 
 interface EditImageModalProps {
@@ -42,7 +43,7 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
       return;
     }
 
-    setImages((prev) => [...prev, trimmed]);
+    setImages((prev) => appendRestaurantImage(prev, trimmed));
     setInputUrl('');
   };
 
@@ -78,7 +79,7 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
       if (dataUrl) {
-        setImages((prev) => [...prev, dataUrl]);
+        setImages((prev) => appendRestaurantImage(prev, dataUrl));
       }
       setIsUploading(false);
     };
@@ -193,6 +194,7 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
                         รูปหลัก
                       </span>
                     )}
+                    {getMenuIllustration(url) && <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-black/65 text-white text-[10px] rounded-md">ภาพประกอบเมนู</span>}
                     <button
                       type="button"
                       onClick={() => handleRemoveImage(idx)}

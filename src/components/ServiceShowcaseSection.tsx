@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { KnowledgeItem } from '../types';
 import { getItemImages } from '../utils/itemImageManager';
+import { getMenuIllustration } from '../utils/menuIllustrations';
 import { Sparkles, Waves, Hotel, UtensilsCrossed, Users, Heart, MapPin, ArrowRight, Image as ImageIcon } from 'lucide-react';
 
 interface ServiceShowcaseSectionProps {
@@ -19,7 +20,7 @@ export const ServiceShowcaseSection: React.FC<ServiceShowcaseSectionProps> = ({ 
     for (const item of knowledgeItems) {
       if (keywords.some(word => `${item.title} ${item.category}`.toLowerCase().includes(word))) {
         const image = getItemImages(item, false)[0];
-        if (image) return image;
+                if (image && !getMenuIllustration(image)) return image;
       }
     }
     return undefined;

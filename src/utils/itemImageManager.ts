@@ -1,4 +1,5 @@
 import { SharedContentClient, watchSharedContent } from './sharedContentClient';
+import { getMenuIllustrations } from './menuIllustrations';
 import { KnowledgeCategory, KnowledgeItem } from '../types';
 
 const STORAGE_KEY = 'baan_home_custom_item_images_v1';
@@ -218,6 +219,8 @@ export function getItemImages(item: KnowledgeItem, includeStockFallback = true):
     return [item.imageUrl];
   }
 
+  const menuPhotos = getMenuIllustrations(item);
+  if (menuPhotos.length) return menuPhotos.map(photo => photo.url);
   if (!includeStockFallback) return [];
 
   // 3. Specific curated item default
