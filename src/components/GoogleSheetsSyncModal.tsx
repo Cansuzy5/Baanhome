@@ -54,6 +54,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
   const [activeTab, setActiveTab] = useState<'link' | 'paste' | 'template'>('link');
   const [sheetUrl, setSheetUrl] = useState(getSyncedSheetUrl() || '');
   const [pastedText, setPastedText] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [previewItems, setPreviewItems] = useState<KnowledgeItem[] | null>(null);
@@ -120,13 +121,16 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
   };
 
   // Apply preview items as active knowledge base
-  const handleConfirmApply = () => {
+  const handleConfirmApply = async () => {
+    if (isSaving) return;
     if (!isAdmin) {
       setStatusMessage({ type: 'error', text: 'สิทธิ์ไม่เพียงพอ: เฉพาะ Administrator เท่านั้นที่สามารถบันทึกข้อมูลทับฐานข้อมูลกลางได้' });
       return;
     }
     if (!previewItems || previewItems.length === 0) return;
-    saveSyncedKnowledgeItems(previewItems, sheetUrl);
+    setIsSaving(true);
+    try {
+    await saveSyncedKnowledgeItems(previewItems, sheetUrl);
     onApplySyncedItems(previewItems, true);
     setLastSyncTime(new Date().toISOString());
     setStatusMessage({
@@ -136,15 +140,20 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     setTimeout(() => {
       onClose();
     }, 1500);
+    } catch (error: any) { setStatusMessage({ type: 'error', text: error.message || 'บันทึกฐานกลางไม่สำเร็จ' }); }
+    finally { setIsSaving(false); }
   };
 
   // Reset to default Baan Home knowledge base
-  const handleResetToDefault = () => {
+  const handleResetToDefault = async () => {
+    if (isSaving) return;
     if (!isAdmin) {
       setStatusMessage({ type: 'error', text: 'สิทธิ์ไม่เพียงพอ: เฉพาะ Administrator เท่านั้นที่สามารถรีเซ็ตฐานข้อมูลได้' });
       return;
     }
-    clearSyncedKnowledgeItems();
+    setIsSaving(true);
+    try {
+    await clearSyncedKnowledgeItems();
     onApplySyncedItems(KNOWLEDGE_BASE_ITEMS, false);
     setPreviewItems(null);
     setSheetUrl('');
@@ -153,6 +162,8 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
       type: 'success',
       text: 'รีเซ็ตกลับไปใช้ฐานข้อมูลมาตรฐานของบ้านโฮมเรียบร้อยแล้ว',
     });
+    } catch (error: any) { setStatusMessage({ type: 'error', text: error.message || 'บันทึกฐานกลางไม่สำเร็จ' }); }
+    finally { setIsSaving(false); }
   };
 
   // Download template CSV
@@ -201,6 +212,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
 
           <button
             type="button"
+            disabled={isSaving}
             onClick={onClose}
             className="p-2 text-[#728779] hover:text-[#183626] hover:bg-[#F2ECE0] rounded-full transition-colors cursor-pointer"
           >
@@ -430,11 +442,12 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
 
                 <button
                   type="button"
+                  disabled={isSaving}
                   onClick={handleConfirmApply}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#238636] hover:bg-[#1E722E] text-white font-bold text-xs sm:text-sm transition-all cursor-pointer shadow-xs"
                 >
                   <Check className="w-4 h-4" />
-                  <span>✅ ยืนยันบันทึกและเริ่มใช้งาน</span>
+                  <span>{isSaving ? 'กำลังบันทึกฐานกลาง…' : '✅ ยืนยันบันทึกและเริ่มใช้งาน'}</span>
                 </button>
               </div>
 
@@ -489,6 +502,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
             {isUsingCustomSheet && (
               <button
                 type="button"
+                disabled={isSaving}
                 onClick={handleResetToDefault}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-[#FDF3E7] text-[#9A3412] border border-[#ECDCCB] font-semibold transition-colors cursor-pointer shadow-2xs self-start sm:self-auto"
               >
@@ -503,10 +517,11 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
         {/* Modal Footer */}
         <div className="px-5 sm:px-7 py-3.5 bg-white border-t border-[#E5EDE3] flex items-center justify-between">
           <span className="text-[11px] text-[#697E72]">
-            เมื่อบันทึกแล้ว ข้อมูลจะถูกเก็บไว้ในบราวเซอร์ของท่าน ไม่สูญหายเมื่อรีเฟรชหน้า
+            ระบบจะแจ้งสำเร็จเมื่อฐานกลางยืนยันการบันทึกแล้ว เครื่องอื่นจะรับข้อมูลล่าสุดอัตโนมัติ
           </span>
           <button
             type="button"
+            disabled={isSaving}
             onClick={onClose}
             className="px-4 py-2 rounded-xl text-xs font-semibold text-[#486353] hover:bg-[#F2ECE0] transition-colors cursor-pointer"
           >
@@ -518,3 +533,4 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     </div>
   );
 };
+

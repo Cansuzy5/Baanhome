@@ -1,3 +1,4 @@
+import { SharedContentClient, watchSharedContent } from './sharedContentClient';
 import { KnowledgeCategory, KnowledgeItem } from '../types';
 
 const STORAGE_KEY = 'baan_home_custom_item_images_v1';
@@ -150,9 +151,12 @@ const ITEM_SPECIFIC_IMAGES: Record<string, string[]> = {
   ],
 };
 
+let imageMemory: Record<string, string[]> | null = null;
+const imageClient = new SharedContentClient('/api/sync/custom-images');
 function getCustomImagesMap(): Record<string, string[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    if (imageMemory) return imageMemory;
+    const raw = localStorage.getItem('baan_home_shared_images_v2') || localStorage.getItem(STORAGE_KEY);
     if (raw) {
       return JSON.parse(raw);
     }
@@ -163,36 +167,30 @@ function getCustomImagesMap(): Record<string, string[]> {
 }
 
 function setCustomImagesMap(map: Record<string, string[]>): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
-    // Trigger custom event so reactive components can re-render immediately
-    window.dispatchEvent(new CustomEvent('baan_home_images_updated'));
-  } catch (e) {
-    console.error('Failed to save custom item images to localStorage', e);
-  }
-
-  // Sync to shared backend server
-  try {
-    fetch('/api/sync/custom-images', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ images: map }),
-    }).catch(() => {});
-  } catch (e) {}
+  imageMemory = map;
+  // The original local-only cache is deliberately retained for recovery.
+  try { localStorage.setItem('baan_home_shared_images_v2', JSON.stringify(map)); } catch {}
+  window.dispatchEvent(new CustomEvent('baan_home_images_updated'));
 }
-
-export function syncCustomImagesWithServer(): void {
-  try {
-    fetch('/api/sync/custom-images')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && data.images && typeof data.images === 'object' && Object.keys(data.images).length > 0) {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.images));
-          window.dispatchEvent(new CustomEvent('baan_home_images_updated'));
-        }
-      })
-      .catch(() => {});
-  } catch (e) {}
+export function syncCustomImagesWithServer() {
+  let active = true;
+  const stop = watchSharedContent(async () => {
+    const { values, legacy } = await imageClient.read();
+    if (!active) return;
+    const map = { ...(legacy || {}) };
+    for (const [id, value] of Object.entries(values)) {
+      if (value === null) delete map[id];
+      else map[id] = value;
+    }
+    // Keep local-only images visible until that item is explicitly saved/reset.
+    let original: Record<string, string[]> = {};
+    try { original = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch {}
+    for (const [id, value] of Object.entries(original)) {
+      if (!(id in values) && !(id in map)) map[id] = value;
+    }
+    setCustomImagesMap(map);
+  });
+  return () => { active = false; stop(); };
 }
 
 /**
@@ -208,7 +206,7 @@ export function getItemImages(item: KnowledgeItem): string[] {
 
   // 1. Check local storage overrides
   const customMap = getCustomImagesMap();
-  if (customMap[item.id] && Array.isArray(customMap[item.id]) && customMap[item.id].length > 0) {
+  if (Array.isArray(customMap[item.id])) {
     return customMap[item.id];
   }
 
@@ -263,7 +261,9 @@ export function getItemImages(item: KnowledgeItem): string[] {
 /**
  * Saves or updates custom images for a given item.
  */
-export function saveItemImages(itemId: string, images: string[]): void {
+export function getItemImageVersion(itemId: string) { return imageClient.version(itemId); }
+export async function saveItemImages(itemId: string, images: string[], version?: string | null): Promise<void> {
+  await imageClient.save(itemId, images.filter(url => typeof url === 'string' && url.trim().length > 0), version);
   const map = getCustomImagesMap();
   map[itemId] = images.filter((url) => typeof url === 'string' && url.trim().length > 0);
   setCustomImagesMap(map);
@@ -272,8 +272,10 @@ export function saveItemImages(itemId: string, images: string[]): void {
 /**
  * Resets custom images back to original default.
  */
-export function resetItemImages(itemId: string): void {
+export async function resetItemImages(itemId: string, version?: string | null): Promise<void> {
+  await imageClient.save(itemId, null, version);
   const map = getCustomImagesMap();
   delete map[itemId];
   setCustomImagesMap(map);
 }
+

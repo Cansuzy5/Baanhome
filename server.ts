@@ -1,3 +1,5 @@
+import knowledgeSyncHandler from './api/sync/knowledge.js';
+import customImagesSyncHandler from './api/sync/custom-images.js';
 import nongHomeAnalytics from './api/nong-home-analytics.js';
 import centralB2B from './api/sync/b2b.js';
 import centralUsers from './api/sync/users.js';
@@ -85,6 +87,8 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  app.use('/api/sync/knowledge', express.json({ limit: '1mb' }), knowledgeSyncHandler);
+  app.use('/api/sync/custom-images', express.json({ limit: '1mb' }), customImagesSyncHandler);
   app.use(express.json());
   app.post('/api/nong-home-analytics', nongHomeAnalytics);
 
@@ -410,29 +414,6 @@ ${contextText}
     }
   });
 
-  // Custom Knowledge Base Items (Google Sheets sync)
-  const KNOWLEDGE_FILE = path.join(DATA_DIR, 'persistent_knowledge.json');
-
-  app.get('/api/sync/knowledge', (req, res) => {
-    try {
-      if (fs.existsSync(KNOWLEDGE_FILE)) {
-        const data = JSON.parse(fs.readFileSync(KNOWLEDGE_FILE, 'utf-8'));
-        return res.json(data);
-      }
-    } catch (e) {}
-    res.json({ items: null, sheetUrl: '', lastSynced: null });
-  });
-
-  app.post('/api/sync/knowledge', (req, res) => {
-    try {
-      const payload = req.body || {};
-      fs.writeFileSync(KNOWLEDGE_FILE, JSON.stringify(payload, null, 2), 'utf-8');
-      res.json({ success: true });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
   // Departments Sync
   const DEPARTMENTS_FILE = path.join(DATA_DIR, 'persistent_departments.json');
 
@@ -455,33 +436,6 @@ ${contextText}
         return res.json({ success: true });
       }
       res.status(400).json({ error: 'Invalid departments' });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  // Custom Images Sync
-  const CUSTOM_IMAGES_FILE = path.join(DATA_DIR, 'persistent_custom_images.json');
-
-  app.get('/api/sync/custom-images', (req, res) => {
-    try {
-      if (fs.existsSync(CUSTOM_IMAGES_FILE)) {
-        const raw = fs.readFileSync(CUSTOM_IMAGES_FILE, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') return res.json({ images: parsed });
-      }
-    } catch (e) {}
-    res.json({ images: {} });
-  });
-
-  app.post('/api/sync/custom-images', (req, res) => {
-    try {
-      const { images } = req.body || {};
-      if (images && typeof images === 'object') {
-        fs.writeFileSync(CUSTOM_IMAGES_FILE, JSON.stringify(images, null, 2), 'utf-8');
-        return res.json({ success: true });
-      }
-      res.status(400).json({ error: 'Invalid images map' });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -540,3 +494,4 @@ ${contextText}
 }
 
 startServer();
+
