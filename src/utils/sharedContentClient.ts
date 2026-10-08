@@ -41,15 +41,15 @@ export class SharedContentClient {
     this.initialized = true;
     return { values: next, legacy: data.legacy };
   }
-  save(key: string, value: any, version?: string | null) {
-    return this.serial(() => this.saveCurrent(key, value, version));
+  save(key: string, value: any, version?: string | null, deleteAuthorization?: { userId?: string; password: string }) {
+    return this.serial(() => this.saveCurrent(key, value, version, deleteAuthorization));
   }
-  private async saveCurrent(key: string, value: any, version?: string | null) {
+  private async saveCurrent(key: string, value: any, version?: string | null, deleteAuthorization?: { userId?: string; password: string }) {
     if (!this.initialized) await this.readCurrent();
     const expectedVersion = version === undefined ? this.version(key) : version;
     const parts: string[] = [];
     for (const text of splitContent(value)) parts.push((await this.request('', { action: 'stage', text })).id);
-    const result = await this.request('', { action: 'commit', key, parts, expectedVersion });
+    const result = await this.request('', { action: 'commit', key, parts, expectedVersion, ...(deleteAuthorization ? { deleteAuthorization } : {}) });
     if (!result.success || !result.entry?.version) throw new Error('ฐานกลางยังไม่ยืนยันการบันทึก');
     this.entries[key] = result.entry;
     this.values[key] = value;

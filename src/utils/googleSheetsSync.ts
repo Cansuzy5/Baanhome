@@ -1,3 +1,4 @@
+import { getActiveSessionUser } from './authService';
 import { SharedContentClient, watchSharedContent } from './sharedContentClient';
 import { KnowledgeItem, KnowledgeCategory, AudienceType, DataStatusType } from '../types';
 import { KNOWLEDGE_BASE_ITEMS } from '../data/knowledgeBase';
@@ -268,9 +269,38 @@ function cacheKnowledge(data: any) {
     else localStorage.removeItem(STORAGE_KEY_LAST_SYNC);
   } catch {} // A full browser cache must not turn a confirmed central save into an error.
 }
+export interface ManualKnowledgeHistoryEntry {
+  id: string; itemId: string; title: string; action: 'added' | 'edited' | 'deleted'; at: string; actorName: string;
+}
+export function getManualKnowledgeHistory(): ManualKnowledgeHistoryEntry[] {
+  try { const data = knowledgeMemory ?? JSON.parse(localStorage.getItem('nonghome_shared_knowledge_v2') || '{}'); return Array.isArray(data.manualHistory) ? data.manualHistory : []; } catch { return []; }
+}
+// Read central state before changing the collection; version checking rejects concurrent writes.
+export async function saveManualKnowledgeItem(item: KnowledgeItem, remove = false, expected?: KnowledgeItem, password?: string): Promise<KnowledgeItem[]> {
+  if (!item.id.startsWith('manual-')) throw new Error('จัดการได้เฉพาะข้อมูลที่หน้างานเพิ่ม');
+  const { values, legacy } = await knowledgeClient.read();
+  const current = values.main || legacy;
+  const previous: KnowledgeItem[] = Array.isArray(current?.items) ? current.items : KNOWLEDGE_BASE_ITEMS;
+  if (expected && JSON.stringify(previous.find(saved => saved.id === item.id)) !== JSON.stringify(expected)) throw new Error('ข้อมูลนี้ถูกแก้ไขจากอีกเครื่อง กรุณาปิดแล้วเปิดใหม่ก่อนแก้ไข');
+  const items = previous.filter(saved => saved.id !== item.id);
+  if (!remove) items.push(item);
+  const at = new Date().toISOString();
+  const event: ManualKnowledgeHistoryEntry = { id: crypto.randomUUID(), itemId: item.id, title: item.title, action: remove ? 'deleted' : previous.some(saved => saved.id === item.id) ? 'edited' : 'added', at, actorName: getActiveSessionUser()?.name || 'ไม่ระบุผู้ใช้' };
+  const data = { items, sheetUrl: current?.sheetUrl || '', lastSynced: at, manualHistory: [...(Array.isArray(current?.manualHistory) ? current.manualHistory : []), event] };
+  await knowledgeClient.save('main', data, knowledgeClient.version('main'), remove ? { userId: getActiveSessionUser()?.id, password: password || '' } : undefined);
+  const confirmed = await knowledgeClient.read();
+  const found = confirmed.values.main?.items?.find((saved: KnowledgeItem) => saved.id === item.id);
+  if ((remove && found) || (!remove && JSON.stringify(found) !== JSON.stringify(item))) throw new Error('ฐานกลางยังไม่ยืนยันข้อมูล กรุณาตรวจสอบก่อนบันทึกซ้ำ');
+  cacheKnowledge(confirmed.values.main);
+  return withPdfKnowledge(confirmed.values.main.items);
+}
 export async function saveSyncedKnowledgeItems(items: KnowledgeItem[], sheetUrl?: string): Promise<void> {
-  const data = { items, sheetUrl: sheetUrl || getSyncedSheetUrl(), lastSynced: new Date().toISOString() };
-  await knowledgeClient.save('main', data);
+  const { values, legacy } = await knowledgeClient.read();
+  const current = values.main || legacy;
+  const ids = new Set(items.map(i => i.id));
+  const manual = (Array.isArray(current?.items) ? current.items : []).filter((i: KnowledgeItem) => i.id.startsWith('manual-') && !ids.has(i.id));
+  const data = { manualHistory: Array.isArray(current?.manualHistory) ? current.manualHistory : [], items: [...items, ...manual], sheetUrl: sheetUrl || getSyncedSheetUrl(), lastSynced: new Date().toISOString() };
+  await knowledgeClient.save('main', data, knowledgeClient.version('main'));
   cacheKnowledge(data);
 }
 export function syncKnowledgeWithServer(onLoaded?: (items: KnowledgeItem[], custom: boolean) => void) {

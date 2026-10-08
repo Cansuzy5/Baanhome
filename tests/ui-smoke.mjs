@@ -17,7 +17,7 @@ const browser = await chromium.launch({ executablePath, args: ['--no-sandbox', '
 const picture = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jrGQAAAAASUVORK5CYII=';
 const item = { id: 'isolated-kb', title: 'อาหารทดสอบแยกจากข้อมูลจริง', category: 'restaurant', keywords: ['อาหาร'], summary: 'รายละเอียดภายใน', detail: ['เงื่อนไข'], customerMessage: 'คำตอบสำหรับลูกค้า', nextActions: [], sourceDoc: 'แหล่งอ้างอิงทดสอบ', lastUpdated: '2026-10-08', status: 'Published', dataStatus: 'Confirmed', aiUsable: 'Yes', audience: 'Both', images: [picture] };
 const menuItem = { ...item, id: 'isolated-menu', title: 'ต้มยำกุ้งทดสอบแยกจากข้อมูลจริง', keywords: ['ต้มยำกุ้ง'], images: [], customerMessage: 'เมนูทดสอบ ไม่ใช่ข้อมูลร้านจริง' };
-const parts = new Map(), entries = {};
+const parts = new Map(), entries = {}, knowledgeEntries = {};
 const today = new Date().toISOString().slice(0, 10);
 const leads = [{ id: 'isolated-lead', name: 'องค์กรทดสอบ', priority: 'A', contactPerson: 'ผู้ติดต่อ', phone: '0000000000', pipelineStage: 'ยังไม่ติดต่อ', contactStatus: 'ยังไม่ติดต่อ', salesClosures: [] }];
 const appointments = Array.from({ length: 7 }, (_, index) => ({ id: `isolated-appointment-${index}`, leadId: 'isolated-lead', leadName: 'องค์กรทดสอบ', date: today, time: `${10 + index}:00`, title: 'นัดทดสอบ', location: 'สถานที่ทดสอบ', objective: 'อื่นๆ', status: index === 0 ? 'completed' : 'scheduled', createdAt: `${today}T00:00:00Z`, ...(index === 0 ? { salesCycleOutcome: 'success', salesCycleClosureId: 'isolated-closure', salesCycleClosedAt: `${today}T09:00:00Z` } : {}) }));
@@ -33,7 +33,15 @@ async function context(role, viewport, accountId = role) {
     if (url.hostname !== '127.0.0.1') return route.abort();
     if (!url.pathname.startsWith('/api/')) return route.continue();
     let json = {};
-    if (url.pathname === '/api/sync/knowledge') json = { entries: {}, legacy: { items: [item, menuItem], sheetUrl: '', lastSynced: '2026-10-08' } };
+    if (url.pathname === '/api/sync/knowledge') {
+      if (route.request().method() === 'GET') json = url.searchParams.has('part') ? { text: parts.get(url.searchParams.get('part')) } : { entries: knowledgeEntries, legacy: { items: [item, menuItem], sheetUrl: '', lastSynced: '2026-10-08' } };
+      else {
+        if (failSave) return route.fulfill({ status: 503, json: { error: 'ทดสอบบันทึกไม่สำเร็จ' } });
+        const body = route.request().postDataJSON();
+        if (body.action === 'stage') { const id = hash(body.text); parts.set(id, body.text); json = { id }; }
+        else { const entry = { key: body.key, parts: body.parts, version: hash(JSON.stringify(body.parts)) }; knowledgeEntries[hash(body.key)] = entry; json = { success: true, entry }; }
+      }
+    }
     if (url.pathname === '/api/ask') {
       const request = route.request().postDataJSON(); aiCalls.push(request);
       if (failAi) return route.fulfill({ status: 502, json: { error: 'AI ทดสอบขัดข้อง' } });
@@ -95,6 +103,11 @@ try {
   await other.getByRole('button', { name: 'ส่งคำถาม', exact: true }).click();
   await page.getByText('คำตอบ AI ทดสอบ', { exact: true }).waitFor();
   await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(a => a.effect?.getComputedTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))); });
+  for (const screen of [page, other]) {
+    await screen.locator('.qa-answer-bubble').waitFor();
+    assert.equal(await screen.locator('.qa-assistant-signature').evaluate(el => el.getBoundingClientRect().top >= el.parentElement.getBoundingClientRect().top), true, 'assistant signature stays inside answer border');
+    assert.equal(await screen.locator('.qa-composer').evaluate(el => getComputedStyle(el).position), 'relative');
+  }
   await page.screenshot({ path: '/tmp/baanhome-qa-answer.png', fullPage: true });
   await page.getByText('คำตอบ AI ทดสอบ', { exact: true }).waitFor();
   const card = page.locator('[data-knowledge-id="isolated-kb"]');
@@ -258,5 +271,52 @@ try {
   assert.equal(await page.locator('[data-turn-id]').count(), 0);
   assert.equal(await other.locator('[data-turn-id]').count(), 1, 'reset affects own account only');
   await other.screenshot({ path: '/tmp/baanhome-menu-mobile.png', fullPage: true });
+  assert.equal(await user.getByRole('button', { name: 'เพิ่มข้อมูล/คำตอบ', exact: true }).count(), 0);
+  await page.getByRole('button', { name: 'เพิ่มข้อมูล/คำตอบ', exact: true }).click();
+  const form = page.getByRole('dialog', { name: 'เพิ่มข้อมูล/คำตอบ', exact: true });
+  await form.getByLabel('หัวข้อ', { exact: true }).fill('โปรโมชั่นทดสอบแยกจากข้อมูลจริง');
+  await form.getByLabel('เนื้อหา / ราคา / เงื่อนไข').fill('ข้อมูลโปรโมชั่นทดสอบ');
+  await form.getByLabel('การใช้งาน').selectOption('customer');
+  failSave = true;
+  await form.getByRole('button', { name: 'บันทึกข้อมูล', exact: true }).click();
+  await form.getByRole('alert').getByText('ทดสอบบันทึกไม่สำเร็จ', { exact: true }).waitFor();
+  failSave = false;
+  await form.getByRole('button', { name: 'บันทึกข้อมูล', exact: true }).click();
+  await form.waitFor({ state: 'hidden' });
+  const stored = JSON.parse(knowledgeEntries[hash('main')].parts.map(id => parts.get(id)).join(''));
+  assert.equal(stored.items.length, 3, 'adding knowledge preserves existing central records');
+  assert.equal(stored.items.at(-1).customerMessage, 'ข้อมูลโปรโมชั่นทดสอบ');
+  await other.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await other.getByRole('button', { name: 'ความรู้', exact: true }).click();
+  await other.getByRole('button', { name: /เปิดอ่าน.*โปรโม/ }).click();
+  await other.getByRole('heading', { name: 'โปรโมชั่นทดสอบแยกจากข้อมูลจริง', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'เพิ่มข้อมูล/คำตอบ', exact: true }).click();
+  await form.getByLabel('เลือกข้อมูลที่ต้องการจัดการ').selectOption(stored.items.at(-1).id);
+  await form.getByLabel('เนื้อหา / ราคา / เงื่อนไข').fill('โปรโมชั่นฉบับแก้ไข');
+  await form.getByRole('button', { name: 'บันทึกข้อมูล', exact: true }).click();
+  await form.waitFor({ state: 'hidden' });
+  await other.reload();
+  await other.getByRole('button', { name: 'เพิ่มข้อมูล/คำตอบ', exact: true }).click();
+  const operatorForm = other.getByRole('dialog', { name: 'เพิ่มข้อมูล/คำตอบ', exact: true });
+  await operatorForm.getByLabel('เลือกข้อมูลที่ต้องการจัดการ').selectOption(stored.items.at(-1).id);
+  assert.equal(await operatorForm.getByRole('button', { name: 'ลบข้อมูล', exact: true }).count(), 0, 'operator cannot delete');
+  await operatorForm.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+  await page.getByRole('button', { name: 'เพิ่มข้อมูล/คำตอบ', exact: true }).click();
+  await form.getByLabel('เลือกข้อมูลที่ต้องการจัดการ').selectOption(stored.items.at(-1).id);
+  assert.equal(await form.getByLabel('เนื้อหา / ราคา / เงื่อนไข').inputValue(), 'โปรโมชั่นฉบับแก้ไข');
+  page.on('dialog', dialog => dialog.accept('test-password'));
+  await form.getByRole('button', { name: 'ลบข้อมูล', exact: true }).click();
+  await form.waitFor({ state: 'hidden' });
+  const afterDelete = JSON.parse(knowledgeEntries[hash('main')].parts.map(id => parts.get(id)).join(''));
+  assert.equal(afterDelete.items.length, 2, 'delete only selected manual record');
+  assert.deepEqual(afterDelete.manualHistory.map(event => event.action), ['added', 'edited', 'deleted']);
+  assert.ok(afterDelete.manualHistory.every(event => event.actorName === 'ผู้ทดสอบ' && event.at));
+  await page.getByRole('button', { name: 'เพิ่มข้อมูล/คำตอบ', exact: true }).click();
+  await form.getByRole('button', { name: 'ประวัติ / จัดการข้อมูล', exact: true }).click();
+  await form.getByRole('region', { name: 'ประวัติข้อมูลที่หน้างานเพิ่ม' }).getByText('ลบ · โปรโมชั่นทดสอบแยกจากข้อมูลจริง', { exact: true }).waitFor();
+  await form.getByRole('button', { name: 'ปิด', exact: true }).click();
+  assert.equal(await page.locator('footer').evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)', 'no dark footer band');
+
+  assert.equal(aiCalls.length, callsBeforeReload, 'saving and reading knowledge never calls AI');
   console.log('PASS: desktop/mobile, menu, disclosures, lightbox, save errors, cross-context image refresh, knowledge/B2B/calendar views, role navigation, food starter/replacement/removal/reset, bounded followup AI and private account histories');
 } finally { await browser.close(); server.kill(); }
