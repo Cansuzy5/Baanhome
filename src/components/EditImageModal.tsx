@@ -1,3 +1,4 @@
+import { prepareImageUpload } from '../utils/prepareImageUpload';
 import React, { useState, useRef } from 'react';
 import { X, Upload, Plus, Trash2, Image as ImageIcon, Sparkles, Check, RotateCcw, AlertCircle, ExternalLink } from 'lucide-react';
 import { KnowledgeItem } from '../types';
@@ -60,7 +61,7 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (isSaving) return;
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -75,20 +76,15 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      if (dataUrl) {
-        setImages((prev) => appendRestaurantImage(prev, dataUrl));
-      }
-      setIsUploading(false);
-    };
-    reader.onerror = () => {
-      alert('เกิดข้อผิดพลาดในการอ่านไฟล์รูปภาพ');
-      setIsUploading(false);
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    const input = e.target;
+    setSaveError('');
+    try {
+      const dataUrl = await prepareImageUpload(file);
+      setImages(prev => appendRestaurantImage(prev, dataUrl));
+    } catch {
+      setSaveError('เตรียมรูปภาพไม่สำเร็จ กรุณาเลือกไฟล์รูปภาพที่เปิดได้');
+    } finally { setIsUploading(false); }
+    input.value = '';
   };
 
   const persistImages = async (reset: boolean) => {

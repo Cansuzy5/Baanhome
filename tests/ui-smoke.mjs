@@ -82,6 +82,23 @@ try {
   await Promise.all([page.goto('http://127.0.0.1:3000'), other.goto('http://127.0.0.1:3000')]);
   await page.getByRole('heading', { name: 'วันนี้ให้โฮมช่วยเรื่องไหน?' }).waitFor();
   await fits(page); await fits(other);
+  const prepared = await page.evaluate(async () => {
+    const { prepareImageUpload } = await import('/src/utils/prepareImageUpload.ts');
+    const canvas = document.createElement('canvas'); canvas.width = 1800; canvas.height = 800;
+    const ctx = canvas.getContext('2d'); const pixels = ctx.createImageData(canvas.width, canvas.height);
+    let seed = 123;
+    for (let i = 0; i < pixels.data.length; i += 4) { seed = (seed * 1664525 + 1013904223) >>> 0; pixels.data[i] = seed & 255; pixels.data[i + 1] = seed >>> 8 & 255; pixels.data[i + 2] = seed >>> 16 & 255; pixels.data[i + 3] = 255; }
+    ctx.putImageData(pixels, 0, 0);
+    const original = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    const url = await prepareImageUpload(new File([original], 'upload.png', { type: 'image/png' }));
+    const compressed = await (await fetch(url)).blob(); const bitmap = await createImageBitmap(compressed);
+    const result = { original: original.size, saved: compressed.size, width: bitmap.width, height: bitmap.height }; bitmap.close(); return result;
+  });
+  assert.ok(prepared.original > 512 * 1024);
+  assert.ok(prepared.saved < prepared.original);
+  assert.equal(prepared.width, 1600);
+  assert.ok(prepared.height <= 1600);
+
   await page.screenshot({ path: '/tmp/baanhome-qa-desktop.png', fullPage: true });
   await other.screenshot({ path: '/tmp/baanhome-qa-mobile.png', fullPage: true });
   assert.equal(await page.locator('#baanhome-navigation').count(), 0);

@@ -1,5 +1,16 @@
 import { splitContent } from '../../lib/sharedContentProtocol';
 type Entry = { key: string; parts: string[]; version: string };
+async function mapLimited<T, R>(values: T[], work: (value: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(values.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(4, values.length) }, async () => {
+    while (cursor < values.length) { const index = cursor++; results[index] = await work(values[index]); }
+  });
+  const outcomes = await Promise.allSettled(workers);
+  const failed = outcomes.find((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected');
+  if (failed) throw failed.reason;
+  return results;
+}
 export class SharedContentClient {
   private entries: Record<string, Entry> = {};
   private values: Record<string, any> = {};
@@ -31,8 +42,7 @@ export class SharedContentClient {
       entries[entry.key] = entry;
       if (this.entries[entry.key]?.version === entry.version) next[entry.key] = this.values[entry.key];
       else {
-        const parts: string[] = [];
-        for (const id of entry.parts) parts.push((await this.request(`?part=${id}`)).text);
+        const parts = await mapLimited(entry.parts, async id => (await this.request(`?part=${id}`)).text);
         next[entry.key] = JSON.parse(parts.join(''));
       }
     }
@@ -47,8 +57,7 @@ export class SharedContentClient {
   private async saveCurrent(key: string, value: any, version?: string | null, deleteAuthorization?: { userId?: string; password: string }) {
     if (!this.initialized) await this.readCurrent();
     const expectedVersion = version === undefined ? this.version(key) : version;
-    const parts: string[] = [];
-    for (const text of splitContent(value)) parts.push((await this.request('', { action: 'stage', text })).id);
+    const parts = await mapLimited(splitContent(value), async text => (await this.request('', { action: 'stage', text })).id);
     const result = await this.request('', { action: 'commit', key, parts, expectedVersion, ...(deleteAuthorization ? { deleteAuthorization } : {}) });
     if (!result.success || !result.entry?.version) throw new Error('ฐานกลางยังไม่ยืนยันการบันทึก');
     this.entries[key] = result.entry;
