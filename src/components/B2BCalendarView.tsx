@@ -294,7 +294,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
   }, [appointments, leads, year, month]);
 
   return (
-    <div className="space-y-2">
+    <div className="baanhome-calendar space-y-4">
       {saveError && <p role="alert" className="text-sm text-red-600">{saveError}</p>}
       {/* Compact calendar controls: keep the calendar visible in the first viewport */}
       <div className="bg-white rounded-2xl border border-[#DDE7DC] shadow-sm p-2.5 sm:p-3">
@@ -331,9 +331,9 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
       </div>
 
       {/* Main Grid: Calendar on Left, Selected Day & Agenda on Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start lg:h-[calc(100vh-230px)] lg:min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start ">
         {/* Calendar Section: wider for busy days */}
-        <div className="lg:col-span-8 bg-white rounded-2xl p-3 sm:p-4 border border-[#E3ECE1] shadow-sm flex flex-col lg:h-full lg:min-h-0">
+        <div className="lg:col-span-8 bg-white rounded-2xl p-3 sm:p-4 border border-[#E3ECE1] shadow-sm flex flex-col ">
           {/* Calendar Header Navigation */}
           <div className="flex items-center justify-between mb-2 pb-2 border-b border-[#EEF4ED]">
             <div className="flex items-center gap-2">
@@ -385,7 +385,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
           </div>
 
           {/* Calendar Day Cells */}
-          <div className="grid grid-cols-7 grid-rows-6 gap-1.5 items-stretch lg:flex-1 lg:min-h-0">
+          <div className="grid grid-cols-7  gap-1.5 items-stretch ">
             {calendarDays.map((item, idx) => {
               const dayAppointments = appointmentsByDate[item.dateStr] || [];
               const movedAppointments = movedAppointmentsByDate[item.dateStr] || [];
@@ -400,7 +400,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                     setSelectedDateStr(item.dateStr);
                     if (!hasEntries) onAddAppointment(item.dateStr);
                   }}
-                  className={`min-h-[76px] sm:min-h-[84px] lg:min-h-0 lg:h-full p-1.5 rounded-xl flex flex-col text-left transition-all border relative overflow-hidden ${
+                  className={`min-h-[110px] sm:min-h-[145px] p-1.5 rounded-xl flex flex-col text-left transition-all border relative overflow-hidden ${
                     item.monthType !== 'current'
                       ? 'bg-[#FBFDFB] text-gray-300 border-transparent hover:border-[#E2ECE0]'
                       : isSelected
@@ -435,7 +435,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                     {dayAppointments.slice(0, 5).map((apt) => (
                       <div
                         key={apt.id}
-                        className={`text-[8px] sm:text-[9px] leading-[11px] px-1 py-[1px] rounded truncate font-semibold ${appointmentClass(apt)}`}
+                        className={`text-[9px] sm:text-[11px] leading-[16px] px-1 py-[1px] rounded truncate font-semibold ${appointmentClass(apt)}`}
                         title={`${apt.time} - ${apt.leadName} - ${appointmentLabel(apt)}${apt.salesCycleClosedAt ? ` · วันที่ปิดดีล ${closureDateLabel(apt)}` : ''}`}
                       >
                         {apt.time} {apt.leadName}
@@ -444,14 +444,14 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
                     {dayAppointments.length < 5 && movedAppointments.slice(0, 5 - dayAppointments.length).map((move) => (
                       <div
                         key={`${move.appointmentId}-${move.fromTime}-${move.toDate}`}
-                        className="text-[8px] sm:text-[9px] leading-[11px] px-1 py-[1px] rounded truncate font-medium bg-slate-100 text-slate-500 border-l-2 border-slate-400"
+                        className="text-[9px] sm:text-[11px] leading-[16px] px-1 py-[1px] rounded truncate font-medium bg-slate-100 text-slate-500 border-l-2 border-slate-400"
                         title={`เลื่อนจากวันนี้ไป ${move.toDate} ${move.toTime}`}
                       >
                         {move.fromTime} เลื่อนแล้ว → {move.toDate.slice(5)}
                       </div>
                     ))}
                     {dayAppointments.length + movedAppointments.length > 5 && (
-                      <div className="text-[8px] sm:text-[9px] leading-[11px] text-[#547361] font-bold px-1">
+                      <div className="text-[9px] sm:text-[11px] leading-[16px] text-[#547361] font-bold px-1">
                         + อีก {dayAppointments.length + movedAppointments.length - 5} นัด
                       </div>
                     )}
@@ -488,7 +488,7 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
         </div>
 
         {/* Right Section: selected day details */}
-        <div className="lg:col-span-4 space-y-2 lg:h-full lg:min-h-0 lg:overflow-hidden">
+        <div className="lg:col-span-4 space-y-2  lg:overflow-hidden">
           {/* Selected Date Focus Card */}
           <div className="bg-[#FAFBF9] rounded-2xl p-4 border border-[#E3ECE1] shadow-sm lg:max-h-full lg:overflow-hidden">
             <div className="flex items-center justify-between mb-3">
@@ -680,4 +680,5 @@ export const B2BCalendarView: React.FC<B2BCalendarViewProps> = ({
     </div>
   );
 };
+
 

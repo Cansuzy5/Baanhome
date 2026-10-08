@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { X, Upload, Plus, Trash2, Image as ImageIcon, Sparkles, Check, RotateCcw, AlertCircle, ExternalLink } from 'lucide-react';
 import { KnowledgeItem } from '../types';
+import { appendRestaurantImage, getMenuIllustration } from '../utils/menuIllustrations';
 import { getItemImages, getItemImageVersion, saveItemImages, resetItemImages, SAMPLE_IMAGE_PRESETS } from '../utils/itemImageManager';
 
 interface EditImageModalProps {
@@ -17,11 +18,11 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
   onSaved,
 }) => {
   const [initialVersion] = useState(() => getItemImageVersion(item.id));
-  const [images, setImages] = useState<string[]>(() => getItemImages(item));
+  const [images, setImages] = useState<string[]>(() => getItemImages(item, false));
   const [inputUrl, setInputUrl] = useState('');
   const [urlError, setUrlError] = useState('');
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'upload' | 'url' | 'presets'>('presets');
+  const [activeTab, setActiveTab] = useState<'upload' | 'url' | 'presets'>('upload');
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -42,7 +43,7 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
       return;
     }
 
-    setImages((prev) => [...prev, trimmed]);
+    setImages((prev) => appendRestaurantImage(prev, trimmed));
     setInputUrl('');
   };
 
@@ -78,7 +79,7 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
       if (dataUrl) {
-        setImages((prev) => [...prev, dataUrl]);
+        setImages((prev) => appendRestaurantImage(prev, dataUrl));
       }
       setIsUploading(false);
     };
@@ -97,7 +98,7 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
     try {
       if (reset) await resetItemImages(item.id, initialVersion);
       else await saveItemImages(item.id, images, initialVersion);
-      onSaved(reset ? getItemImages(item) : images);
+      onSaved(reset ? getItemImages(item, false) : images);
       onClose();
     } catch (error: any) {
       setSaveError(error.message || 'บันทึกฐานกลางไม่สำเร็จ รูปที่เลือกยังอยู่ กรุณาลองใหม่');
@@ -105,7 +106,7 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
   };
   const handleSave = () => void persistImages(false);
   const handleResetToDefault = () => {
-    if (confirm('ต้องการรีเซ็ตรูปภาพของรายการนี้กลับเป็นค่าเริ่มต้นตัวอย่างหรือไม่?')) void persistImages(true);
+    if (confirm('ต้องการคืนค่ารูปเดิมจากฐานความรู้หรือไม่?')) void persistImages(true);
   };
 
   return (
@@ -153,14 +154,14 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
               <label className="text-xs font-bold text-[#2D5A43] uppercase tracking-wider flex items-center gap-1.5">
                 <span>รูปภาพปัจจุบัน ({images.length} รูป)</span>
               </label>
-              {images.length > 0 && (
+              {(
                 <button
                   type="button"
                   disabled={isSaving || isUploading}
                   onClick={handleResetToDefault}
                   className="text-xs text-[#916B2D] hover:text-[#7D5C26] flex items-center gap-1 font-medium transition-colors"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" /> คืนค่ารูปตัวอย่างเริ่มต้น
+                  <RotateCcw className="w-3.5 h-3.5" /> คืนค่ารูปเดิม
                 </button>
               )}
             </div>
@@ -184,8 +185,8 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
                       className="w-full h-full object-cover"
                       referrerPolicy="no-referrer"
                       onError={(e) => {
-                        // Fallback placeholder on broken link
-                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1542314831-c6a4d142104d?auto=format&fit=crop&w=600&q=80';
+                        (e.target as HTMLImageElement).style.visibility = 'hidden';
+                        (e.target as HTMLImageElement).parentElement?.setAttribute('title', 'โหลดรูปไม่ได้ กรุณาตรวจสอบลิงก์หรือเปลี่ยนรูป');
                       }}
                     />
                     {idx === 0 && (
@@ -193,6 +194,7 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
                         รูปหลัก
                       </span>
                     )}
+                    {getMenuIllustration(url) && <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-black/65 text-white text-[10px] rounded-md">ภาพประกอบเมนู</span>}
                     <button
                       type="button"
                       onClick={() => handleRemoveImage(idx)}
@@ -209,7 +211,7 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
 
           {/* Add Image Controls */}
           <div className="border border-[#E2ECE5] rounded-2xl p-4 bg-[#FBFDFB]">
-            <div className="flex border-b border-[#E2ECE5] pb-2 mb-4 gap-2">
+            <div className="flex flex-wrap border-b border-[#E2ECE5] pb-2 mb-4 gap-2">
               <button
                 type="button"
                 onClick={() => setActiveTab('presets')}
@@ -219,7 +221,7 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
                     : 'text-[#526B5C] hover:bg-[#EEF5EC]'
                 }`}
               >
-                <Sparkles className="w-3.5 h-3.5" /> รูปภาพตัวอย่างของบ้านโฮม
+                <Sparkles className="w-3.5 h-3.5" /> รูปตัวอย่าง (ไม่ใช่ภาพสถานที่จริง)
               </button>
               <button
                 type="button"

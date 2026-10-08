@@ -1,6 +1,7 @@
 import { normalizeSearchText, searchTopics } from './searchLanguage';
 import { KnowledgeItem, KnowledgeCategory } from '../types';
 import { isCustomerReady } from './knowledgeFilter';
+import { withRecentQuestions } from './qaConversation';
 
 export interface SearchResult {
   item: KnowledgeItem;
@@ -314,7 +315,8 @@ export async function executeSearch(
 export async function askGemini(
   query: string, 
   results: SearchResult[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  recentQuestions: string[] = []
 ): Promise<{ answer: string; referenceIds: string[] }> {
   // If request was already aborted, exit immediately
   if (signal?.aborted) {
@@ -339,7 +341,7 @@ export async function askGemini(
     const res = await fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, contextItems: customerReadyItems }),
+      body: JSON.stringify({ query: withRecentQuestions(query, recentQuestions), contextItems: customerReadyItems }),
       signal: timeoutController.signal
     });
 
@@ -382,4 +384,5 @@ export async function askGemini(
     signal?.removeEventListener('abort', onCallerAbort);
   }
 }
+
 

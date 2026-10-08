@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { setCorsHeaders } from '../lib/cors.js';
 import { askDeepSeek } from '../lib/deepseek.js';
+import { answerConversation } from '../lib/aiConversation.js';
 
 function cleanCustomerResponse(text: string): string {
   if (!text) return '';
@@ -93,6 +94,19 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method Not Allowed. Use GET or POST.' });
   }
 
+  if (req.body?.mode === 'conversation') {
+    try {
+      const generate = async (prompt: string) => {
+        if (process.env.DEEPSEEK_API_KEY) return askDeepSeek(process.env.DEEPSEEK_API_KEY, prompt, [], 'คุณคือน้องโฮม ตอบตามคำสั่งต่อไปนี้โดยใช้ข้อมูลที่ให้เท่านั้น คืน JSON เท่านั้น ไม่ใช้ markdown');
+        if (!process.env.GEMINI_API_KEY) throw new Error('ยังไม่ได้ตั้งค่า AI API สำหรับเว็บไซต์นี้');
+        return generateAiContentWithFallback(new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }), prompt, { temperature: 0.2, responseMimeType: 'application/json' });
+      };
+      return res.status(200).json(await answerConversation(req.body, generate));
+    } catch (error: any) {
+      console.error('[api/ask] conversation failed:', error?.message);
+      return res.status(502).json({ error: 'AI ตอบไม่สำเร็จ กรุณาลองใหม่ หากยังไม่สำเร็จให้แจ้งผู้ดูแลตรวจการเชื่อมต่อ API' });
+    }
+  }
   const { query, contextItems } = req.body || {};
 
   try {
@@ -172,3 +186,4 @@ ${contextText}
     });
   }
 }
+

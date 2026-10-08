@@ -1077,7 +1077,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   }, [leadsList, appointments]);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
+    <div className="b2b-workspace space-y-5 animate-in fade-in duration-300">
       {/* Role Notice Banner if Permission Error */}
       {permissionError && (
         <div className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-2xl flex items-center justify-between text-sm shadow-xs animate-in fade-in">
@@ -1379,12 +1379,12 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-3">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {filteredLeads.map((lead) => (
                 <div
                   key={lead.id}
                   onClick={() => setActiveLeadModal(lead)}
-                  className="bg-white rounded-2xl p-4 sm:p-5 border border-[#E0E7DC] hover:border-[#215E39] hover:shadow-sm transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                  className="bg-white rounded-2xl p-4 sm:p-5 border border-[#E0E7DC] hover:border-[#215E39] hover:shadow-sm transition-all cursor-pointer flex flex-col sm:flex-row xl:flex-col sm:items-center xl:items-stretch justify-between gap-4 group"
                 >
                   <div className="flex items-start gap-3.5 flex-1">
                     {/* Priority Badge */}
@@ -2143,4 +2143,5 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     </div>
   );
 };
+
 

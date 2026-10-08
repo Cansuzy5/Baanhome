@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+.baanhome-navigation > button { justify-content: flex-start; width: 100%; padding: 12px; border-radius: 12px; font-size: 14px; }
+.b2b-workspace { color: #1b3d2f; }
+.b2b-workspace > div { box-shadow: none; }
+.baanhome-calendar { --calendar-cream: #fffdf7; }
+.baanhome-calendar button { touch-action: manipulation; }
+button, summary, select { touch-action: manipulation; }
+button:focus-visible, summary:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #2d5a43; outline-offset: 3px; }
+@media (max-width: 640px) {
+  .baanhome-calendar { min-width: 0; }
+  .baanhome-calendar .grid-cols-7 { gap: 3px; }
+}
+
 @layer base {
   body {
     font-family: 'Sarabun', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -38,4 +50,38 @@
 @keyframes shimmer {
   0% { transform: translateX(-100%) skewX(-12deg); }
   100% { transform: translateX(200%) skewX(-12deg); }
+}
+
+
+/* Q&A garden treatment; scoped to this screen and decorative only. */
+.qa-garden-shell { position: relative; isolation: isolate; }
+.qa-garden-shell .qa-conversation { position: relative; z-index: 1; }
+.qa-botanical-backdrop { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.qa-ambient-light { position: absolute; inset: 0; background: radial-gradient(ellipse at 26% 35%, rgba(179,203,154,.16), transparent 39%), radial-gradient(ellipse at 75% 80%, rgba(233,222,191,.14), transparent 42%); }
+.qa-branch { position: absolute; width: clamp(110px, 18vw, 245px); height: auto; opacity: .19; }
+.qa-branch-right { right: -45px; top: -15px; transform: rotate(-12deg); }
+.qa-branch-left { left: -65px; bottom: 4px; width: clamp(110px, 17vw, 225px); transform: rotate(178deg); opacity: .15; }
+.qa-question-bubble { background: linear-gradient(135deg, #e9efdf, #e0e9d8); box-shadow: 0 2px 5px rgba(33,75,56,.04); }
+.qa-answer-bubble { position: relative; border-color: #b9caaa; background: #fffefb; box-shadow: 0 7px 24px rgba(41,66,35,.07), 0 1px 3px rgba(41,66,35,.03); margin-top: 28px; }
+.qa-assistant-signature { display: flex; align-items: center; gap: 8px; margin-top: -36px; margin-bottom: 18px; color: #214b38; font-size: 12px; font-weight: 600; }
+.qa-home-avatar { display: inline-flex; width: 34px; height: 34px; align-items: center; justify-content: center; border-radius: 50%; color: white; background: linear-gradient(145deg, #35613e, #183b29); border: 3px solid #f7f5ec; box-shadow: 0 3px 8px rgba(33,75,56,.1); }
+.qa-avatar-spark { color: #94b57d; font-size: 13px; }
+.qa-copy-button { border: 1px solid #dce2d4; border-radius: 999px; padding: 7px 12px; background: #fafbf6; transition: background-color 160ms ease, border-color 160ms ease; }
+.qa-copy-button:hover { background: #edf3e7; border-color: #b8cbaa; }
+.qa-input-surface { border-radius: 28px; border-color: #b6c8a7; box-shadow: 0 8px 25px rgba(41,66,35,.08); transition: box-shadow 160ms ease; }
+.qa-input-surface:focus-within { box-shadow: 0 0 0 3px rgba(157,180,137,.15), 0 8px 25px rgba(41,66,35,.08); }
+.qa-send-button { background: linear-gradient(145deg, #426d43, #1b412d); box-shadow: 0 3px 9px rgba(33,75,56,.16); transition: filter 160ms ease, transform 160ms ease; }
+.qa-send-button:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+.qa-chat-turn { animation: qa-soft-arrival 180ms ease-out; }
+.qa-answer-content { animation: qa-soft-arrival 220ms ease-out; }
+@keyframes qa-soft-arrival { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 640px) {
+  .qa-branch-right { right: -52px; top: 4px; opacity: .13; }
+  .qa-branch-left { left: -60px; opacity: .1; }
+  .qa-assistant-signature { margin-top: -32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .qa-chat-turn, .qa-answer-content { animation: none; }
+  .qa-copy-button, .qa-input-surface, .qa-send-button { transition: none; }
+  .qa-send-button:hover:not(:disabled) { transform: none; }
 }

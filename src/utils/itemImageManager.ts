@@ -1,4 +1,5 @@
 import { SharedContentClient, watchSharedContent } from './sharedContentClient';
+import { getMenuIllustrations } from './menuIllustrations';
 import { KnowledgeCategory, KnowledgeItem } from '../types';
 
 const STORAGE_KEY = 'baan_home_custom_item_images_v1';
@@ -201,7 +202,7 @@ export function syncCustomImagesWithServer() {
  * 3. Specific curated item default images
  * 4. Default image for the category
  */
-export function getItemImages(item: KnowledgeItem): string[] {
+export function getItemImages(item: KnowledgeItem, includeStockFallback = true): string[] {
   if (!item) return [];
 
   // 1. Check local storage overrides
@@ -217,6 +218,10 @@ export function getItemImages(item: KnowledgeItem): string[] {
   if (item.imageUrl) {
     return [item.imageUrl];
   }
+
+  const menuPhotos = getMenuIllustrations(item);
+  if (menuPhotos.length) return menuPhotos.map(photo => photo.url);
+  if (!includeStockFallback) return [];
 
   // 3. Specific curated item default
   if (ITEM_SPECIFIC_IMAGES[item.id]) {

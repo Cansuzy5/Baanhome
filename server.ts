@@ -1,3 +1,4 @@
+import askHandler from './api/ask.js';
 import knowledgeSyncHandler from './api/sync/knowledge.js';
 import customImagesSyncHandler from './api/sync/custom-images.js';
 import nongHomeAnalytics from './api/nong-home-analytics.js';
@@ -104,6 +105,7 @@ async function startServer() {
 
   // AI API Route
   app.post('/api/ask', async (req, res) => {
+    if (req.body?.mode === 'conversation') return askHandler(req, res);
     const { query, contextItems } = req.body || {};
     try {
       if (process.env.DEEPSEEK_API_KEY) {
