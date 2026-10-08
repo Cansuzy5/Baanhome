@@ -6,7 +6,7 @@ import test from 'node:test';
 registerHooks({
   resolve(s, c, next) {
     if (s.startsWith('.')) {
-      const u = new URL(/\.[a-z]+$/.test(s) ? s : s + '.ts', c.parentURL);
+      const u = new URL(s.endsWith('.js') ? s.slice(0, -3) + '.ts' : /\.[a-z]+$/.test(s) ? s : s + '.ts', c.parentURL);
       if (existsSync(u)) return { url: u.href, shortCircuit: true };
     }
     return next(s, c);
@@ -68,4 +68,83 @@ test('actual uploads replace only starter photos, preserving existing restaurant
   const starter = MENU_ILLUSTRATIONS[0].url;
   assert.deepEqual(appendRestaurantImage([starter], 'actual.jpg'), ['actual.jpg']);
   assert.deepEqual(appendRestaurantImage(['original.jpg', starter], 'actual.jpg'), ['original.jpg', 'actual.jpg']);
+});
+
+const { answerConversation } = await import('../lib/aiConversation.ts');
+const { serializeKnowledge, askConversation } = await import('../src/utils/aiConversation.ts');
+test('semantic selection and separate generation keep internal facts out of customer prompt', async () => {
+  const items = serializeKnowledge([{ ...room, summary: 'internal secret pricing strategy', detail: ['staff instructions'] }, { ...internal, summary: 'confidential salary', detail: [] }]);
+  const prompts = [];
+  const result = await answerConversation({ query: 'ขอทั้งข้อความลูกค้าและแนวทางพนักงาน', contextItems: items, history: [{ question: 'เรื่องห้องพัก', staffAnswer: 'private previous answer', customerAnswer: 'previous customer reply' }] }, async prompt => {
+    prompts.push(prompt);
+    if (prompts.length === 1) return JSON.stringify({ ids: ['room', 'internal', 'invented'], audience: 'both' });
+    if (prompt.includes('ใช้เฉพาะ customerMessage')) {
+      assert.equal(prompt.includes('confidential salary'), false);
+      assert.equal(prompt.includes('internal secret pricing strategy'), false);
+      assert.equal(prompt.includes('private previous answer'), false);
+      return JSON.stringify({ text: 'ข้อความลูกค้า', ids: ['room'] });
+    }
+    assert.ok(prompt.includes('confidential salary'));
+    return JSON.stringify({ text: 'สำหรับพนักงาน', ids: ['internal', 'invented'] });
+  });
+  assert.deepEqual(result, { customerAnswer: 'ข้อความลูกค้า', staffAnswer: 'สำหรับพนักงาน', referenceIds: ['room', 'internal'], customerReferenceIds: ['room'] });
+  assert.equal(prompts.length, 3);
+});
+test('API failure and invalid references are errors rather than successful fallback answers', async () => {
+  let count = 0;
+  await assert.rejects(answerConversation({ query: 'ราคา', contextItems: serializeKnowledge([room]) }, async () => ++count === 1 ? '{"ids":["room"],"audience":"customer"}' : '{"text":"invalid customer answer","ids":["internal"]}'), /evidence/);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, json: async () => ({ error: 'API unavailable' }) });
+  try { await assert.rejects(askConversation('ราคา', [room], [], new AbortController().signal), /API unavailable/); }
+  finally { globalThis.fetch = originalFetch; }
+});
+test('grouped fish menus resolve exact dishes in their species sections', () => {
+  const photos = getMenuIllustrations({ title: 'เมนูปลา: ปลานิล ปลากะพง', category: 'restaurant', detail: ['ปลานิล: นึ่งมะนาว 365 | ทอดสมุนไพร 265'] });
+  assert.deepEqual(photos.map(p => p.name), ['ปลานิลนึ่งมะนาว']);
+  assert.equal(getMenuIllustrations({ title: 'ข้อมูลปลา', category: 'restaurant', detail: ['ลูกค้าชอบปลานิลนึ่งมะนาว'] }).length, 0);
+});
+const { applyB2BMutation } = await import('../lib/b2bMutation.ts');
+test('existing B2B round keeps appointment closure and starts an independent new round', () => {
+  for (const outcome of ['success', 'unsuccessful']) {
+    let data = { leads: [{ id: 'org', name: 'องค์กรเดิม', pipelineStage: 'ยังไม่ติดต่อ' }], appointments: [] };
+    data = applyB2BMutation(data, { action: 'workflow', lead: { ...data.leads[0], pipelineStage: 'นัดเข้าพบ' }, appointment: { id: 'old', leadId: 'org', status: 'scheduled', date: '2026-09-22' } });
+    assert.throws(() => applyB2BMutation(data, { action: 'closeCycleFromAppointment', appointmentId: 'old', outcome, closedAt: '2026-09-25', closureId: 'closed' }), /เข้าพบแล้ว/);
+    data = applyB2BMutation(data, { action: 'workflow', lead: { ...data.leads[0], pipelineStage: 'ติดตามต่อ' }, appointment: { ...data.appointments[0], status: 'completed' } });
+    data = applyB2BMutation(data, { action: 'closeCycleFromAppointment', appointmentId: 'old', outcome, closedAt: '2026-09-25', closureId: 'closed' });
+    assert.equal(data.leads[0].pipelineStage, 'ยังไม่ติดต่อ');
+    assert.equal(data.leads[0].salesClosures.length, 1);
+    assert.equal(data.leads[0].salesClosures[0].sourceAppointmentId, 'old');
+    assert.equal(data.appointments[0].status, 'completed');
+    assert.equal(data.appointments[0].salesCycleOutcome, outcome);
+    assert.equal(data.appointments[0].salesCycleClosedAt, '2026-09-25');
+    assert.ok(data.leads[0].history.length);
+    const snapshot = structuredClone(data.appointments[0]);
+    data = applyB2BMutation(data, { action: 'workflow', lead: { ...data.leads[0], pipelineStage: 'นัดเข้าพบ' }, appointment: { id: 'new', leadId: 'org', status: 'scheduled', date: '2026-10-05' } });
+    assert.deepEqual(data.appointments.find(a => a.id === 'old'), snapshot);
+    assert.equal(data.appointments.find(a => a.id === 'new').salesCycleOutcome, undefined);
+    assert.throws(() => applyB2BMutation(data, { action: 'upsert', collection: 'appointments', item: { ...snapshot, status: 'scheduled' } }), /อ่านได้/);
+    assert.throws(() => applyB2BMutation(data, { action: 'delete', collection: 'appointments', id: 'old' }), /แอดมิน/);
+  }
+});
+const { default: askHandler } = await import('../api/ask.ts');
+test('conversation HTTP handler returns structured AI response and exposes failed provider as 502', async () => {
+  const oldFetch = globalThis.fetch;
+  const oldDeepseek = process.env.DEEPSEEK_API_KEY;
+  const oldGemini = process.env.GEMINI_API_KEY;
+  const res = { code: 200, data: undefined, setHeader() {}, status(code) { this.code = code; return this; }, json(data) { this.data = data; return this; } };
+  const req = { method: 'POST', body: { mode: 'conversation', query: 'ห้องพักราคาเท่าไหร่', contextItems: serializeKnowledge([room]) } };
+  let calls = 0;
+  try {
+    process.env.DEEPSEEK_API_KEY = 'isolated-test-key'; delete process.env.GEMINI_API_KEY;
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: ++calls === 1 ? '{"ids":["room"],"audience":"customer"}' : '{"text":"คำตอบลูกค้า","ids":["room"]}' } }] }) });
+    await askHandler(req, res);
+    assert.equal(res.code, 200); assert.equal(res.data.customerAnswer, 'คำตอบลูกค้า'); assert.equal(calls, 2);
+    globalThis.fetch = async () => { throw new Error('isolated provider failure'); };
+    await askHandler(req, res);
+    assert.equal(res.code, 502); assert.equal(res.data.answer, undefined); assert.ok(res.data.error);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldDeepseek === undefined) delete process.env.DEEPSEEK_API_KEY; else process.env.DEEPSEEK_API_KEY = oldDeepseek;
+    if (oldGemini === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = oldGemini;
+  }
 });

@@ -173,11 +173,21 @@ export const MENU_ILLUSTRATIONS: MenuIllustration[] = [
 export function getMenuIllustration(url: string): MenuIllustration | undefined {
   return MENU_ILLUSTRATIONS.find(photo => photo.url === url);
 }
-export function getMenuIllustrations(item: Pick<KnowledgeItem, 'title' | 'category'>): MenuIllustration[] {
+export function getMenuIllustrations(item: Pick<KnowledgeItem, 'title' | 'category'> & Partial<Pick<KnowledgeItem, 'detail'>>): MenuIllustration[] {
   if (item.category !== 'restaurant') return [];
   // Match the actual menu title, never incidental dishes in descriptions.
   const title = (item.title || '').normalize('NFC').replace(/\s+/g, ' ');
-  return MENU_ILLUSTRATIONS.filter(photo => new RegExp(photo.pattern, 'i').test(title)).slice(0, 3);
+  // Grouped menu records contain their dishes in explicit species sections,
+  // e.g. "ปลานิล: นึ่งมะนาว 365 | ...". Expand only those menu sections;
+  // do not match incidental mentions in general prose.
+  const dishes = [title];
+  if (/^เมนูปลา[:：]/.test(title)) {
+    for (const line of item.detail || []) {
+      const section = line.match(/^(ปลานิล|ปลาช่อน|ปลากะพง)[:：]\s*(.+)$/);
+      if (section) for (const dish of section[2].split('|')) dishes.push(section[1] + dish.trim().replace(/\s+\d.*$/, ''));
+    }
+  }
+  return MENU_ILLUSTRATIONS.filter(photo => dishes.some(dish => new RegExp(photo.pattern, 'i').test(dish))).slice(0, 3);
 }
 export function appendRestaurantImage(previous: string[], url: string): string[] {
   // The first actual upload replaces starter illustrations, keeps actual photos.

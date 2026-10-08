@@ -22,6 +22,7 @@ const today = new Date().toISOString().slice(0, 10);
 const leads = [{ id: 'isolated-lead', name: 'องค์กรทดสอบ', priority: 'A', contactPerson: 'ผู้ติดต่อ', phone: '0000000000', pipelineStage: 'ยังไม่ติดต่อ', contactStatus: 'ยังไม่ติดต่อ', salesClosures: [] }];
 const appointments = Array.from({ length: 7 }, (_, index) => ({ id: `isolated-appointment-${index}`, leadId: 'isolated-lead', leadName: 'องค์กรทดสอบ', date: today, time: `${10 + index}:00`, title: 'นัดทดสอบ', location: 'สถานที่ทดสอบ', objective: 'อื่นๆ', status: index === 0 ? 'completed' : 'scheduled', createdAt: `${today}T00:00:00Z`, ...(index === 0 ? { salesCycleOutcome: 'success', salesCycleClosureId: 'isolated-closure', salesCycleClosedAt: `${today}T09:00:00Z` } : {}) }));
 let failSave = false;
+let failAi = false;
 const aiCalls = [];
 const hash = value => createHash('sha256').update(value).digest('hex');
 async function context(role, viewport, accountId = role) {
@@ -33,7 +34,12 @@ async function context(role, viewport, accountId = role) {
     if (!url.pathname.startsWith('/api/')) return route.continue();
     let json = {};
     if (url.pathname === '/api/sync/knowledge') json = { entries: {}, legacy: { items: [item, menuItem], sheetUrl: '', lastSynced: '2026-10-08' } };
-    if (url.pathname === '/api/ask') { const request = route.request().postDataJSON(); aiCalls.push(request); json = { answer: 'คำตอบ AI ทดสอบ', referenceIds: request.contextItems.map(item => item.id) }; }
+    if (url.pathname === '/api/ask') {
+      const request = route.request().postDataJSON(); aiCalls.push(request);
+      if (failAi) return route.fulfill({ status: 502, json: { error: 'AI ทดสอบขัดข้อง' } });
+      const id = request.query.includes('ต้มยำ') || request.history?.some(t => t.question.includes('ต้มยำ')) ? menuItem.id : item.id;
+      json = { customerAnswer: 'คำตอบ AI ทดสอบ', staffAnswer: request.query.includes('ทั้งสอง') ? 'ข้อมูลภายในทดสอบ' : '', referenceIds: [id], customerReferenceIds: [id] };
+    }
     if (url.pathname === '/api/sync/custom-images') {
       if (route.request().method() === 'GET') json = url.searchParams.has('part') ? { text: parts.get(url.searchParams.get('part')) } : { entries, legacy: {} };
       else {
@@ -87,12 +93,12 @@ try {
   await other.locator('#main-search-input').fill(item.title);
   await other.getByRole('button', { name: 'ส่งคำถาม', exact: true }).click();
   await page.screenshot({ path: '/tmp/baanhome-qa-answer.png', fullPage: true });
-  await page.getByRole('heading', { name: item.title }).waitFor();
+  await page.getByText('คำตอบ AI ทดสอบ', { exact: true }).waitFor();
   const card = page.locator('[data-knowledge-id="isolated-kb"]');
-  const disclosure = card.locator('details').filter({ has: page.locator('summary', { hasText: 'ดูแหล่งอ้างอิงและข้อมูลเพิ่มเติม' }) });
+  const disclosure = page.locator('details').filter({ has: page.locator('summary', { hasText: 'แหล่งอ้างอิงและข้อมูลเพิ่มเติม' }) });
   assert.equal(await disclosure.getAttribute('open'), null);
   await disclosure.locator('summary').click();
-  await card.getByRole('button', { name: 'ดูรูปขนาดใหญ่' }).click();
+  await card.getByRole('button', { name: `ดูรูป ${item.title}`, exact: true }).click();
   await page.locator('.fixed.inset-0.z-50.bg-black\\/90').waitFor();
   await page.locator('.fixed.inset-0.z-50.bg-black\\/90 button').last().click();
   await card.getByRole('button', { name: 'แก้ไขรูปภาพ', exact: true }).click();
@@ -119,13 +125,13 @@ try {
   await page.getByRole('button', { name: 'บันทึกรูปภาพ', exact: true }).click();
   await page.getByRole('button', { name: 'บันทึกรูปภาพ', exact: true }).waitFor({ state: 'hidden' });
   await other.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await other.getByText('มีรูปภาพ (3)', { exact: true }).waitFor();
+  await other.waitForFunction(() => document.querySelector('[data-knowledge-id="isolated-kb"]').querySelectorAll('img').length === 3);
   await card.getByRole('button', { name: 'แก้ไขรูปภาพ', exact: true }).click();
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'คืนค่ารูปเดิม', exact: true }).click();
   await page.getByRole('button', { name: 'บันทึกรูปภาพ', exact: true }).waitFor({ state: 'hidden' });
   await other.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await other.getByText('มีรูปภาพ (1)', { exact: true }).waitFor();
+  await other.waitForFunction(() => document.querySelector('[data-knowledge-id="isolated-kb"]').querySelectorAll('img').length === 1);
   await card.getByRole('button', { name: 'แก้ไขรูปภาพ', exact: true }).click();
   await page.locator('button[title="ลบรูปนี้"]').click();
   await page.getByRole('button', { name: 'บันทึกรูปภาพ', exact: true }).click();
@@ -141,7 +147,13 @@ try {
   for (const p of [page, other]) {
     await p.locator('#navigation-toggle').click();
     await p.locator('#nav-tab-docs').click();
-    await p.getByText('คลังความรู้บ้านโฮม · 14 หมวดหมู่').waitFor();
+    await p.getByRole('heading', { name: 'คลังความรู้', exact: true }).waitFor();
+    const callsBeforeRead = aiCalls.length;
+    await p.getByRole('button', { name: new RegExp(item.title) }).click();
+    await p.getByRole('heading', { name: item.title, exact: true }).waitFor();
+    await p.getByText(item.summary, { exact: true }).waitFor();
+    assert.equal(await p.locator('#main-search-input').count(), 0, 'reading stays in library');
+    assert.equal(aiCalls.length, callsBeforeRead, 'reading never calls AI');
     await fits(p);
     await p.screenshot({ path: p === page ? '/tmp/baanhome-library.png' : '/tmp/baanhome-library-mobile.png', fullPage: true });
     await p.locator('#navigation-toggle').click();
@@ -172,7 +184,7 @@ try {
     await p.locator('#main-search-input').fill(menuItem.title);
     await p.getByRole('button', { name: 'ส่งคำถาม', exact: true }).click();
     await p.locator('[data-knowledge-id="isolated-menu"]').getByText('ภาพประกอบเมนู · ต้มยำกุ้ง', { exact: true }).waitFor();
-    assert.equal(await p.locator('[data-knowledge-id="isolated-menu"] img[src="/menu-illustrations/1.jpg"]').evaluate(img => img.complete && img.naturalWidth > 0), true);
+    await p.waitForFunction(() => { const img = document.querySelector('[data-knowledge-id="isolated-menu"] img[src="/menu-illustrations/1.jpg"]'); return img?.complete && img.naturalWidth > 0; });
   }
   const menuCard = page.locator('[data-knowledge-id="isolated-menu"]');
   await menuCard.getByRole('button', { name: 'แก้ไขรูปภาพ', exact: true }).click();
@@ -197,19 +209,33 @@ try {
   await page.getByRole('button', { name: 'บันทึกรูปภาพ', exact: true }).waitFor({ state: 'hidden' });
   await other.evaluate(() => window.dispatchEvent(new Event('focus')));
   await other.locator('[data-knowledge-id="isolated-menu"]').getByText('ภาพประกอบเมนู · ต้มยำกุ้ง', { exact: true }).waitFor();
-  assert.equal(aiCalls.length, 0, 'typing, submitting local questions and editing photos must not call AI');
-  await page.getByRole('button', { name: 'ให้ AI ช่วยตอบ', exact: true }).click();
-  await page.getByText('คำตอบ AI ทดสอบ', { exact: true }).waitFor();
-  assert.equal(aiCalls.length, 1);
-  assert.equal(aiCalls[0].query, menuItem.title);
-  await page.getByRole('checkbox', { name: 'AI อัตโนมัติ' }).check();
+  assert.equal(aiCalls.length, 4, 'each submitted question calls API once; photo actions do not');
+  assert.equal(await page.getByRole('checkbox', { name: 'AI อัตโนมัติ' }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'ให้ AI ช่วยตอบ', exact: true }).count(), 0);
   await page.locator('#main-search-input').fill('แล้วราคาเท่าไหร่');
-  assert.equal(aiCalls.length, 1, 'automatic mode waits for submit');
+  assert.equal(aiCalls.length, 4, 'typing does not call AI');
   await page.getByRole('button', { name: 'ส่งคำถาม', exact: true }).click();
   await page.locator('[data-turn-id]').last().getByText('คำตอบ AI ทดสอบ', { exact: true }).waitFor();
-  assert.equal(aiCalls.length, 2);
-  assert.ok(aiCalls[1].query.includes(menuItem.title));
-  assert.ok(aiCalls[1].query.endsWith('\nแล้วราคาเท่าไหร่'));
+  assert.equal(aiCalls.length, 5);
+  assert.equal(aiCalls[4].query, 'แล้วราคาเท่าไหร่');
+  assert.equal(aiCalls[4].history[0].question, menuItem.title);
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.locator('[data-turn-id]').last().getByRole('button', { name: 'คัดลอกคำตอบ', exact: true }).click();
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'คำตอบ AI ทดสอบ');
+  await page.locator('#main-search-input').fill('ขอทั้งสองส่วน');
+  await page.getByRole('button', { name: 'ส่งคำถาม', exact: true }).click();
+  await page.getByText('ข้อมูลภายในทดสอบ', { exact: true }).waitFor();
+  await page.locator('[data-turn-id]').last().getByRole('button', { name: 'คัดลอกคำตอบสำหรับพนักงาน', exact: true }).click();
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'ข้อมูลภายในทดสอบ');
+  failAi = true;
+  await page.locator('#main-search-input').fill('คำถามที่ API ล้มเหลว');
+  await page.getByRole('button', { name: 'ส่งคำถาม', exact: true }).click();
+  await page.getByRole('alert').getByText('AI ทดสอบขัดข้อง', { exact: true }).waitFor();
+  assert.equal(await page.locator('[data-turn-id]').last().getByRole('button', { name: 'คัดลอกคำตอบ' }).count(), 0);
+  failAi = false;
+  await page.getByRole('button', { name: 'ลองใหม่', exact: true }).click();
+  await page.locator('[data-turn-id]').last().getByText('คำตอบ AI ทดสอบ', { exact: true }).waitFor();
+  const callsBeforeReload = aiCalls.length;
   const history = await page.evaluate(() => localStorage.getItem('baanhome_qa_conversation_v1:Administrator'));
   await user.evaluate(value => localStorage.setItem('baanhome_qa_conversation_v1:Administrator', value), history);
   await user.reload();
@@ -218,7 +244,7 @@ try {
   await page.reload();
   await page.locator('[data-turn-id]').nth(1).waitFor();
   assert.equal(await page.getByText('คำตอบ AI ทดสอบ', { exact: true }).count(), 0, 'do not restore stale generated facts');
-  assert.equal(aiCalls.length, 2, 'reload must not trigger AI');
+  assert.equal(aiCalls.length, callsBeforeReload, 'reload must not trigger AI');
   await page.getByRole('button', { name: 'เริ่มบทสนทนาใหม่' }).click();
   assert.equal(await page.locator('[data-turn-id]').count(), 0);
   assert.equal(await other.locator('[data-turn-id]').count(), 1, 'reset affects own account only');

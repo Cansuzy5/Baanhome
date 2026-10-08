@@ -8,7 +8,8 @@ export interface ConversationTurn {
   sourceIds: string[];
   createdAt: string;
   usedContext: boolean;
-  aiAnswer?: { text: string; references: string[] };
+  aiAnswer?: { text: string; references: string[]; customerAnswer?: string; staffAnswer?: string; customerReferenceIds?: string[] };
+  error?: string;
 }
 export const MAX_CONVERSATION_TURNS = 20;
 const keyFor = (accountId: string) => `baanhome_qa_conversation_v1:${encodeURIComponent(accountId)}`;

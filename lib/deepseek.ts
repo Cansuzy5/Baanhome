@@ -37,6 +37,7 @@ export async function askDeepSeek(
   apiKey: string,
   query: string,
   contextItems: any[],
+  systemPrompt?: string,
 ): Promise<string> {
   // DeepSeek can hold a connection open for a long time under load; fail fast instead of hanging
   const response = await fetch(DEEPSEEK_URL, {
@@ -49,9 +50,9 @@ export async function askDeepSeek(
     body: JSON.stringify({
       model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
       temperature: 0.4,
-      max_tokens: 800,
+      max_tokens: systemPrompt ? 1600 : 800,
       messages: [
-        { role: 'system', content: buildNongHomeSystemPrompt(contextItems) },
+        { role: 'system', content: systemPrompt || buildNongHomeSystemPrompt(contextItems) },
         { role: 'user', content: String(query || '') },
       ],
     }),
@@ -67,3 +68,4 @@ export async function askDeepSeek(
   if (!text) throw new Error('DeepSeek returned empty response');
   return text;
 }
+
