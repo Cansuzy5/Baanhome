@@ -515,28 +515,18 @@ export default function App() {
       />
 
       {/* Footer */}
-      <footer className="bg-[#173225] text-[#BED2C4] border-t border-[#234735] py-6 px-4 text-xs">
+      <footer className="bg-transparent text-[#788477] py-3 px-4 text-xs">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-xl bg-[#C59B3F] text-[#173225] font-bold flex items-center justify-center text-xs shadow-xs">
-              โฮม
-            </div>
-            <div>
-              <span className="font-semibold text-white">น้องโฮม &middot; Baan Home Internal Assistant</span>
-              <span className="text-[#88A693] hidden md:inline"> | Baan Home Resort & Restaurant</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 text-[#A8C2B0]">
-            <span className="text-[11px] text-[#8EA897]">
-              สิทธิ์ของคุณ: <strong className="text-[#F1DCB0]">{currentRole}</strong>
+          <div className="flex items-center gap-3 text-[#788477]">
+            <span className="text-[11px] text-[#788477]">
+              สิทธิ์ของคุณ: <strong className="text-[#597662]">{currentRole}</strong>
             </span>
             {currentRole === 'Administrator' && (
               <>
                 <span>&middot;</span>
                 <button
                   onClick={() => setActiveTab('users')}
-                  className="hover:underline hover:text-[#F1DCB0] cursor-pointer"
+                  className="hover:underline hover:text-[#597662] cursor-pointer"
                 >
                   จัดการสิทธิ์ผู้ใช้
                 </button>

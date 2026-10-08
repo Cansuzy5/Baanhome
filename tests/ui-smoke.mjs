@@ -309,6 +309,14 @@ try {
   await form.waitFor({ state: 'hidden' });
   const afterDelete = JSON.parse(knowledgeEntries[hash('main')].parts.map(id => parts.get(id)).join(''));
   assert.equal(afterDelete.items.length, 2, 'delete only selected manual record');
+  assert.deepEqual(afterDelete.manualHistory.map(event => event.action), ['added', 'edited', 'deleted']);
+  assert.ok(afterDelete.manualHistory.every(event => event.actorName === 'ผู้ทดสอบ' && event.at));
+  await page.getByRole('button', { name: 'เพิ่มข้อมูล/คำตอบ', exact: true }).click();
+  await form.getByRole('button', { name: 'ประวัติ / จัดการข้อมูล', exact: true }).click();
+  await form.getByRole('region', { name: 'ประวัติข้อมูลที่หน้างานเพิ่ม' }).getByText('ลบ · โปรโมชั่นทดสอบแยกจากข้อมูลจริง', { exact: true }).waitFor();
+  await form.getByRole('button', { name: 'ปิด', exact: true }).click();
+  assert.equal(await page.locator('footer').evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)', 'no dark footer band');
+
   assert.equal(aiCalls.length, callsBeforeReload, 'saving and reading knowledge never calls AI');
   console.log('PASS: desktop/mobile, menu, disclosures, lightbox, save errors, cross-context image refresh, knowledge/B2B/calendar views, role navigation, food starter/replacement/removal/reset, bounded followup AI and private account histories');
 } finally { await browser.close(); server.kill(); }
