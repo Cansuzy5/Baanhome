@@ -134,13 +134,13 @@ export default function App() {
     initGoogleAuth();
 
     // Sync custom knowledge from server if uploaded by any staff/admin
-    syncKnowledgeWithServer((items) => {
+    const unsubKnowledge = syncKnowledgeWithServer((items, custom) => {
       setActiveKnowledgeItems(items);
-      setIsUsingCustomSheet(true);
+      setIsUsingCustomSheet(custom);
     });
 
     // Sync custom item images from server
-    syncCustomImagesWithServer();
+    const unsubImages = syncCustomImagesWithServer();
 
     // Subscribe to Central Sheets Config
     const unsubSheets = syncCentralSheetsConfig((cfg) => {
@@ -197,6 +197,8 @@ export default function App() {
     });
 
     return () => {
+      unsubKnowledge();
+      unsubImages();
       unsubSheets();
       unsubB2b();
       unsubUsers();
@@ -628,3 +630,4 @@ export default function App() {
     </div>
   );
 }
+

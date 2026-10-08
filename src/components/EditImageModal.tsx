@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { X, Upload, Plus, Trash2, Image as ImageIcon, Sparkles, Check, RotateCcw, AlertCircle, ExternalLink } from 'lucide-react';
 import { KnowledgeItem } from '../types';
-import { getItemImages, saveItemImages, resetItemImages, SAMPLE_IMAGE_PRESETS } from '../utils/itemImageManager';
+import { getItemImages, getItemImageVersion, saveItemImages, resetItemImages, SAMPLE_IMAGE_PRESETS } from '../utils/itemImageManager';
 
 interface EditImageModalProps {
   item: KnowledgeItem;
@@ -16,17 +16,21 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
   onClose,
   onSaved,
 }) => {
+  const [initialVersion] = useState(() => getItemImageVersion(item.id));
   const [images, setImages] = useState<string[]>(() => getItemImages(item));
   const [inputUrl, setInputUrl] = useState('');
   const [urlError, setUrlError] = useState('');
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'upload' | 'url' | 'presets'>('presets');
   const [isUploading, setIsUploading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
   const handleAddUrl = () => {
+    if (isSaving) return;
     setUrlError('');
     const trimmed = inputUrl.trim();
     if (!trimmed) {
@@ -43,10 +47,12 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
   };
 
   const handleRemoveImage = (indexToRemove: number) => {
+    if (isSaving) return;
     setImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
   const handleSelectPreset = (url: string, presetId: string) => {
+    if (isSaving) return;
     setSelectedPresetId(presetId);
     if (!images.includes(url)) {
       setImages((prev) => [...prev, url]);
@@ -54,6 +60,7 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isSaving) return;
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -83,20 +90,22 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
     e.target.value = '';
   };
 
-  const handleSave = () => {
-    saveItemImages(item.id, images);
-    onSaved(images);
-    onClose();
-  };
-
-  const handleResetToDefault = () => {
-    if (confirm('ต้องการรีเซ็ตรูปภาพของรายการนี้กลับเป็นค่าเริ่มต้นตัวอย่างหรือไม่?')) {
-      resetItemImages(item.id);
-      const defaults = getItemImages({ ...item, images: undefined, imageUrl: undefined });
-      setImages(defaults);
-      onSaved(defaults);
+  const persistImages = async (reset: boolean) => {
+    if (isSaving || isUploading) return;
+    setIsSaving(true);
+    setSaveError('');
+    try {
+      if (reset) await resetItemImages(item.id, initialVersion);
+      else await saveItemImages(item.id, images, initialVersion);
+      onSaved(reset ? getItemImages(item) : images);
       onClose();
-    }
+    } catch (error: any) {
+      setSaveError(error.message || 'บันทึกฐานกลางไม่สำเร็จ รูปที่เลือกยังอยู่ กรุณาลองใหม่');
+    } finally { setIsSaving(false); }
+  };
+  const handleSave = () => void persistImages(false);
+  const handleResetToDefault = () => {
+    if (confirm('ต้องการรีเซ็ตรูปภาพของรายการนี้กลับเป็นค่าเริ่มต้นตัวอย่างหรือไม่?')) void persistImages(true);
   };
 
   return (
@@ -105,6 +114,8 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
         className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl border border-[#E5EFE2] overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
+        {saveError && <p role="alert" className="p-4 text-red-700 bg-red-50">{saveError}</p>}
+        {isSaving && <p role="status" className="p-3">กำลังบันทึกและตรวจสอบฐานกลาง…</p>}
         {/* Header */}
         <div className="px-6 py-4 border-b border-[#EAEFE9] flex items-center justify-between bg-[#FBFDFB]">
           <div className="flex items-center gap-2.5">
@@ -126,7 +137,8 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            disabled={isSaving}
+              onClick={onClose}
             className="w-8 h-8 rounded-full hover:bg-[#F0F5F1] text-[#708477] hover:text-[#1B3D2F] flex items-center justify-center transition-colors"
           >
             <X className="w-5 h-5" />
@@ -144,6 +156,7 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
               {images.length > 0 && (
                 <button
                   type="button"
+                  disabled={isSaving || isUploading}
                   onClick={handleResetToDefault}
                   className="text-xs text-[#916B2D] hover:text-[#7D5C26] flex items-center gap-1 font-medium transition-colors"
                 >
@@ -347,13 +360,15 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
         <div className="px-6 py-4 border-t border-[#EAEFE9] bg-[#FBFDFB] flex items-center justify-between">
           <button
             type="button"
-            onClick={onClose}
+            disabled={isSaving}
+              onClick={onClose}
             className="px-4 py-2 text-xs font-semibold text-[#526B5C] hover:text-[#1B3D2F] transition-colors"
           >
             ยกเลิก
           </button>
           <button
             type="button"
+            disabled={isSaving || isUploading}
             onClick={handleSave}
             className="px-6 py-2.5 bg-[#2D5A43] hover:bg-[#1B3D2F] text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2"
           >
@@ -364,3 +379,4 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
     </div>
   );
 };
+

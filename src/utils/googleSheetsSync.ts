@@ -1,3 +1,4 @@
+import { SharedContentClient, watchSharedContent } from './sharedContentClient';
 import { KnowledgeItem, KnowledgeCategory, AudienceType, DataStatusType } from '../types';
 import { KNOWLEDGE_BASE_ITEMS } from '../data/knowledgeBase';
 import { BROCHURE_KNOWLEDGE_ITEMS } from '../data/brochureKnowledgeItems';
@@ -254,50 +255,42 @@ export function withPdfKnowledge(sheetItems: KnowledgeItem[]): KnowledgeItem[] {
   return [...sheetItems, ...BROCHURE_KNOWLEDGE_ITEMS.filter((b) => !ids.has(b.id))];
 }
 
-export function saveSyncedKnowledgeItems(items: KnowledgeItem[], sheetUrl?: string): void {
-  const lastTime = new Date().toISOString();
+const knowledgeClient = new SharedContentClient('/api/sync/knowledge');
+let knowledgeMemory: any;
+function cacheKnowledge(data: any) {
+  // Preserve the original cache: it may contain data that the old server never saved.
+  knowledgeMemory = data;
   try {
-    localStorage.setItem(STORAGE_KEY_ITEMS, JSON.stringify(items));
-    if (sheetUrl) {
-      localStorage.setItem(STORAGE_KEY_URL, sheetUrl);
-    }
-    localStorage.setItem(STORAGE_KEY_LAST_SYNC, lastTime);
-  } catch (e) {
-    console.error('Failed to save to localStorage', e);
-  }
-
-  // Sync to shared backend server
-  try {
-    fetch('/api/sync/knowledge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        items,
-        sheetUrl: sheetUrl || getSyncedSheetUrl(),
-        lastSynced: lastTime,
-      }),
-    }).catch(() => {});
-  } catch (e) {}
+    localStorage.setItem('nonghome_shared_knowledge_v2', JSON.stringify(data));
+    if (data.sheetUrl) localStorage.setItem(STORAGE_KEY_URL, data.sheetUrl);
+    else localStorage.removeItem(STORAGE_KEY_URL);
+    if (data.lastSynced) localStorage.setItem(STORAGE_KEY_LAST_SYNC, data.lastSynced);
+    else localStorage.removeItem(STORAGE_KEY_LAST_SYNC);
+  } catch {} // A full browser cache must not turn a confirmed central save into an error.
 }
-
-export function syncKnowledgeWithServer(onLoaded?: (items: KnowledgeItem[]) => void) {
-  try {
-    fetch('/api/sync/knowledge')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && Array.isArray(data.items) && data.items.length > 0) {
-          localStorage.setItem(STORAGE_KEY_ITEMS, JSON.stringify(data.items));
-          if (data.sheetUrl) localStorage.setItem(STORAGE_KEY_URL, data.sheetUrl);
-          if (data.lastSynced) localStorage.setItem(STORAGE_KEY_LAST_SYNC, data.lastSynced);
-          if (onLoaded) onLoaded(withPdfKnowledge(data.items));
-        }
-      })
-      .catch(() => {});
-  } catch (e) {}
+export async function saveSyncedKnowledgeItems(items: KnowledgeItem[], sheetUrl?: string): Promise<void> {
+  const data = { items, sheetUrl: sheetUrl || getSyncedSheetUrl(), lastSynced: new Date().toISOString() };
+  await knowledgeClient.save('main', data);
+  cacheKnowledge(data);
+}
+export function syncKnowledgeWithServer(onLoaded?: (items: KnowledgeItem[], custom: boolean) => void) {
+  let active = true;
+  const stop = watchSharedContent(async () => {
+    const { values, legacy } = await knowledgeClient.read();
+    const data = values.main || legacy;
+    if (!active || !data) return;
+    cacheKnowledge(data);
+    if (Array.isArray(data.items)) onLoaded?.(withPdfKnowledge(data.items), true);
+    else if (data.items === null) onLoaded?.(KNOWLEDGE_BASE_ITEMS, false);
+  });
+  return () => { active = false; stop(); };
 }
 
 export function getSyncedKnowledgeItems(): KnowledgeItem[] | null {
+  if (knowledgeMemory !== undefined) return Array.isArray(knowledgeMemory.items) ? withPdfKnowledge(knowledgeMemory.items) : null;
   try {
+    const shared = localStorage.getItem('nonghome_shared_knowledge_v2');
+    if (shared) { const data = JSON.parse(shared); return Array.isArray(data.items) ? withPdfKnowledge(data.items) : null; }
     const raw = localStorage.getItem(STORAGE_KEY_ITEMS);
     if (!raw) return null;
     return withPdfKnowledge(JSON.parse(raw));
@@ -314,21 +307,10 @@ export function getSyncedLastTime(): string | null {
   return localStorage.getItem(STORAGE_KEY_LAST_SYNC) || null;
 }
 
-export function clearSyncedKnowledgeItems(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEY_ITEMS);
-    localStorage.removeItem(STORAGE_KEY_URL);
-    localStorage.removeItem(STORAGE_KEY_LAST_SYNC);
-  } catch (e) {
-    console.error('Failed to clear localStorage', e);
-  }
-  try {
-    fetch('/api/sync/knowledge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: null, sheetUrl: '', lastSynced: null }),
-    }).catch(() => {});
-  } catch (e) {}
+export async function clearSyncedKnowledgeItems(): Promise<void> {
+  const data = { items: null, sheetUrl: '', lastSynced: null };
+  await knowledgeClient.save('main', data);
+  cacheKnowledge(data);
 }
 
 export function parseTSV(text: string): string[][] {
@@ -347,3 +329,4 @@ export function generateTemplateCSV(): string {
   ];
   return [headers.join(','), ...sampleRows.map((r) => r.join(','))].join('\r\n');
 }
+
