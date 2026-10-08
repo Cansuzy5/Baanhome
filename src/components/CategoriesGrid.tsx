@@ -39,8 +39,8 @@ const getCategoryTheme = (id: string) => {
   switch (id) {
     case 'restaurant':
       return {
-        bg: 'bg-[#FAF5EF]',
-        border: 'border-[#EADBCA]',
+        bg: 'bg-white',
+        border: 'border-[#e3dacb]',
         activeBorder: 'border-[#A35921]',
         iconBg: 'bg-[#FBE8D8]',
         iconColor: 'text-[#A35921]',
@@ -51,8 +51,8 @@ const getCategoryTheme = (id: string) => {
     case 'pool-villa':
     case 'resort-knowledge':
       return {
-        bg: 'bg-[#F2F8F7]',
-        border: 'border-[#D1E8E4]',
+        bg: 'bg-white',
+        border: 'border-[#e3dacb]',
         activeBorder: 'border-[#1E6B65]',
         iconBg: 'bg-[#DDF2EF]',
         iconColor: 'text-[#1B605B]',
@@ -64,8 +64,8 @@ const getCategoryTheme = (id: string) => {
     case 'competitor-battlecard':
     case 'quotation-policy':
       return {
-        bg: 'bg-[#F8F4FA]',
-        border: 'border-[#E5D7EC]',
+        bg: 'bg-white',
+        border: 'border-[#e3dacb]',
         activeBorder: 'border-[#693282]',
         iconBg: 'bg-[#EFE3F5]',
         iconColor: 'text-[#693282]',
@@ -75,8 +75,8 @@ const getCategoryTheme = (id: string) => {
       };
     case 'promotion-package':
       return {
-        bg: 'bg-[#FDF8ED]',
-        border: 'border-[#F2E0B5]',
+        bg: 'bg-white',
+        border: 'border-[#e3dacb]',
         activeBorder: 'border-[#9E6D0E]',
         iconBg: 'bg-[#FCEECA]',
         iconColor: 'text-[#9E6D0E]',
@@ -87,8 +87,8 @@ const getCategoryTheme = (id: string) => {
     case 'customer-service':
     case 'faq-problems':
       return {
-        bg: 'bg-[#FDF5F5]',
-        border: 'border-[#F4D6D6]',
+        bg: 'bg-white',
+        border: 'border-[#e3dacb]',
         activeBorder: 'border-[#A83838]',
         iconBg: 'bg-[#FCE6E6]',
         iconColor: 'text-[#A83838]',
@@ -99,8 +99,8 @@ const getCategoryTheme = (id: string) => {
     case 'reservation':
     case 'sop-operation':
       return {
-        bg: 'bg-[#F3F8F4]',
-        border: 'border-[#D5E7D7]',
+        bg: 'bg-white',
+        border: 'border-[#e3dacb]',
         activeBorder: 'border-[#22633E]',
         iconBg: 'bg-[#E1F0E4]',
         iconColor: 'text-[#22633E]',
@@ -110,8 +110,8 @@ const getCategoryTheme = (id: string) => {
       };
     default:
       return {
-        bg: 'bg-[#F7F6F3]',
-        border: 'border-[#E2DDD3]',
+        bg: 'bg-white',
+        border: 'border-[#e3dacb]',
         activeBorder: 'border-[#2E4336]',
         iconBg: 'bg-[#E9E5DB]',
         iconColor: 'text-[#2E4336]',
@@ -401,3 +401,4 @@ export const CategoriesGrid: React.FC<CategoriesGridProps> = ({
     </section>
   );
 };
+

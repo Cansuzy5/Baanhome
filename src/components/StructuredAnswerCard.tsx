@@ -65,7 +65,7 @@ export const StructuredAnswerCard: React.FC<StructuredAnswerCardProps> = ({ item
   const primaryImage = images[activeImageIndex] || images[0];
 
   return (
-    <div className={`bg-white rounded-3xl border shadow-sm overflow-hidden transition-all ${customerReady ? 'border-[#D5DFD8] hover:border-[#916B2D]' : 'border-[#F0E5D3] opacity-90'}`}>
+    <div data-knowledge-id={item.id} className={`bg-white rounded-3xl border shadow-sm overflow-hidden transition-all ${customerReady ? 'border-[#D5DFD8] hover:border-[#916B2D]' : 'border-[#F0E5D3] opacity-90'}`}>
       <div className="p-5 sm:p-6">
         
         {/* Header section */}
@@ -77,7 +77,7 @@ export const StructuredAnswerCard: React.FC<StructuredAnswerCardProps> = ({ item
               </span>
               {catMeta && (
                 <span className="flex items-center gap-1.5 px-2.5 py-1 bg-[#F8F6F0] text-[#7D5C26] text-[10px] font-bold rounded-md">
-                  <span className="opacity-70">{catMeta.icon}</span> {catMeta.nameTh}
+                  {catMeta.nameTh}
                 </span>
               )}
               {isCompetitor ? (
@@ -376,7 +376,7 @@ export const StructuredAnswerCard: React.FC<StructuredAnswerCardProps> = ({ item
 
         {/* Visual Photo Section (If item has images or curated sample) */}
         {primaryImage && (
-          <div className="mb-6 rounded-2xl overflow-hidden border border-[#E2ECE5] bg-[#F7FAF8] shadow-2xs">
+          <div className="mt-4 mb-6 max-w-sm rounded-2xl overflow-hidden border border-[#E2ECE5] bg-[#F7FAF8] shadow-2xs">
             <div className="relative h-36 sm:h-44 max-w-sm w-full overflow-hidden group cursor-pointer" onClick={() => setShowLightbox(true)} role="button" tabIndex={0} aria-label="ดูรูปขนาดใหญ่" onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowLightbox(true); } }}>
               <img
                 src={primaryImage}
