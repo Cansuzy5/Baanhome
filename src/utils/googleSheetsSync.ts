@@ -268,9 +268,25 @@ function cacheKnowledge(data: any) {
     else localStorage.removeItem(STORAGE_KEY_LAST_SYNC);
   } catch {} // A full browser cache must not turn a confirmed central save into an error.
 }
+// Read central state before changing the collection; version checking rejects concurrent writes.
+export async function addManualKnowledgeItem(item: KnowledgeItem): Promise<KnowledgeItem[]> {
+  const { values, legacy } = await knowledgeClient.read();
+  const current = values.main || legacy;
+  const items = [...(Array.isArray(current?.items) ? current.items : KNOWLEDGE_BASE_ITEMS), item];
+  const data = { items, sheetUrl: current?.sheetUrl || '', lastSynced: new Date().toISOString() };
+  await knowledgeClient.save('main', data, knowledgeClient.version('main'));
+  const confirmed = await knowledgeClient.read();
+  if (!confirmed.values.main?.items?.some((saved: KnowledgeItem) => saved.id === item.id)) throw new Error('ฐานกลางยังไม่ยืนยันข้อมูลใหม่ กรุณาตรวจสอบก่อนบันทึกซ้ำ');
+  cacheKnowledge(confirmed.values.main);
+  return withPdfKnowledge(confirmed.values.main.items);
+}
 export async function saveSyncedKnowledgeItems(items: KnowledgeItem[], sheetUrl?: string): Promise<void> {
-  const data = { items, sheetUrl: sheetUrl || getSyncedSheetUrl(), lastSynced: new Date().toISOString() };
-  await knowledgeClient.save('main', data);
+  const { values, legacy } = await knowledgeClient.read();
+  const current = values.main || legacy;
+  const ids = new Set(items.map(i => i.id));
+  const manual = (Array.isArray(current?.items) ? current.items : []).filter((i: KnowledgeItem) => i.id.startsWith('manual-') && !ids.has(i.id));
+  const data = { items: [...items, ...manual], sheetUrl: sheetUrl || getSyncedSheetUrl(), lastSynced: new Date().toISOString() };
+  await knowledgeClient.save('main', data, knowledgeClient.version('main'));
   cacheKnowledge(data);
 }
 export function syncKnowledgeWithServer(onLoaded?: (items: KnowledgeItem[], custom: boolean) => void) {

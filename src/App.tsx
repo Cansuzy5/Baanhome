@@ -1,3 +1,4 @@
+import { AddKnowledgeModal } from './components/AddKnowledgeModal';
 import { KnowledgeLibrary } from './components/KnowledgeLibrary';
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { KNOWLEDGE_CATEGORIES } from './data/categories';
@@ -81,6 +82,7 @@ export default function App() {
   
   const [activeTab, setActiveTab] = useState<NavigationTab>('qa');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showAddKnowledge, setShowAddKnowledge] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<KnowledgeCategory | 'all'>('all');
   
   // Users & Activity Logs state (Real-time Firebase Firestore + Local Cache)
@@ -374,6 +376,7 @@ export default function App() {
                 staffName={currentStaff.name}
                 analyticsStaff={currentStaff}
                 onOpenSheetsSync={currentRole !== 'Knowledge User' ? () => setShowSheetsSyncModal(true) : undefined}
+                onAddKnowledge={currentRole === 'Administrator' || currentRole === 'Operator' ? () => setShowAddKnowledge(true) : undefined}
                 isUsingCustomSheet={isUsingCustomSheet}
                 onRecordLog={(query, result) => {
                   if (query && result) {
@@ -553,6 +556,7 @@ export default function App() {
         }}
       />
 
+      {showAddKnowledge && (currentRole === 'Administrator' || currentRole === 'Operator') && <AddKnowledgeModal onClose={() => setShowAddKnowledge(false)} onSaved={items => { setActiveKnowledgeItems(items); setIsUsingCustomSheet(true); }} />}
       {/* Google Sheets Knowledge Base Sync Modal */}
       <GoogleSheetsSyncModal
         isOpen={showSheetsSyncModal}
