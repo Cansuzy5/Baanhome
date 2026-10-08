@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Camera } from 'lucide-react';
 import type { KnowledgeItem } from '../types';
 import { getItemImages } from '../utils/itemImageManager';
@@ -21,7 +22,7 @@ export function KnowledgeMedia({ item }: { item: KnowledgeItem; key?: string }) 
     })}</div>}
     <button onClick={() => setEdit(true)} className="inline-flex gap-1 items-center text-xs text-[#597662] py-1"><Camera size={13} />{images.length ? 'แก้ไขรูปภาพ' : 'เพิ่มรูปภาพ'}</button>
     {images.some(getMenuIllustration) && <details className="text-[10px] text-[#788477] mt-1"><summary className="cursor-pointer">เครดิตภาพประกอบ</summary>{images.map(getMenuIllustration).filter(Boolean).map(c => <p key={c!.url}><a href={c!.source} target="_blank" rel="noreferrer">{c!.name} · {c!.author}</a> · <a href={c!.licenseUrl || c!.source} target="_blank" rel="noreferrer">{c!.license}</a></p>)}</details>}
-    {edit && <EditImageModal item={item} isOpen onSaved={setImages} onClose={() => setEdit(false)} />}
-    {index !== null && <ImageLightboxModal images={images} initialIndex={index} isOpen onClose={() => setIndex(null)} title={item.title} />}
+    {edit && createPortal(<EditImageModal item={item} isOpen onSaved={setImages} onClose={() => setEdit(false)} />, document.body)}
+    {index !== null && createPortal(<ImageLightboxModal images={images} initialIndex={index} isOpen onClose={() => setIndex(null)} title={item.title} />, document.body)}
   </div>;
 }
