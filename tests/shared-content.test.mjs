@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { registerHooks } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { transformSync } from 'esbuild';
@@ -26,6 +27,7 @@ globalThis.testDb = {
 };
 registerHooks({
   resolve(s, c, next) {
+    if (s === './authService') return { url: 'mock:auth', shortCircuit: true };
     if (s === 'firebase/firestore') return { url: 'mock:firestore', shortCircuit: true };
     if (s === '../api/_db.js') return { url: 'mock:db', shortCircuit: true };
     if (s.startsWith('.')) {
@@ -37,6 +39,7 @@ registerHooks({
     return next(s, c);
   },
   load(u, c, next) {
+    if (u === 'mock:auth') return { format: 'module', source: 'export const getActiveSessionUser=()=>({id:"test-admin"});', shortCircuit: true };
     if (u === 'mock:db') return { format: 'module', source: 'export const getDb=()=>({}); export const setCorsHeaders=()=>{};', shortCircuit: true };
     if (u === 'mock:firestore') return { format: 'module', source: 'export const {doc,getDocFromServer,setDoc,runTransaction}=globalThis.testDb;', shortCircuit: true };
     if (u.startsWith('file:') && u.endsWith('.ts') && !u.includes('/node_modules/')) return { format: 'module', source: transformSync(readFileSync(new URL(u), 'utf8'), { loader: 'ts', format: 'esm', target: 'es2022' }).code, shortCircuit: true };
@@ -141,4 +144,18 @@ test('large payload, durable errors, concurrent devices, reset, legacy preservat
   assert.equal(knowledge.getSyncedKnowledgeItems(), null, 'central reset propagates');
   stop();
   assert.equal(timers.size, 0, 'subscription cleans up');
+});
+
+test('central manual knowledge deletion verifies administrator password', async () => {
+  const client = new SharedContentClient('/api/sync/knowledge');
+  const value = { items: [{ id: 'manual-permission-test', title: 'test' }], sheetUrl: '', lastSynced: 'now' };
+  await client.save('main', value);
+  const next = { ...value, items: [] };
+  await assert.rejects(client.save('main', next), /แอดมิน/);
+  docs.set('appUsers/test-admin', { role: 'Operator', status: 'active', passwordHash: createHash('sha256').update('BaanHome_Secure_Salt_2026_!correct').digest('hex') });
+  await assert.rejects(client.save('main', next, undefined, { userId: 'test-admin', password: 'correct' }), /แอดมิน/);
+  docs.get('appUsers/test-admin').role = 'Administrator';
+  await assert.rejects(client.save('main', next, undefined, { userId: 'test-admin', password: 'wrong' }), /ไม่ถูกต้อง/);
+  await client.save('main', next, undefined, { userId: 'test-admin', password: 'correct' });
+  assert.equal((await client.read()).values.main.items.length, 0);
 });

@@ -556,7 +556,7 @@ export default function App() {
         }}
       />
 
-      {showAddKnowledge && (currentRole === 'Administrator' || currentRole === 'Operator') && <AddKnowledgeModal onClose={() => setShowAddKnowledge(false)} onSaved={items => { setActiveKnowledgeItems(items); setIsUsingCustomSheet(true); }} />}
+      {showAddKnowledge && (currentRole === 'Administrator' || currentRole === 'Operator') && <AddKnowledgeModal items={activeKnowledgeItems} canDelete={currentRole === 'Administrator'} onClose={() => setShowAddKnowledge(false)} onSaved={items => { setActiveKnowledgeItems(items); setIsUsingCustomSheet(true); }} />}
       {/* Google Sheets Knowledge Base Sync Modal */}
       <GoogleSheetsSyncModal
         isOpen={showSheetsSyncModal}

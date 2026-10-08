@@ -290,6 +290,25 @@ try {
   await other.getByRole('button', { name: 'ความรู้', exact: true }).click();
   await other.getByRole('button', { name: /เปิดอ่าน.*โปรโม/ }).click();
   await other.getByRole('heading', { name: 'โปรโมชั่นทดสอบแยกจากข้อมูลจริง', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'เพิ่มข้อมูล/คำตอบ', exact: true }).click();
+  await form.getByLabel('เลือกข้อมูลที่ต้องการจัดการ').selectOption(stored.items.at(-1).id);
+  await form.getByLabel('เนื้อหา / ราคา / เงื่อนไข').fill('โปรโมชั่นฉบับแก้ไข');
+  await form.getByRole('button', { name: 'บันทึกข้อมูล', exact: true }).click();
+  await form.waitFor({ state: 'hidden' });
+  await other.reload();
+  await other.getByRole('button', { name: 'เพิ่มข้อมูล/คำตอบ', exact: true }).click();
+  const operatorForm = other.getByRole('dialog', { name: 'เพิ่มข้อมูล/คำตอบ', exact: true });
+  await operatorForm.getByLabel('เลือกข้อมูลที่ต้องการจัดการ').selectOption(stored.items.at(-1).id);
+  assert.equal(await operatorForm.getByRole('button', { name: 'ลบข้อมูล', exact: true }).count(), 0, 'operator cannot delete');
+  await operatorForm.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+  await page.getByRole('button', { name: 'เพิ่มข้อมูล/คำตอบ', exact: true }).click();
+  await form.getByLabel('เลือกข้อมูลที่ต้องการจัดการ').selectOption(stored.items.at(-1).id);
+  assert.equal(await form.getByLabel('เนื้อหา / ราคา / เงื่อนไข').inputValue(), 'โปรโมชั่นฉบับแก้ไข');
+  page.on('dialog', dialog => dialog.accept('test-password'));
+  await form.getByRole('button', { name: 'ลบข้อมูล', exact: true }).click();
+  await form.waitFor({ state: 'hidden' });
+  const afterDelete = JSON.parse(knowledgeEntries[hash('main')].parts.map(id => parts.get(id)).join(''));
+  assert.equal(afterDelete.items.length, 2, 'delete only selected manual record');
   assert.equal(aiCalls.length, callsBeforeReload, 'saving and reading knowledge never calls AI');
   console.log('PASS: desktop/mobile, menu, disclosures, lightbox, save errors, cross-context image refresh, knowledge/B2B/calendar views, role navigation, food starter/replacement/removal/reset, bounded followup AI and private account histories');
 } finally { await browser.close(); server.kill(); }

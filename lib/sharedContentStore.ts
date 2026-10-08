@@ -1,3 +1,4 @@
+import { verifyDeleteAdministrator, B2BPermissionError } from './b2bDeleteAuthorization.js';
 import { createHash } from 'node:crypto';
 import { doc, getDocFromServer, runTransaction, setDoc } from 'firebase/firestore';
 import { getDb, setCorsHeaders } from '../api/_db.js';
@@ -45,6 +46,20 @@ export function contentHandler(kind: 'knowledge' | 'customImages') {
       }));
       const value = JSON.parse(texts.join(''));
       validateValue(kind, key, value);
+      if (kind === 'knowledge') {
+        const oldRoot = await getDocFromServer(root);
+        const oldEntry = oldRoot.data()?.entries?.[hash(key)];
+        const legacy = oldEntry ? null : await getDocFromServer(ref(kind));
+        const oldValue = oldEntry ? JSON.parse((await Promise.all(oldEntry.parts.map(async (id: string) => (await getDocFromServer(ref(`shared_part_${id}`))).data()?.text))).join('')) : legacy?.data()?.payload;
+        const nextIds = new Set((value.items || []).map((item: any) => item.id));
+        const deleting = (oldValue?.items || []).some((item: any) => typeof item.id === 'string' && item.id.startsWith('manual-') && !nextIds.has(item.id));
+        if (deleting) {
+          const credentials = body.deleteAuthorization;
+          if (typeof credentials?.userId !== 'string' || !credentials.userId || credentials.userId.includes('/')) throw new B2BPermissionError('กรุณายืนยันรหัสผ่านแอดมินก่อนลบ');
+          const user = await getDocFromServer(doc(getDb(), 'appUsers', credentials.userId));
+          verifyDeleteAdministrator(user.exists() ? user.data() : null, credentials.password);
+        }
+      }
       const version = hash(JSON.stringify(parts));
       const entry = { key, parts, version };
       await runTransaction(getDb(), async tx => {
@@ -61,7 +76,7 @@ export function contentHandler(kind: 'knowledge' | 'customImages') {
       return res.json({ success: true, entry });
     } catch (error: any) {
       console.error(`Shared ${kind} sync failed`, error.code || error.message);
-      return res.status(error.status || 503).json({ error: error.message || 'บันทึกฐานข้อมูลกลางไม่สำเร็จ กรุณาลองใหม่' });
+      return res.status(error instanceof B2BPermissionError ? 403 : error.status || 503).json({ error: error.message || 'บันทึกฐานข้อมูลกลางไม่สำเร็จ กรุณาลองใหม่' });
     }
   };
 }

@@ -1,3 +1,4 @@
+import { getActiveSessionUser } from './authService';
 import { SharedContentClient, watchSharedContent } from './sharedContentClient';
 import { KnowledgeItem, KnowledgeCategory, AudienceType, DataStatusType } from '../types';
 import { KNOWLEDGE_BASE_ITEMS } from '../data/knowledgeBase';
@@ -269,14 +270,19 @@ function cacheKnowledge(data: any) {
   } catch {} // A full browser cache must not turn a confirmed central save into an error.
 }
 // Read central state before changing the collection; version checking rejects concurrent writes.
-export async function addManualKnowledgeItem(item: KnowledgeItem): Promise<KnowledgeItem[]> {
+export async function saveManualKnowledgeItem(item: KnowledgeItem, remove = false, expected?: KnowledgeItem, password?: string): Promise<KnowledgeItem[]> {
+  if (!item.id.startsWith('manual-')) throw new Error('จัดการได้เฉพาะข้อมูลที่หน้างานเพิ่ม');
   const { values, legacy } = await knowledgeClient.read();
   const current = values.main || legacy;
-  const items = [...(Array.isArray(current?.items) ? current.items : KNOWLEDGE_BASE_ITEMS), item];
+  const previous: KnowledgeItem[] = Array.isArray(current?.items) ? current.items : KNOWLEDGE_BASE_ITEMS;
+  if (expected && JSON.stringify(previous.find(saved => saved.id === item.id)) !== JSON.stringify(expected)) throw new Error('ข้อมูลนี้ถูกแก้ไขจากอีกเครื่อง กรุณาปิดแล้วเปิดใหม่ก่อนแก้ไข');
+  const items = previous.filter(saved => saved.id !== item.id);
+  if (!remove) items.push(item);
   const data = { items, sheetUrl: current?.sheetUrl || '', lastSynced: new Date().toISOString() };
-  await knowledgeClient.save('main', data, knowledgeClient.version('main'));
+  await knowledgeClient.save('main', data, knowledgeClient.version('main'), remove ? { userId: getActiveSessionUser()?.id, password: password || '' } : undefined);
   const confirmed = await knowledgeClient.read();
-  if (!confirmed.values.main?.items?.some((saved: KnowledgeItem) => saved.id === item.id)) throw new Error('ฐานกลางยังไม่ยืนยันข้อมูลใหม่ กรุณาตรวจสอบก่อนบันทึกซ้ำ');
+  const found = confirmed.values.main?.items?.find((saved: KnowledgeItem) => saved.id === item.id);
+  if ((remove && found) || (!remove && JSON.stringify(found) !== JSON.stringify(item))) throw new Error('ฐานกลางยังไม่ยืนยันข้อมูล กรุณาตรวจสอบก่อนบันทึกซ้ำ');
   cacheKnowledge(confirmed.values.main);
   return withPdfKnowledge(confirmed.values.main.items);
 }
