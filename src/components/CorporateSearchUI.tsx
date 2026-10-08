@@ -74,7 +74,7 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({ activeKnow
         </section>;
       })}
     </div>
-    <div ref={bottomRef} className="qa-composer sticky bottom-[68px] md:bottom-4 z-20 py-2">
+    <div ref={bottomRef} className="qa-composer relative mt-4 pb-4 md:pb-2">
       <form onSubmit={e => { e.preventDefault(); submit(); }} className="qa-input-surface flex items-center gap-2 rounded-2xl border border-[#d6dfce] bg-[#fffefb] p-3 shadow-[0_6px_24px_rgba(37,57,41,0.1)]">
         <input id="main-search-input" aria-label="ถามน้องโฮม" maxLength={1000} value={draft} onChange={e => setDraft(e.target.value)} placeholder="ถามโฮมได้เลย…" className="min-w-0 flex-1 bg-transparent p-2 text-base md:text-sm text-[#293e31] outline-none" />
         {draft && <button type="button" aria-label="ล้างคำถาม" onClick={() => setDraft('')} className="text-[#788477]"><X size={17} /></button>}
