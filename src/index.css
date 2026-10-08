@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+.baanhome-navigation > button { justify-content: flex-start; width: 100%; padding: 12px; border-radius: 12px; font-size: 14px; }
+.b2b-workspace { color: #1b3d2f; }
+.b2b-workspace > div { box-shadow: none; }
+.baanhome-calendar { --calendar-cream: #fffdf7; }
+.baanhome-calendar button { touch-action: manipulation; }
+button, summary, select { touch-action: manipulation; }
+button:focus-visible, summary:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #2d5a43; outline-offset: 3px; }
+@media (max-width: 640px) {
+  .baanhome-calendar { min-width: 0; }
+  .baanhome-calendar .grid-cols-7 { gap: 3px; }
+}
+
 @layer base {
   body {
     font-family: 'Sarabun', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -39,3 +51,4 @@
   0% { transform: translateX(-100%) skewX(-12deg); }
   100% { transform: translateX(200%) skewX(-12deg); }
 }
+

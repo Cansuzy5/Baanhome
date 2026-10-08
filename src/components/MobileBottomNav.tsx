@@ -79,7 +79,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             >
               <Target className="w-4 h-4 text-[#C98B22]" />
             </div>
-            <span className="text-[10px] leading-none">B2B (101)</span>
+            <span className="text-[10px] leading-none">B2B</span>
           </button>
         )}
 
@@ -145,3 +145,4 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     </nav>
   );
 };
+

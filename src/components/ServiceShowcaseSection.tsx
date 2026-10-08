@@ -1,23 +1,33 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { KnowledgeItem } from '../types';
+import { getItemImages } from '../utils/itemImageManager';
 import { Sparkles, Waves, Hotel, UtensilsCrossed, Users, Heart, MapPin, ArrowRight, Image as ImageIcon } from 'lucide-react';
 
 interface ServiceShowcaseSectionProps {
+  knowledgeItems: KnowledgeItem[];
   onSelectQuery: (query: string) => void;
 }
 
-export const ServiceShowcaseSection: React.FC<ServiceShowcaseSectionProps> = ({ onSelectQuery }) => {
+export const ServiceShowcaseSection: React.FC<ServiceShowcaseSectionProps> = ({ onSelectQuery, knowledgeItems }) => {
+  const [, refreshImages] = useState(0);
+  useEffect(() => {
+    const refresh = () => refreshImages(n => n + 1);
+    window.addEventListener('baan_home_images_updated', refresh);
+    return () => window.removeEventListener('baan_home_images_updated', refresh);
+  }, []);
+  const serviceImage = (keywords: string[]) => {
+    for (const item of knowledgeItems) {
+      if (keywords.some(word => `${item.title} ${item.category}`.toLowerCase().includes(word))) {
+        const image = getItemImages(item, false)[0];
+        if (image) return image;
+      }
+    }
+    return undefined;
+  };
   return (
     <div className="space-y-6 mb-8">
       {/* Hero Banner */}
-      <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-[#1B3D2F] to-[#2D5A43] text-white p-6 sm:p-8 shadow-md">
-        <div className="absolute right-0 top-0 bottom-0 w-1/2 opacity-20 hidden md:block">
-          <img
-            src="https://images.unsplash.com/photo-1542314831-c6a4d142104d?auto=format&fit=crop&q=80&w=1200"
-            alt="Baan Home Resort"
-            className="w-full h-full object-cover"
-            referrerPolicy="no-referrer"
-          />
-        </div>
+      <div className="relative rounded-3xl overflow-hidden bg-[#1B3D2F] text-white p-6 sm:p-8 shadow-md">
         <div className="relative z-10 max-w-xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/15 rounded-full text-xs font-semibold text-[#E8F3EB] mb-3 backdrop-blur-xs">
             <Sparkles className="w-3.5 h-3.5 text-[#E8C57D]" /> ประตูสู่กาฬสินธุ์ • One Destination
@@ -79,12 +89,12 @@ export const ServiceShowcaseSection: React.FC<ServiceShowcaseSectionProps> = ({ 
             className="group bg-white rounded-2xl border border-[#D5DFD8] hover:border-[#2D5A43] overflow-hidden shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col"
           >
             <div className="relative aspect-16/10 overflow-hidden">
-              <img 
-                src="https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=800&q=80" 
+              {serviceImage(["พูลวิลล่า", "pool-villa"]) ? (<img 
+                src={serviceImage(["พูลวิลล่า", "pool-villa"])} 
                 alt="พูลวิลล่าบ้านโฮม" 
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 referrerPolicy="no-referrer"
-              />
+              />) : (<div className="w-full h-full bg-[#eef2e9] flex items-center justify-center text-[#597662]"><ImageIcon className="w-10 h-10" /></div>)}
               <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-md bg-[#1B3D2F]/80 text-white text-[11px] font-bold backdrop-blur-xs flex items-center gap-1">
                 <Waves className="w-3 h-3 text-[#7BE495]" /> พูลวิลล่า
               </span>
@@ -111,12 +121,12 @@ export const ServiceShowcaseSection: React.FC<ServiceShowcaseSectionProps> = ({ 
             className="group bg-white rounded-2xl border border-[#D5DFD8] hover:border-[#2D5A43] overflow-hidden shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col"
           >
             <div className="relative aspect-16/10 overflow-hidden">
-              <img 
-                src="https://images.unsplash.com/photo-1618773928121-c32242e63f39?auto=format&fit=crop&w=800&q=80" 
+              {serviceImage(["รีสอร์ท", "resort-knowledge"]) ? (<img 
+                src={serviceImage(["รีสอร์ท", "resort-knowledge"])} 
                 alt="ห้องพักรีสอร์ท" 
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 referrerPolicy="no-referrer"
-              />
+              />) : (<div className="w-full h-full bg-[#eef2e9] flex items-center justify-center text-[#597662]"><ImageIcon className="w-10 h-10" /></div>)}
               <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-md bg-[#1B3D2F]/80 text-white text-[11px] font-bold backdrop-blur-xs flex items-center gap-1">
                 <Hotel className="w-3 h-3 text-[#7BE495]" /> รีสอร์ท & ห้องพัก
               </span>
@@ -143,12 +153,12 @@ export const ServiceShowcaseSection: React.FC<ServiceShowcaseSectionProps> = ({ 
             className="group bg-white rounded-2xl border border-[#D5DFD8] hover:border-[#2D5A43] overflow-hidden shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col"
           >
             <div className="relative aspect-16/10 overflow-hidden">
-              <img 
-                src="https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80" 
+              {serviceImage(["อาหาร", "restaurant"]) ? (<img 
+                src={serviceImage(["อาหาร", "restaurant"])} 
                 alt="สวนอาหารบ้านโฮม" 
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 referrerPolicy="no-referrer"
-              />
+              />) : (<div className="w-full h-full bg-[#eef2e9] flex items-center justify-center text-[#597662]"><ImageIcon className="w-10 h-10" /></div>)}
               <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-md bg-[#1B3D2F]/80 text-white text-[11px] font-bold backdrop-blur-xs flex items-center gap-1">
                 <UtensilsCrossed className="w-3 h-3 text-[#7BE495]" /> สวนอาหารบ้านโฮม
               </span>
@@ -175,12 +185,12 @@ export const ServiceShowcaseSection: React.FC<ServiceShowcaseSectionProps> = ({ 
             className="group bg-white rounded-2xl border border-[#D5DFD8] hover:border-[#2D5A43] overflow-hidden shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col"
           >
             <div className="relative aspect-16/10 overflow-hidden">
-              <img 
-                src="https://images.unsplash.com/photo-1511578314322-379afb476865?auto=format&fit=crop&w=800&q=80" 
+              {serviceImage(["สัมมนา", "mini-mice"]) ? (<img 
+                src={serviceImage(["สัมมนา", "mini-mice"])} 
                 alt="ห้องประชุมสัมมนา" 
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 referrerPolicy="no-referrer"
-              />
+              />) : (<div className="w-full h-full bg-[#eef2e9] flex items-center justify-center text-[#597662]"><ImageIcon className="w-10 h-10" /></div>)}
               <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-md bg-[#1B3D2F]/80 text-white text-[11px] font-bold backdrop-blur-xs flex items-center gap-1">
                 <Users className="w-3 h-3 text-[#7BE495]" /> Mini MICE & จัดเลี้ยง
               </span>
@@ -207,12 +217,12 @@ export const ServiceShowcaseSection: React.FC<ServiceShowcaseSectionProps> = ({ 
             className="group bg-white rounded-2xl border border-[#D5DFD8] hover:border-[#2D5A43] overflow-hidden shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col"
           >
             <div className="relative aspect-16/10 overflow-hidden">
-              <img 
-                src="https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=800&q=80" 
+              {serviceImage(["สัตว์เลี้ยง"]) ? (<img 
+                src={serviceImage(["สัตว์เลี้ยง"])} 
                 alt="สัตว์เลี้ยงเข้าพักได้" 
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 referrerPolicy="no-referrer"
-              />
+              />) : (<div className="w-full h-full bg-[#eef2e9] flex items-center justify-center text-[#597662]"><ImageIcon className="w-10 h-10" /></div>)}
               <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-md bg-[#1B3D2F]/80 text-white text-[11px] font-bold backdrop-blur-xs flex items-center gap-1">
                 <Heart className="w-3 h-3 text-[#7BE495]" /> สัตว์เลี้ยงเข้าพักได้
               </span>
@@ -239,12 +249,12 @@ export const ServiceShowcaseSection: React.FC<ServiceShowcaseSectionProps> = ({ 
             className="group bg-white rounded-2xl border border-[#D5DFD8] hover:border-[#2D5A43] overflow-hidden shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col"
           >
             <div className="relative aspect-16/10 overflow-hidden">
-              <img 
-                src="https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=800&q=80" 
+              {serviceImage(["แผนที่", "พิกัด"]) ? (<img 
+                src={serviceImage(["แผนที่", "พิกัด"])} 
                 alt="แผนที่และการเดินทาง" 
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 referrerPolicy="no-referrer"
-              />
+              />) : (<div className="w-full h-full bg-[#eef2e9] flex items-center justify-center text-[#597662]"><ImageIcon className="w-10 h-10" /></div>)}
               <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-md bg-[#1B3D2F]/80 text-white text-[11px] font-bold backdrop-blur-xs flex items-center gap-1">
                 <MapPin className="w-3 h-3 text-[#7BE495]" /> แผนที่ & ที่ตั้ง
               </span>
@@ -269,3 +279,4 @@ export const ServiceShowcaseSection: React.FC<ServiceShowcaseSectionProps> = ({ 
     </div>
   );
 };
+

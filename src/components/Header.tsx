@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
+  Menu,
+  X,
   Search,
   BookOpen,
   History,
@@ -52,6 +54,29 @@ export const Header: React.FC<HeaderProps> = ({
   onEditProfile,
   onLogout,
 }) => {
+  const [showNavigation, setShowNavigation] = useState(false);
+  const navigationButton = useRef<HTMLButtonElement>(null);
+  const navigationPanel = useRef<HTMLElement>(null);
+  useEffect(() => { setShowNavigation(false); }, [activeTab]);
+  useEffect(() => {
+    if (!showNavigation) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    navigationPanel.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    const close = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowNavigation(false);
+      if (event.key === 'Tab') {
+        const buttons = navigationPanel.current?.querySelectorAll<HTMLButtonElement>('button');
+        if (!buttons?.length) return;
+        const first = buttons[0], last = buttons[buttons.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener('keydown', close);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.removeEventListener('keydown', close); document.body.style.overflow = previousOverflow; previousFocus?.focus(); };
+  }, [showNavigation]);
   const [showMenu, setShowMenu] = useState(false);
   const [showDataMenu, setShowDataMenu] = useState(false);
   const [showAdvancedAdminDatabase, setShowAdvancedAdminDatabase] = useState(false);
@@ -64,12 +89,13 @@ export const Header: React.FC<HeaderProps> = ({
   const isAdmin = currentRole === 'Administrator';
 
   return (
-    <header className="sticky top-0 z-40 px-3 sm:px-6 py-2 bg-[#F8F6F0]/95 backdrop-blur-md border-b border-[#E8E1D2]/80">
+    <header className="sticky top-0 z-40 px-3 sm:px-6 py-2 bg-[#F8F6F0]/95 border-b border-[#E8E1D2]/80">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4 bg-white px-3 sm:px-4 py-2 rounded-2xl shadow-xs border border-[#EDE7DB]">
+        <button ref={navigationButton} type="button" id="navigation-toggle" aria-label={showNavigation ? 'ปิดเมนู' : 'เปิดเมนู'} aria-expanded={showNavigation} aria-controls="baanhome-navigation" onClick={() => { setShowNavigation(!showNavigation); setShowMenu(false); setShowDataMenu(false); }} className="p-2 rounded-xl text-[#1B3D2F] hover:bg-[#f5f1e8] shrink-0 relative z-[60]"><Menu className="w-6 h-6" /></button>
         {/* Left: Brand Identity */}
         <div 
-          onClick={() => onSelectTab('qa')}
-          className="flex items-center gap-2.5 cursor-pointer group select-none shrink-0"
+          onClick={() => { setShowNavigation(false); onSelectTab('qa'); }}
+          className="flex items-center gap-2.5 cursor-pointer group select-none shrink-0 mr-auto"
         >
           {/* Logo Circle */}
           <div className="w-9 h-9 rounded-xl bg-[#1B3D2F] text-[#E5BF77] flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform shrink-0">
@@ -99,93 +125,6 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right: Main Navigation Tabs & User Profile */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Desktop Navigation Tabs */}
-          <div className="hidden md:flex items-center gap-1">
-            {/* 1. ถาม-ตอบ (Visible to: ALL ROLES) */}
-            <button
-              id="nav-tab-qa"
-              onClick={() => onSelectTab('qa')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer shrink-0 whitespace-nowrap ${
-                activeTab === 'qa'
-                  ? 'bg-[#1B3D2F] text-white shadow-xs'
-                  : 'text-[#415649] hover:bg-[#F2EFE8] hover:text-[#1B3D2F]'
-              }`}
-            >
-              <Search className="w-3.5 h-3.5 shrink-0" />
-              <span className="whitespace-nowrap">ถาม-ตอบ</span>
-            </button>
-
-            {/* 2. หมวดความรู้ (Visible to: ALL ROLES) */}
-            <button
-              id="nav-tab-docs"
-              onClick={() => onSelectTab('docs')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
-                activeTab === 'docs'
-                  ? 'bg-[#1B3D2F] text-white shadow-xs font-semibold'
-                  : 'text-[#415649] hover:bg-[#F2EFE8] hover:text-[#1B3D2F]'
-              }`}
-            >
-              <BookOpen className="w-3.5 h-3.5 shrink-0" />
-              <span className="whitespace-nowrap">หมวดความรู้</span>
-            </button>
-
-            {/* 3. องค์กร & B2B (Visible to: OPERATOR & ADMINISTRATOR ONLY) */}
-            {(isOperator || isAdmin) && (
-              <button
-                id="nav-tab-b2b"
-                onClick={() => onSelectTab('b2b')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
-                  activeTab === 'b2b'
-                    ? 'bg-[#1B3D2F] text-white shadow-xs font-semibold'
-                    : 'text-[#415649] hover:bg-[#F2EFE8] hover:text-[#1B3D2F]'
-                }`}
-              >
-                <Target className="w-3.5 h-3.5 text-[#E8C57D] shrink-0" />
-                <span className="whitespace-nowrap">องค์กร & B2B</span>
-                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold whitespace-nowrap ${
-                  activeTab === 'b2b' ? 'bg-white/20 text-[#FFF7E8]' : 'bg-[#E5EFE0] text-[#1E5D34]'
-                }`}>
-                  101
-                </span>
-              </button>
-            )}
-
-            {/* 4. ประวัติ Logs (Visible to: OPERATOR & ADMINISTRATOR ONLY) */}
-            {(isOperator || isAdmin) && (
-              <button
-                id="nav-tab-history"
-                onClick={() => onSelectTab('sheets')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
-                  activeTab === 'sheets'
-                    ? 'bg-[#1B3D2F] text-white shadow-xs font-semibold'
-                    : 'text-[#415649] hover:bg-[#F2EFE8] hover:text-[#1B3D2F]'
-                }`}
-              >
-                <History className="w-3.5 h-3.5 shrink-0" />
-                <span className="whitespace-nowrap">ประวัติ</span>
-              </button>
-            )}
-
-            {isAdmin && <button id="nav-tab-analytics" onClick={() => onSelectTab('analytics')} className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap ${activeTab === 'analytics' ? 'bg-[#1B3D2F] text-white' : 'text-[#415649] hover:bg-[#F2EFE8]'}`}>สถิติน้องโฮม</button>}
-
-            {/* 5. จัดการสิทธิ์ (Visible to: ADMINISTRATOR ONLY) */}
-            {isAdmin && (
-              <button
-                id="nav-tab-users-admin"
-                onClick={() => onSelectTab('users')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer shrink-0 whitespace-nowrap border ml-0.5 ${
-                  activeTab === 'users'
-                    ? 'bg-[#8C5E1B] text-white border-[#754E15] shadow-xs'
-                    : 'bg-[#FEF8ED] text-[#8C5E1B] border-[#F1DEC0] hover:bg-[#FBF0DB]'
-                }`}
-                title="จัดการบัญชีผู้ใช้ สิทธิ์ และแผนก"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-[#E8C57D] shrink-0" />
-                <span className="whitespace-nowrap">จัดการสิทธิ์</span>
-              </button>
-            )}
-          </div>
-
           {/* Consolidated Sheets & Data Menu (Operator & Admin Only) */}
           {(isOperator || isAdmin) && (
             <div className="relative">
@@ -516,6 +455,103 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
       </div>
+      {showNavigation && <>
+        <div className="fixed inset-x-0 top-[74px] bottom-0 bg-[#102c20]/30 z-40" onClick={() => setShowNavigation(false)} aria-hidden="true" />
+        <nav ref={navigationPanel} id="baanhome-navigation" role="dialog" aria-modal="true" aria-label="เมนูหลัก" className="fixed left-0 top-[74px] bottom-0 w-72 max-w-[85vw] bg-[#fffdf7] border-r border-[#ded7c8] shadow-xl z-50 p-5 overflow-y-auto">
+          <div className="flex items-center justify-between mb-8"><span className="font-bold text-[#1B3D2F]">บ้านโฮม</span><button aria-label="ปิดเมนู" onClick={() => setShowNavigation(false)} className="p-2 rounded-lg hover:bg-[#f5f1e8]"><X className="w-5 h-5" /></button></div>
+          {/* Desktop Navigation Tabs */}
+          <div className="flex flex-col gap-2 baanhome-navigation">
+            {/* 1. ถาม-ตอบ (Visible to: ALL ROLES) */}
+            <button
+              id="nav-tab-qa"
+              onClick={() => { setShowNavigation(false); onSelectTab('qa'); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+                activeTab === 'qa'
+                  ? 'bg-[#1B3D2F] text-white shadow-xs'
+                  : 'text-[#415649] hover:bg-[#F2EFE8] hover:text-[#1B3D2F]'
+              }`}
+            >
+              <Search className="w-3.5 h-3.5 shrink-0" />
+              <span className="whitespace-nowrap">ถาม-ตอบ</span>
+            </button>
+
+            {/* 2. หมวดความรู้ (Visible to: ALL ROLES) */}
+            <button
+              id="nav-tab-docs"
+              onClick={() => { setShowNavigation(false); onSelectTab('docs'); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+                activeTab === 'docs'
+                  ? 'bg-[#1B3D2F] text-white shadow-xs font-semibold'
+                  : 'text-[#415649] hover:bg-[#F2EFE8] hover:text-[#1B3D2F]'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5 shrink-0" />
+              <span className="whitespace-nowrap">หมวดความรู้</span>
+            </button>
+
+            {/* 3. องค์กร & B2B (Visible to: OPERATOR & ADMINISTRATOR ONLY) */}
+            {(isOperator || isAdmin) && (
+              <button
+                id="nav-tab-b2b"
+                onClick={() => { setShowNavigation(false); onSelectTab('b2b'); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+                  activeTab === 'b2b'
+                    ? 'bg-[#1B3D2F] text-white shadow-xs font-semibold'
+                    : 'text-[#415649] hover:bg-[#F2EFE8] hover:text-[#1B3D2F]'
+                }`}
+              >
+                <Target className="w-3.5 h-3.5 text-[#E8C57D] shrink-0" />
+                <span className="whitespace-nowrap">องค์กร & B2B</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold whitespace-nowrap ${
+                  activeTab === 'b2b' ? 'bg-white/20 text-[#FFF7E8]' : 'bg-[#E5EFE0] text-[#1E5D34]'
+                }`}>
+                  B2B
+                </span>
+              </button>
+            )}
+
+            {/* 4. ประวัติ Logs (Visible to: OPERATOR & ADMINISTRATOR ONLY) */}
+            {(isOperator || isAdmin) && (
+              <button
+                id="nav-tab-history"
+                onClick={() => { setShowNavigation(false); onSelectTab('sheets'); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+                  activeTab === 'sheets'
+                    ? 'bg-[#1B3D2F] text-white shadow-xs font-semibold'
+                    : 'text-[#415649] hover:bg-[#F2EFE8] hover:text-[#1B3D2F]'
+                }`}
+              >
+                <History className="w-3.5 h-3.5 shrink-0" />
+                <span className="whitespace-nowrap">ประวัติ</span>
+              </button>
+            )}
+
+            {isAdmin && <button id="nav-tab-analytics" onClick={() => { setShowNavigation(false); onSelectTab('analytics'); }} className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap ${activeTab === 'analytics' ? 'bg-[#1B3D2F] text-white' : 'text-[#415649] hover:bg-[#F2EFE8]'}`}>สถิติน้องโฮม</button>}
+
+            {/* 5. จัดการสิทธิ์ (Visible to: ADMINISTRATOR ONLY) */}
+            {isAdmin && (
+              <button
+                id="nav-tab-users-admin"
+                onClick={() => { setShowNavigation(false); onSelectTab('users'); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer shrink-0 whitespace-nowrap border ml-0.5 ${
+                  activeTab === 'users'
+                    ? 'bg-[#8C5E1B] text-white border-[#754E15] shadow-xs'
+                    : 'bg-[#FEF8ED] text-[#8C5E1B] border-[#F1DEC0] hover:bg-[#FBF0DB]'
+                }`}
+                title="จัดการบัญชีผู้ใช้ สิทธิ์ และแผนก"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-[#E8C57D] shrink-0" />
+                <span className="whitespace-nowrap">จัดการสิทธิ์</span>
+              </button>
+            )}
+          </div>
+
+
+          {(isOperator || isAdmin) && <button onClick={() => { setShowNavigation(false); onSelectTab('unanswered'); }} className="w-full text-left mt-2 px-3 py-3 text-sm text-[#415649] rounded-xl hover:bg-[#f5f1e8]">คำถามรออัปเดต {unansweredCount > 0 ? `(${unansweredCount})` : ''}</button>}
+          {isAdmin && <button onClick={() => { setShowNavigation(false); onSelectTab('arch'); }} className="w-full text-left px-3 py-3 text-sm text-[#415649] rounded-xl hover:bg-[#f5f1e8]">สถาปัตยกรรมระบบ</button>}
+        </nav>
+      </>}
     </header>
   );
 };
+

@@ -17,11 +17,11 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
   onSaved,
 }) => {
   const [initialVersion] = useState(() => getItemImageVersion(item.id));
-  const [images, setImages] = useState<string[]>(() => getItemImages(item));
+  const [images, setImages] = useState<string[]>(() => getItemImages(item, false));
   const [inputUrl, setInputUrl] = useState('');
   const [urlError, setUrlError] = useState('');
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'upload' | 'url' | 'presets'>('presets');
+  const [activeTab, setActiveTab] = useState<'upload' | 'url' | 'presets'>('upload');
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -97,7 +97,7 @@ export const EditImageModal: React.FC<EditImageModalProps> = ({
     try {
       if (reset) await resetItemImages(item.id, initialVersion);
       else await saveItemImages(item.id, images, initialVersion);
-      onSaved(reset ? getItemImages(item) : images);
+      onSaved(reset ? getItemImages(item, false) : images);
       onClose();
     } catch (error: any) {
       setSaveError(error.message || 'บันทึกฐานกลางไม่สำเร็จ รูปที่เลือกยังอยู่ กรุณาลองใหม่');

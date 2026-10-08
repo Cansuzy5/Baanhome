@@ -1077,7 +1077,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
   }, [leadsList, appointments]);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
+    <div className="b2b-workspace space-y-5 animate-in fade-in duration-300">
       {/* Role Notice Banner if Permission Error */}
       {permissionError && (
         <div className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-2xl flex items-center justify-between text-sm shadow-xs animate-in fade-in">
@@ -2143,4 +2143,5 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     </div>
   );
 };
+
 

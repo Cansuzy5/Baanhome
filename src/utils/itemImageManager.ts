@@ -201,7 +201,7 @@ export function syncCustomImagesWithServer() {
  * 3. Specific curated item default images
  * 4. Default image for the category
  */
-export function getItemImages(item: KnowledgeItem): string[] {
+export function getItemImages(item: KnowledgeItem, includeStockFallback = true): string[] {
   if (!item) return [];
 
   // 1. Check local storage overrides
@@ -217,6 +217,8 @@ export function getItemImages(item: KnowledgeItem): string[] {
   if (item.imageUrl) {
     return [item.imageUrl];
   }
+
+  if (!includeStockFallback) return [];
 
   // 3. Specific curated item default
   if (ITEM_SPECIFIC_IMAGES[item.id]) {

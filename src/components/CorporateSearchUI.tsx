@@ -14,7 +14,7 @@ import { KNOWLEDGE_CATEGORIES } from '../data/categories';
 import { executeInstantSearch, askGemini, SearchResult, SearchOutcome } from '../utils/searchEngine';
 import { StructuredAnswerCard } from './StructuredAnswerCard';
 import { isCustomerReady, isCompetitorKnowledge } from '../utils/knowledgeFilter';
-import tropicalVillaImg from '../assets/images/tropical_resort_villa_1788840573847.jpg';
+
 
 interface CorporateSearchUIProps {
   activeKnowledgeItems: KnowledgeItem[];
@@ -63,7 +63,6 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({
   const setQuery = onSearchChange || (() => {});
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<KnowledgeCategory | 'all'>('all');
-  const [dataTypeFilter, setDataTypeFilter] = useState<'all' | 'customer' | 'internal'>('all');
 
   const [isSearching, setIsSearching] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -72,7 +71,6 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({
   const [aiAnswer, setAiAnswer] = useState<{ text: string; references: string[] } | null>(null);
   const [copiedAi, setCopiedAi] = useState(false);
 
-  const [showMobileFilters, setShowMobileFilters] = useState(false);
 
   // Auto AI mode preference (Default false for maximum speed and zero errors)
   const [autoAiMode, setAutoAiMode] = useState<boolean>(() => {
@@ -197,11 +195,7 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({
     if (selectedCategory !== 'all') {
       filteredResults = filteredResults.filter(r => r?.item?.category === selectedCategory);
     }
-    if (dataTypeFilter === 'customer') {
-      filteredResults = filteredResults.filter(r => r?.item && isCustomerReady(r.item));
-    } else if (dataTypeFilter === 'internal') {
-      filteredResults = filteredResults.filter(r => r?.item && !isCustomerReady(r.item));
-    }
+
 
     const finalOutcome = { ...outcome, results: filteredResults };
     setSearchOutcome(finalOutcome);
@@ -227,7 +221,7 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({
       }, 600);
       return () => clearTimeout(aiTimer);
     }
-  }, [debouncedQuery, activeKnowledgeItems, selectedCategory, dataTypeFilter, autoAiMode]);
+  }, [debouncedQuery, activeKnowledgeItems, selectedCategory, autoAiMode]);
 
   const handleCopyAiAnswer = () => {
     if (!aiAnswer?.text) return;
@@ -239,242 +233,32 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({
   const resultCount = searchOutcome?.results.length || 0;
 
   return (
-    <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6">
-      {/* Magnificent Tropical Luxury Resort Search Hero */}
-      <div className="mb-7 relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0B1F15] via-[#143926] to-[#0D2418] text-white shadow-xl border border-[#26533D]/90 p-5 sm:p-8">
-        {/* Background Resort Villa Texture with overlay gradient */}
-        <div 
-          className="absolute inset-0 z-0 opacity-20 mix-blend-overlay bg-cover bg-center pointer-events-none scale-105"
-          style={{ backgroundImage: `url(${tropicalVillaImg})` }}
-        />
-        
-        {/* Ambient atmospheric lighting glows */}
-        <div className="absolute top-0 right-0 w-96 h-96 bg-[#E8C57D]/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-1/4 w-80 h-80 bg-[#2D5A43]/30 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 max-w-3xl mx-auto text-center space-y-4">
-          {/* Resort Badge */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white/10 backdrop-blur-md border border-[#E8C57D]/30 text-[#F5E6C8] text-xs font-semibold shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-[#E8C57D] animate-pulse" />
-            <span className="whitespace-nowrap">🍃 บ้านโฮม สวนอาหาร แอนด์ รีสอร์ท • ระบบผู้ช่วยอัจฉริยะ</span>
-          </div>
-
-          {/* Headline & Subtitle */}
-          <div>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-[#FFFDF8] tracking-tight leading-tight">
-              ค้นหาคำตอบ & สคริปต์บริการลูกค้า
-            </h1>
-            <p className="text-xs sm:text-sm text-[#C9DDD0] mt-1.5 max-w-xl mx-auto leading-relaxed">
-              ตอบคำถามลูกค้าได้อย่างมั่นใจ ถูกต้อง แม่นยำ ครอบคลุมห้องพัก พูลวิลล่า อาหาร และบริการสัมมนา
-            </p>
-          </div>
-          
-          {/* Search Input Box with Integrated Stop Button */}
-          <div className="max-w-2xl mx-auto relative pt-1">
-            <input
-              id="main-search-input"
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  handleStopSearch();
-                }
-              }}
-              placeholder={`พิมพ์คำค้นหา เช่น "เช็คอิน", "สัตว์เลี้ยง", "อาหารเช้า", "โอนเงิน"`}
-              className={`w-full pl-12 py-3.5 sm:py-4 rounded-2xl border bg-white shadow-lg focus:outline-none focus:ring-2 focus:ring-[#E8C57D] focus:border-transparent text-[#1B3D2F] text-base sm:text-lg transition-all placeholder:text-[#8C9E90] ${
-                query.trim() ? 'pr-32 border-[#E8C57D] ring-2 ring-[#E8C57D]/20' : 'pr-4 border-white/40'
-              }`}
-            />
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 sm:w-6 h-5 sm:h-6 text-[#2E6B47]" />
-            
-            {/* STOP SEARCH BUTTON */}
-            {query.trim().length > 0 && (
-              <button
-                id="stop-search-btn"
-                type="button"
-                onClick={handleStopSearch}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-3 py-2 bg-[#FDF2F2] hover:bg-[#FCE8E8] active:scale-95 text-[#9E2A2B] hover:text-[#7A1F20] border border-[#F5C2C2] rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-                title="หยุดค้นหาและล้างคำค้นหาทันที (หรือกดแป้น Esc)"
-              >
-                <X className="w-4 h-4 text-[#9E2A2B]" />
-                <span className="whitespace-nowrap">หยุดค้นหา</span>
-              </button>
-            )}
-
-            {isSearching && !query.trim() && (
-              <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#2D5A43] animate-spin" />
-            )}
-          </div>
-
-          {/* Quick Search Chips with icons */}
-          <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 pt-1">
-            <span className="text-xs font-semibold text-[#D3E5D8] mr-1 whitespace-nowrap">คำค้นแนะนำ:</span>
-            {[
-              { label: '🕒 เวลาเช็คอิน', q: 'เวลาเช็คอิน' },
-              { label: '🐾 สัตว์เลี้ยง', q: 'สัตว์เลี้ยง' },
-              { label: '🍳 อาหารเช้า', q: 'อาหารเช้า' },
-              { label: '💳 โอนเงินมัดจำ', q: 'โอนเงินมัดจำ' },
-              { label: '🏊‍♀️ พูลวิลล่า', q: 'พูลวิลล่า' },
-              { label: '📍 แผนที่ & พิกัด', q: 'แผนที่' },
-            ].map((chip) => (
-              <button
-                key={chip.q}
-                onClick={() => setQuery(chip.q)}
-                className="px-3 py-1 rounded-full text-xs font-medium bg-white/15 hover:bg-white/25 border border-white/20 text-[#FFF9EB] hover:text-white transition-all cursor-pointer backdrop-blur-xs whitespace-nowrap active:scale-95"
-              >
-                {chip.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Micro Trust Ribbons */}
-          <div className="pt-3 border-t border-white/10 flex flex-wrap items-center justify-center gap-4 sm:gap-8 text-[11px] text-[#A6C4B0]">
-            <div className="flex items-center gap-1.5 whitespace-nowrap">
-              <Zap className="w-3.5 h-3.5 text-[#E8C57D]" />
-              <span>ค้นหาเร็ว &lt;1ms</span>
-            </div>
-            <div className="flex items-center gap-1.5 whitespace-nowrap">
-              <CheckCircle2 className="w-3.5 h-3.5 text-[#6EE7B7]" />
-              <span>ฐานข้อมูลจริง 100%</span>
-            </div>
-            <div className="flex items-center gap-1.5 whitespace-nowrap">
-              <Sparkles className="w-3.5 h-3.5 text-[#E8C57D]" />
-              <span>พร้อมตอบลูกค้าทันที</span>
-            </div>
-            <div className="flex items-center gap-1.5 whitespace-nowrap">
-              <ShieldCheck className="w-3.5 h-3.5 text-[#6EE7B7]" />
-              <span>ระบบความปลอดภัยภายใน</span>
-            </div>
-          </div>
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
+      <section className="qa-hero mb-6 py-6 sm:py-10 text-center">
+        <p className="text-sm text-[#637b6b] mb-3">น้องโฮม · ผู้ช่วยบ้านโฮม</p>
+        <h1 className="text-2xl sm:text-4xl font-bold text-[#1B3D2F]">วันนี้ให้โฮมช่วยเรื่องไหน?</h1>
+        <p className="text-sm text-[#637b6b] mt-3">ถามเรื่องบริการ ลูกค้า หรือข้อมูลภายในได้ในช่องเดียว</p>
+        <form className="max-w-3xl mx-auto mt-6 flex items-center gap-2 rounded-2xl border border-[#d5dfd8] bg-white p-2 shadow-sm" onSubmit={(e) => { e.preventDefault(); setDebouncedQuery(query); }}>
+          <Search className="w-5 h-5 text-[#2D5A43] ml-2 shrink-0" />
+          <input id="main-search-input" aria-label="ถามน้องโฮม" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') handleStopSearch(); }} placeholder="ถามโฮมได้เลย เช่น ราคาอาหาร หรือเวลาเช็คอิน" className="min-w-0 flex-1 bg-transparent py-3 text-base text-[#1B3D2F] outline-none" />
+          {query.trim() && <button id="stop-search-btn" type="button" onClick={handleStopSearch} aria-label="หยุดค้นหาและล้างคำค้น" className="p-2 text-[#637b6b] rounded-lg hover:bg-[#f5f1e8]"><X className="w-4 h-4" /></button>}
+          <button type="submit" className="rounded-xl bg-[#1B3D2F] text-white px-4 sm:px-6 py-3 text-sm font-semibold shrink-0">ถามโฮม</button>
+        </form>
+        <div className="flex flex-wrap justify-center gap-2 mt-4">
+          {['เวลาเช็คอิน', 'สัตว์เลี้ยง', 'อาหารเช้า', 'โอนเงินมัดจำ', 'พูลวิลล่า', 'แผนที่'].map(q => <button key={q} onClick={() => setQuery(q)} className="text-xs px-3 py-2 rounded-full border border-[#ded7c8] hover:bg-white text-[#415649]">{q}</button>)}
         </div>
+      </section>
+      <div className="mb-6 flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <label className="flex items-center gap-2 text-sm text-[#415649]">
+          <Filter className="w-4 h-4" /> หมวดความรู้
+          <select aria-label="หมวดความรู้" value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value as KnowledgeCategory | 'all')} className="max-w-[220px] sm:max-w-[360px] bg-white border border-[#ded7c8] rounded-xl px-3 py-2">
+            <option value="all">ทั้งหมด</option>
+            {KNOWLEDGE_CATEGORIES.map(cat => <option key={cat.id} value={cat.id}>{cat.nameTh}</option>)}
+          </select>
+        </label>
+        {onOpenSheetsSync && <button onClick={onOpenSheetsSync} className="text-xs text-[#2D5A43] flex items-center gap-2 py-2"><FileSpreadsheet className="w-4 h-4" />นำเข้า / ซิงค์ Google Sheets {isUsingCustomSheet ? '· เชื่อมต่อแล้ว' : ''}</button>}
       </div>
-
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* Mobile Filter Toggle */}
-        <button 
-          onClick={() => setShowMobileFilters(!showMobileFilters)}
-          className="lg:hidden flex items-center justify-center gap-2 p-3 bg-white border border-[#D5DFD8] rounded-xl text-[#1B3D2F] font-semibold shadow-xs"
-        >
-          <SlidersHorizontal className="w-5 h-5" />
-          <span>ตัวกรองการค้นหา ({resultCount} รายการ)</span>
-        </button>
-
-        {/* Sidebar Filters */}
-        <div className={`lg:w-72 shrink-0 space-y-6 ${showMobileFilters ? 'block' : 'hidden lg:block'}`}>
-          <div className="bg-white p-5 rounded-2xl border border-[#E3DACB] shadow-xs">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-[#1B3D2F] flex items-center gap-2">
-                <Filter className="w-4 h-4 text-[#2D5A43]" /> ตัวกรองข้อมูล
-              </h3>
-              {(selectedCategory !== 'all' || dataTypeFilter !== 'all') && (
-                <button 
-                  onClick={() => { setSelectedCategory('all'); setDataTypeFilter('all'); }}
-                  className="text-xs text-[#916B2D] hover:underline font-semibold"
-                >
-                  ล้างค่า
-                </button>
-              )}
-            </div>
-            
-            {/* Knowledge Base Source Card & Sync Button */}
-            {onOpenSheetsSync && (
-              <div className="mb-5 p-3.5 rounded-xl bg-[#FAF5E8] border border-[#EBDCB2] shadow-2xs">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-bold text-[#8C6418] uppercase tracking-wider flex items-center gap-1">
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-[#8C6418]" />
-                    <span>แหล่งข้อมูลความรู้</span>
-                  </span>
-                  {isUsingCustomSheet ? (
-                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-[#136C36] text-white font-bold">
-                      ซิงค์ Sheets แล้ว
-                    </span>
-                  ) : (
-                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-[#8C6418]/20 text-[#8C6418] font-bold">
-                      มาตรฐาน 12 หมวด
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-[#5D6B5F] mb-2.5">
-                  {isUsingCustomSheet
-                    ? `ใช้งานข้อมูลจาก Google Sheets (${activeKnowledgeItems.length} หัวข้อ)`
-                    : `ฐานข้อมูลมาตรฐานบ้านโฮม (${activeKnowledgeItems.length} หัวข้อ)`}
-                </p>
-                <button
-                  type="button"
-                  onClick={onOpenSheetsSync}
-                  className="w-full py-2 px-3 rounded-xl bg-white hover:bg-[#F7EED4] border border-[#DDC998] text-[#8C6418] text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-2xs cursor-pointer active:scale-98"
-                >
-                  <FileSpreadsheet className="w-4 h-4 text-[#8C6418]" />
-                  <span>นำเข้า / ซิงค์ Google Sheets</span>
-                </button>
-              </div>
-            )}
-
-            {/* Data Type Filter */}
-            <div className="mb-6">
-              <h4 className="text-xs font-bold text-[#708477] uppercase tracking-wider mb-2">ประเภทข้อมูล</h4>
-              <div className="space-y-1.5">
-                {[
-                  { id: 'all', label: 'ทั้งหมด' },
-                  { id: 'customer', label: 'พร้อมตอบลูกค้า (Customer Ready)' },
-                  { id: 'internal', label: 'ข้อมูลภายใน (Internal Only)' }
-                ].map(opt => (
-                  <label key={opt.id} className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-[#F9FCF8] cursor-pointer transition-colors">
-                    <input 
-                      type="radio" 
-                      name="dataType" 
-                      checked={dataTypeFilter === opt.id}
-                      onChange={() => setDataTypeFilter(opt.id as any)}
-                      className="text-[#2D5A43] focus:ring-[#2D5A43]"
-                    />
-                    <span className="text-xs sm:text-sm text-[#1B3D2F] leading-snug">{opt.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Category Filter */}
-            <div>
-              <h4 className="text-xs font-bold text-[#708477] uppercase tracking-wider mb-2">หมวดหมู่บริการ</h4>
-              <div className="space-y-1 max-h-[340px] overflow-y-auto pr-1">
-                <label className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-[#F9FCF8] cursor-pointer transition-colors">
-                  <input 
-                    type="radio" 
-                    name="category" 
-                    checked={selectedCategory === 'all'}
-                    onChange={() => setSelectedCategory('all')}
-                    className="text-[#2D5A43] focus:ring-[#2D5A43]"
-                  />
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <Folder className="w-4 h-4 text-[#2D5A43] shrink-0" />
-                    <span className="text-xs font-bold text-[#1B3D2F]">ทั้งหมด</span>
-                  </div>
-                </label>
-                {KNOWLEDGE_CATEGORIES.map(cat => (
-                  <label key={cat.id} className="flex items-start gap-2.5 p-2 rounded-xl hover:bg-[#F9FCF8] cursor-pointer transition-colors">
-                    <input 
-                      type="radio" 
-                      name="category" 
-                      checked={selectedCategory === cat.id}
-                      onChange={() => setSelectedCategory(cat.id)}
-                      className="text-[#2D5A43] focus:ring-[#2D5A43] mt-0.5"
-                    />
-                    <div className="flex items-start gap-2 min-w-0 flex-1">
-                      <div className="mt-0.5 shrink-0">
-                        {renderCategoryIcon(cat.icon)}
-                      </div>
-                      <span className="text-xs font-medium text-[#1B3D2F] leading-snug break-words" title={cat.nameTh}>
-                        {cat.nameTh}
-                      </span>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
+      <div className="qa-content">
         {/* Main Content Area */}
         <div className="flex-1 space-y-6">
           {!debouncedQuery ? (
@@ -528,13 +312,13 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({
                 return (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between text-xs font-semibold text-[#708477] px-1">
-                      <span>คำตอบตัวอย่างมาตรฐาน (พร้อมส่งลูกค้า)</span>
+                      <span>ข้อมูลจากคลังความรู้</span>
                       <span className="text-[#2D5A43] font-mono">รหัส: {defaultItem.id}</span>
                     </div>
 
                     <StructuredAnswerCard
                       item={defaultItem}
-                      questionText="เวลา Check-in และ Check-out คือกี่โมง?"
+                      questionText={defaultItem.title}
                       onFeedback={() => {}}
                       matchedKeywords={['check-in', 'check-out', '14:00', '12:00']}
                     />
@@ -631,7 +415,7 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({
                           </div>
 
                           {aiAnswer.references && aiAnswer.references.length > 0 && (
-                            <div className="mt-3 pt-2.5 border-t border-[#2A5240] flex flex-wrap items-center gap-2 text-xs text-[#A3B8AC]">
+                            <details className="mt-3 pt-2.5 border-t border-[#2A5240] text-xs text-[#A3B8AC]"><summary className="cursor-pointer mb-2">ดูแหล่งอ้างอิง</summary>
                               <span>อ้างอิงจากข้อมูลรหัส:</span>
                               <div className="flex flex-wrap gap-1.5">
                                 {aiAnswer.references.map(ref => (
@@ -640,7 +424,7 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({
                                   </span>
                                 ))}
                               </div>
-                            </div>
+                            </details>
                           )}
                         </div>
                       </div>
@@ -750,3 +534,4 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({
     </div>
   );
 };
+

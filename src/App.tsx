@@ -1,4 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { KNOWLEDGE_CATEGORIES } from './data/categories';
 import { Header, NavigationTab } from './components/Header';
 import { CorporateSearchUI } from './components/CorporateSearchUI';
 import { CategoriesGrid } from './components/CategoriesGrid';
@@ -469,19 +470,20 @@ export default function App() {
             {activeTab === 'docs' && (
               <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
                 <ServiceShowcaseSection
+                  knowledgeItems={activeKnowledgeItems}
                   onSelectQuery={(q) => {
                     setSearchQuery(q);
                     setActiveTab('qa');
                   }}
                 />
 
-                <div className="bg-gradient-to-r from-[#1A3A2B] to-[#2D5A43] text-white p-6 rounded-3xl shadow-sm border border-[#2D5A43]/40">
+                <div className="bg-[#1B3D2F] text-white p-6 rounded-2xl border border-[#2D5A43]/40">
                   <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-white/15 text-[#E7C785] text-xs font-semibold backdrop-blur-md mb-2">
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>Google Docs Internal Repository</span>
                   </div>
                   <h3 className="text-xl sm:text-2xl font-bold font-heading">
-                    ฐานความรู้ Google Docs ทั้ง 12 หมวดหมู่ของบ้านโฮม
+                    คลังความรู้บ้านโฮม · {KNOWLEDGE_CATEGORIES.length} หมวดหมู่
                   </h3>
                   <p className="text-xs sm:text-sm text-[#D3E3D8] mt-1.5 max-w-2xl leading-relaxed">
                     เอกสารที่จัดเก็บเป็นความรู้กลางขององค์กร สามารถคลิกดูโครงสร้างเนื้อหาของแต่ละหมวดเพื่อดูว่าจัดเก็บข้อมูลอะไรบ้าง

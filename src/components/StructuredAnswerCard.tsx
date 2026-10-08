@@ -21,7 +21,7 @@ export const StructuredAnswerCard: React.FC<StructuredAnswerCardProps> = ({ item
   const [copied, setCopied] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [copiedImage, setCopiedImage] = useState(false);
-  const [images, setImages] = useState<string[]>(() => getItemImages(item));
+  const [images, setImages] = useState<string[]>(() => getItemImages(item, false));
   const [showEditModal, setShowEditModal] = useState(false);
   const [showLightbox, setShowLightbox] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -32,9 +32,9 @@ export const StructuredAnswerCard: React.FC<StructuredAnswerCardProps> = ({ item
 
   // Sync images if item changes or global custom images are updated
   useEffect(() => {
-    setImages(getItemImages(item));
+    setImages(getItemImages(item, false));
     const handleUpdate = () => {
-      setImages(getItemImages(item));
+      setImages(getItemImages(item, false));
     };
     window.addEventListener('baan_home_images_updated', handleUpdate);
     return () => window.removeEventListener('baan_home_images_updated', handleUpdate);
@@ -70,7 +70,7 @@ export const StructuredAnswerCard: React.FC<StructuredAnswerCardProps> = ({ item
         
         {/* Header section */}
         <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
-          <div className="flex-1 min-w-[240px]">
+          <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <span className="px-2.5 py-1 bg-[#F9FCF8] border border-[#E5EFE2] text-[#2D5A43] text-[10px] font-bold rounded-md font-mono">
                 {item.id}
@@ -115,91 +115,6 @@ export const StructuredAnswerCard: React.FC<StructuredAnswerCardProps> = ({ item
             </button>
           </div>
         </div>
-
-        {/* Visual Photo Section (If item has images or curated sample) */}
-        {primaryImage && (
-          <div className="mb-6 rounded-2xl overflow-hidden border border-[#E2ECE5] bg-[#F7FAF8] shadow-2xs">
-            <div className="relative aspect-16/9 sm:aspect-21/9 max-h-64 w-full overflow-hidden group cursor-pointer" onClick={() => setShowLightbox(true)}>
-              <img
-                src={primaryImage}
-                alt={item.title}
-                className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-300"
-                referrerPolicy="no-referrer"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-80 group-hover:opacity-90 transition-opacity" />
-
-              {/* Badges on image */}
-              <div className="absolute top-3 left-3 flex items-center gap-2">
-                <span className="px-2.5 py-1 bg-black/60 backdrop-blur-xs text-white text-xs font-semibold rounded-lg flex items-center gap-1.5">
-                  <ImageIcon className="w-3.5 h-3.5 text-[#E2F0E0]" />
-                  <span>รูปภาพสถานที่ / บริการ ({images.length} รูป)</span>
-                </span>
-              </div>
-
-              <div className="absolute top-3 right-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={(e) => handleCopyImageUrl(primaryImage, e)}
-                  className="px-2.5 py-1 bg-black/60 hover:bg-black/80 backdrop-blur-xs text-white text-xs font-medium rounded-lg flex items-center gap-1 transition-colors"
-                  title="คัดลอกลิงก์รูปภาพเพื่อส่งให้ลูกค้า"
-                >
-                  {copiedImage ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedImage ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์รูป'}</span>
-                </button>
-                <div 
-                  className="p-1.5 bg-black/60 hover:bg-black/80 backdrop-blur-xs text-white rounded-lg transition-colors"
-                  title="คลิกเพื่อดูรูปขนาดใหญ่"
-                >
-                  <Maximize2 className="w-3.5 h-3.5" />
-                </div>
-              </div>
-
-              {/* Bottom bar on image */}
-              <div className="absolute bottom-3 inset-x-3 flex items-center justify-between text-white text-xs">
-                <span className="font-medium text-white/90 drop-shadow-xs line-clamp-1">
-                  คลิกเพื่อดูรูปขนาดเต็ม หรือใช้ปุ่ม "แก้ไขรูปภาพ" เพื่ออัปเดตรูปจากหน้างาน
-                </span>
-                <span className="bg-white/20 px-2 py-0.5 rounded backdrop-blur-xs text-[11px] shrink-0 font-medium">
-                  {activeImageIndex + 1} / {images.length}
-                </span>
-              </div>
-            </div>
-
-            {/* Thumbnails strip (if more than 1 image) */}
-            {images.length > 1 && (
-              <div className="p-2.5 bg-[#FAFDFB] border-t border-[#E2ECE5] flex items-center gap-2 overflow-x-auto">
-                <span className="text-[11px] font-semibold text-[#526B5C] px-1 shrink-0">
-                  รูปทั้งหมด:
-                </span>
-                {images.map((img, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveImageIndex(idx);
-                    }}
-                    className={`relative w-14 h-10 rounded-lg overflow-hidden border-2 transition-all shrink-0 ${
-                      idx === activeImageIndex 
-                        ? 'border-[#2D5A43] shadow-xs scale-105' 
-                        : 'border-[#DFE7E1] opacity-75 hover:opacity-100'
-                    }`}
-                  >
-                    <img src={img} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setShowEditModal(true)}
-                  className="w-14 h-10 rounded-lg border border-dashed border-[#2D5A43]/50 hover:border-[#2D5A43] bg-[#EEF5EC]/50 hover:bg-[#EEF5EC] text-[#2D5A43] flex items-center justify-center shrink-0 transition-colors"
-                  title="เพิ่มรูปภาพ"
-                >
-                  <ImagePlus className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Content Section */}
         {isCompetitor ? (
@@ -327,7 +242,7 @@ export const StructuredAnswerCard: React.FC<StructuredAnswerCardProps> = ({ item
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-2">
+          <div className="grid grid-cols-1 gap-6 mt-2">
             
             {/* Customer Message Area */}
             <div className="flex flex-col h-full">
@@ -400,8 +315,8 @@ export const StructuredAnswerCard: React.FC<StructuredAnswerCardProps> = ({ item
             </div>
 
             {/* Internal Information Area */}
-            <div className="flex flex-col space-y-4">
-              
+            <details className="space-y-4 rounded-2xl border border-[#e3dacb] p-4">
+              <summary className="text-sm font-semibold text-[#2D5A43] cursor-pointer">ดูแหล่งอ้างอิงและข้อมูลเพิ่มเติม · ข้อมูลภายใน</summary>
               {/* Staff Answer */}
               {item.summary && (
                 <div>
@@ -455,12 +370,98 @@ export const StructuredAnswerCard: React.FC<StructuredAnswerCardProps> = ({ item
                 </div>
               )}
 
+            </details>
+          </div>
+        )}
+
+        {/* Visual Photo Section (If item has images or curated sample) */}
+        {primaryImage && (
+          <div className="mb-6 rounded-2xl overflow-hidden border border-[#E2ECE5] bg-[#F7FAF8] shadow-2xs">
+            <div className="relative h-36 sm:h-44 max-w-sm w-full overflow-hidden group cursor-pointer" onClick={() => setShowLightbox(true)} role="button" tabIndex={0} aria-label="ดูรูปขนาดใหญ่" onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowLightbox(true); } }}>
+              <img
+                src={primaryImage}
+                alt={item.title}
+                className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-300"
+                referrerPolicy="no-referrer"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 opacity-80 group-hover:opacity-90 transition-opacity" />
+
+              {/* Badges on image */}
+              <div className="absolute top-3 left-3 flex items-center gap-2">
+                <span className="px-2.5 py-1 bg-black/60 backdrop-blur-xs text-white text-xs font-semibold rounded-lg flex items-center gap-1.5">
+                  <ImageIcon className="w-3.5 h-3.5 text-[#E2F0E0]" />
+                  <span>รูปภาพสถานที่ / บริการ ({images.length} รูป)</span>
+                </span>
+              </div>
+
+              <div className="absolute top-3 right-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => handleCopyImageUrl(primaryImage, e)}
+                  className="px-2.5 py-1 bg-black/60 hover:bg-black/80 backdrop-blur-xs text-white text-xs font-medium rounded-lg flex items-center gap-1 transition-colors"
+                  title="คัดลอกลิงก์รูปภาพเพื่อส่งให้ลูกค้า"
+                >
+                  {copiedImage ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedImage ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์รูป'}</span>
+                </button>
+                <div 
+                  className="p-1.5 bg-black/60 hover:bg-black/80 backdrop-blur-xs text-white rounded-lg transition-colors"
+                  title="คลิกเพื่อดูรูปขนาดใหญ่"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </div>
+              </div>
+
+              {/* Bottom bar on image */}
+              <div className="absolute bottom-3 inset-x-3 flex items-center justify-between text-white text-xs">
+                <span className="font-medium text-white/90 drop-shadow-xs line-clamp-1">
+                  คลิกเพื่อดูรูปขนาดเต็ม หรือใช้ปุ่ม "แก้ไขรูปภาพ" เพื่ออัปเดตรูปจากหน้างาน
+                </span>
+                <span className="bg-white/20 px-2 py-0.5 rounded backdrop-blur-xs text-[11px] shrink-0 font-medium">
+                  {activeImageIndex + 1} / {images.length}
+                </span>
+              </div>
             </div>
+
+            {/* Thumbnails strip (if more than 1 image) */}
+            {images.length > 1 && (
+              <div className="p-2.5 bg-[#FAFDFB] border-t border-[#E2ECE5] flex items-center gap-2 overflow-x-auto">
+                <span className="text-[11px] font-semibold text-[#526B5C] px-1 shrink-0">
+                  รูปทั้งหมด:
+                </span>
+                {images.map((img, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveImageIndex(idx);
+                    }}
+                    className={`relative w-14 h-10 rounded-lg overflow-hidden border-2 transition-all shrink-0 ${
+                      idx === activeImageIndex 
+                        ? 'border-[#2D5A43] shadow-xs scale-105' 
+                        : 'border-[#DFE7E1] opacity-75 hover:opacity-100'
+                    }`}
+                  >
+                    <img src={img} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(true)}
+                  className="w-14 h-10 rounded-lg border border-dashed border-[#2D5A43]/50 hover:border-[#2D5A43] bg-[#EEF5EC]/50 hover:bg-[#EEF5EC] text-[#2D5A43] flex items-center justify-center shrink-0 transition-colors"
+                  title="เพิ่มรูปภาพ"
+                >
+                  <ImagePlus className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         )}
 
         {/* Footer Meta */}
-        <div className="mt-6 pt-4 border-t border-[#F0F2F1] flex flex-wrap items-center justify-between gap-4 text-[11px] text-[#8C9E90] font-medium">
+        <details className="mt-4 text-xs text-[#637b6b]"><summary className="cursor-pointer py-2">ข้อมูลแหล่งอ้างอิงและวันที่อัปเดต</summary>
+        <div className="mt-2 pt-4 border-t border-[#F0F2F1] flex flex-wrap items-center justify-between gap-4 text-[11px] text-[#8C9E90] font-medium">
           <div className="flex flex-wrap items-center gap-4">
             <span className="flex items-center gap-1.5" title="แหล่งอ้างอิง">
               <FileText className="w-3.5 h-3.5" /> {item.sourceDoc || 'Google Sheet'}
@@ -483,7 +484,7 @@ export const StructuredAnswerCard: React.FC<StructuredAnswerCardProps> = ({ item
             <span>Audience: {item.audience}</span>
           </div>
         </div>
-
+        </details>
       </div>
 
       {/* Lightbox Modal */}
@@ -496,7 +497,7 @@ export const StructuredAnswerCard: React.FC<StructuredAnswerCardProps> = ({ item
       />
 
       {/* Edit Image Modal */}
-      <EditImageModal
+      {showEditModal && <EditImageModal
         item={item}
         isOpen={showEditModal}
         onClose={() => setShowEditModal(false)}
@@ -504,8 +505,9 @@ export const StructuredAnswerCard: React.FC<StructuredAnswerCardProps> = ({ item
           setImages(newImages);
           setActiveImageIndex(0);
         }}
-      />
+      />}
     </div>
   );
 };
+
 
