@@ -63,7 +63,7 @@ button:focus-visible, summary:focus-visible, select:focus-visible, a:focus-visib
 .qa-branch-left { left: -65px; bottom: 4px; width: clamp(110px, 17vw, 225px); transform: rotate(178deg); opacity: .15; }
 .qa-question-bubble { background: linear-gradient(135deg, #e9efdf, #e0e9d8); box-shadow: 0 2px 5px rgba(33,75,56,.04); }
 .qa-answer-bubble { position: relative; border-color: #b9caaa; background: #fffefb; box-shadow: 0 7px 24px rgba(41,66,35,.07), 0 1px 3px rgba(41,66,35,.03); margin-top: 28px; }
-.qa-assistant-signature { display: flex; align-items: center; gap: 8px; margin-top: -36px; margin-bottom: 18px; color: #214b38; font-size: 12px; font-weight: 600; }
+.qa-assistant-signature { display: flex; align-items: center; gap: 8px; margin-top: 0; margin-bottom: 18px; color: #214b38; font-size: 12px; font-weight: 600; }
 .qa-home-avatar { display: inline-flex; width: 34px; height: 34px; align-items: center; justify-content: center; border-radius: 50%; color: white; background: linear-gradient(145deg, #35613e, #183b29); border: 3px solid #f7f5ec; box-shadow: 0 3px 8px rgba(33,75,56,.1); }
 .qa-avatar-spark { color: #94b57d; font-size: 13px; }
 .qa-copy-button { border: 1px solid #dce2d4; border-radius: 999px; padding: 7px 12px; background: #fafbf6; transition: background-color 160ms ease, border-color 160ms ease; }
@@ -78,7 +78,7 @@ button:focus-visible, summary:focus-visible, select:focus-visible, a:focus-visib
 @media (max-width: 640px) {
   .qa-branch-right { right: -52px; top: 4px; opacity: .13; }
   .qa-branch-left { left: -60px; opacity: .1; }
-  .qa-assistant-signature { margin-top: -32px; }
+  .qa-assistant-signature { margin-top: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .qa-chat-turn, .qa-answer-content { animation: none; }
