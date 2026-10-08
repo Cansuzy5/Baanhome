@@ -9,10 +9,11 @@ import { KnowledgeMedia } from './KnowledgeMedia';
 import { clearConversation, readConversation, saveConversation, MAX_CONVERSATION_TURNS, type ConversationTurn } from '../utils/qaConversation';
 interface CorporateSearchUIProps {
   activeKnowledgeItems: KnowledgeItem[]; staffName: string; analyticsStaff?: StaffProfile;
+  onAddKnowledge?: () => void;
   onRecordLog: (query: string, result: SearchResult | null) => void; onAskUnanswered: (query: string) => void;
   searchQuery?: string; onSearchChange?: (q: string) => void; onOpenSheetsSync?: () => void; isUsingCustomSheet?: boolean;
 }
-export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({ activeKnowledgeItems, staffName, analyticsStaff, onRecordLog, onAskUnanswered, searchQuery = '', onSearchChange, onOpenSheetsSync, isUsingCustomSheet }) => {
+export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({ activeKnowledgeItems, staffName, analyticsStaff, onRecordLog, onAskUnanswered, searchQuery = '', onSearchChange, onOpenSheetsSync, isUsingCustomSheet, onAddKnowledge }) => {
   const accountId = analyticsStaff?.id || '';
   const [turns, setTurns] = useState<ConversationTurn[]>(() => readConversation(accountId));
   const turnsRef = useRef(turns);
@@ -30,7 +31,14 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({ activeKnow
   useSearchAnalytics(analyticsQuestion, analyticsStaff, () => countRef.current);
   const publish = (next: ConversationTurn[]) => { turnsRef.current = next.slice(-MAX_CONVERSATION_TURNS); setTurns(turnsRef.current); saveConversation(accountId, turnsRef.current); };
   useEffect(() => () => requestRef.current?.abort(), []);
-  useEffect(() => { if (turns.length) bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [turns.length]);
+  const followBottom = useRef(true);
+  const scrollToComposer = () => bottomRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'end' });
+  useEffect(() => {
+    const onScroll = () => { followBottom.current = document.documentElement.scrollHeight - window.scrollY - window.innerHeight < 240; };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  useEffect(() => { if (turns.length && followBottom.current) requestAnimationFrame(scrollToComposer); }, [turns.length, turns.at(-1)?.aiAnswer, loading]);
   const generate = async (turn: ConversationTurn, previous: ConversationTurn[]) => {
     if (requestRef.current) return;
     const controller = new AbortController(); requestRef.current = controller; setLoading(turn.id); setNotice('');
@@ -51,12 +59,13 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({ activeKnow
     const question = draft.trim().slice(0, 1000); if (!question || requestRef.current) return;
     const previous = turnsRef.current;
     const turn: ConversationTurn = { id: crypto.randomUUID(), question, searchQuery: question, sourceIds: [], createdAt: new Date().toISOString(), usedContext: previous.length > 0 };
+    followBottom.current = true;
     publish([...previous, turn]); setDraft(''); countRef.current = 0; setAnalyticsQuestion(question); void generate(turn, previous);
   };
   const reset = () => { requestRef.current?.abort(); requestRef.current = null; setLoading(null); setDraft(''); setNotice(''); clearConversation(accountId); turnsRef.current = []; setTurns([]); };
   const copy = async (id: string, text: string) => { try { await navigator.clipboard.writeText(text); setCopied(id); } catch { setNotice('คัดลอกไม่สำเร็จ กรุณาลองใหม่'); } };
   return <div className="qa-garden-shell"><BotanicalBackdrop /><div className="qa-conversation max-w-4xl mx-auto px-4 sm:px-8 py-6">
-    <header className="flex justify-between items-center border-b border-[#e0e5da] pb-4"><div><h1 className="text-xl font-semibold text-[#214b38]">ถาม–ตอบ</h1><p className="text-xs text-[#788477] mt-1">น้องโฮม · {staffName}</p></div>{turns.length > 0 && <button aria-label="เริ่มบทสนทนาใหม่" onClick={reset} className="p-2 text-[#788477]"><RotateCcw size={17} /></button>}</header>
+    <header className="flex justify-between items-center border-b border-[#e0e5da] pb-4"><div><h1 className="text-xl font-semibold text-[#214b38]">ถาม–ตอบ</h1><p className="text-xs text-[#788477] mt-1">น้องโฮม · {staffName}</p></div><div className="flex items-center gap-2">{onAddKnowledge && <button onClick={onAddKnowledge} className="qa-copy-button text-xs text-[#597662]">เพิ่มข้อมูล/คำตอบ</button>}{turns.length > 0 && <button aria-label="เริ่มบทสนทนาใหม่" onClick={reset} className="p-2 text-[#788477]"><RotateCcw size={17} /></button>}</div></header>
     <div className="space-y-6 py-6 min-h-[380px]">
       {!turns.length && <div className="rounded-2xl bg-[#fffdf8] border border-[#e0e5da] p-5 shadow-sm"><Home size={22} className="text-[#214b38] mb-3" /><h2 className="text-lg font-medium text-[#214b38]">วันนี้ให้โฮมช่วยเรื่องไหน?</h2><p className="text-sm text-[#788477] mt-2">ถามเรื่องห้องพัก อาหาร จัดเลี้ยง หรือข้อมูลพนักงานได้เลย</p></div>}
       {turns.map((turn, index) => {
@@ -76,7 +85,7 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({ activeKnow
     </div>
     <div ref={bottomRef} className="qa-composer relative mt-4 pb-4 md:pb-2">
       <form onSubmit={e => { e.preventDefault(); submit(); }} className="qa-input-surface flex items-center gap-2 rounded-2xl border border-[#d6dfce] bg-[#fffefb] p-3 shadow-[0_6px_24px_rgba(37,57,41,0.1)]">
-        <input id="main-search-input" aria-label="ถามน้องโฮม" maxLength={1000} value={draft} onChange={e => setDraft(e.target.value)} placeholder="ถามโฮมได้เลย…" className="min-w-0 flex-1 bg-transparent p-2 text-base md:text-sm text-[#293e31] outline-none" />
+        <input id="main-search-input" aria-label="ถามน้องโฮม" onFocus={() => { followBottom.current = true; scrollToComposer(); }} maxLength={1000} value={draft} onChange={e => setDraft(e.target.value)} placeholder="ถามโฮมได้เลย…" className="min-w-0 flex-1 bg-transparent p-2 text-base md:text-sm text-[#293e31] outline-none" />
         {draft && <button type="button" aria-label="ล้างคำถาม" onClick={() => setDraft('')} className="text-[#788477]"><X size={17} /></button>}
         <button type="submit" aria-label="ส่งคำถาม" disabled={!draft.trim() || !!loading} className="qa-send-button w-10 h-10 rounded-full bg-[#214b38] text-white disabled:opacity-35 flex items-center justify-center"><ArrowUp size={20} /></button>
       </form>
