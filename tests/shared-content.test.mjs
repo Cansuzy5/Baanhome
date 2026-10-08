@@ -5,6 +5,7 @@ import { transformSync } from 'esbuild';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 const docs = new Map();
+let activeStages = 0, maxStages = 0;
 let failWrites = false;
 let queue = Promise.resolve();
 globalThis.testDb = {
@@ -57,7 +58,10 @@ async function call(kind, method, body, query = {}) {
 }
 globalThis.fetch = async (url, options = {}) => {
   const u = new URL(url, 'https://test.invalid');
+  const isStage = options.body && JSON.parse(options.body).action === 'stage';
+  if (isStage) { activeStages++; maxStages = Math.max(maxStages, activeStages); await new Promise(resolve => setImmediate(resolve)); }
   const r = await call(u.pathname.includes('knowledge') ? 'knowledge' : 'images', options.method || 'GET', options.body ? JSON.parse(options.body) : undefined, Object.fromEntries(u.searchParams));
+  if (isStage) activeStages--;
   return { ok: r.code < 400, status: r.code, json: async () => r.data };
 };
 test('large payload, durable errors, concurrent devices, reset, legacy preservation', async () => {
@@ -66,6 +70,7 @@ test('large payload, durable errors, concurrent devices, reset, legacy preservat
   assert.deepEqual(JSON.parse(splitContent(large).map(p => Buffer.from(p).toString()).join('')), large);
   const a = new SharedContentClient('/api/sync/knowledge');
   await a.save('main', large);
+  assert.ok(maxStages > 1 && maxStages <= 4, 'uploads run concurrently with a four-request limit');
   const b = new SharedContentClient('/api/sync/knowledge');
   assert.deepEqual((await b.read()).values.main, large);
   failWrites = true;
