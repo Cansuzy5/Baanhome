@@ -274,6 +274,15 @@ try {
   failAi = false;
   await page.getByRole('button', { name: 'ลองใหม่', exact: true }).click();
   await page.locator('[data-turn-id]').last().getByText('คำตอบ AI ทดสอบ', { exact: true }).waitFor();
+  const beforeNavigation = aiCalls.length;
+  const lastAnswer = await page.locator('[data-turn-id]').last().getByText('คำตอบ AI ทดสอบ', { exact: true }).textContent();
+  await page.locator('#navigation-toggle').click();
+  await page.locator('#nav-tab-docs').click();
+  await page.getByRole('heading', { name: 'คลังความรู้', exact: true }).waitFor();
+  await page.locator('#navigation-toggle').click();
+  await page.locator('#nav-tab-qa').click();
+  await page.locator('[data-turn-id]').last().getByText(lastAnswer, { exact: true }).waitFor();
+  assert.equal(aiCalls.length, beforeNavigation, 'switching tabs must not call AI');
   const callsBeforeReload = aiCalls.length;
   const history = await page.evaluate(() => localStorage.getItem('baanhome_qa_conversation_v1:Administrator'));
   await user.evaluate(value => localStorage.setItem('baanhome_qa_conversation_v1:Administrator', value), history);
@@ -282,7 +291,8 @@ try {
   assert.equal(await user.locator('[data-turn-id]').count(), 0, 'another account cannot see saved admin history on shared browser');
   await page.reload();
   await page.locator('[data-turn-id]').nth(1).waitFor();
-  assert.equal(await page.getByText('คำตอบ AI ทดสอบ', { exact: true }).count(), 0, 'do not restore stale generated facts');
+  assert.ok(await page.getByText('คำตอบ AI ทดสอบ', { exact: true }).count() > 0, 'restore saved answers without a model call');
+  await page.locator('[data-turn-id]').first().getByText('คำตอบจากประวัติ · ข้อมูล ณ เวลาที่ตอบ', { exact: true }).waitFor();
   assert.equal(aiCalls.length, callsBeforeReload, 'reload must not trigger AI');
   await page.getByRole('button', { name: 'เริ่มบทสนทนาใหม่' }).click();
   assert.equal(await page.locator('[data-turn-id]').count(), 0);

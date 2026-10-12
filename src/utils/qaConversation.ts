@@ -10,26 +10,40 @@ export interface ConversationTurn {
   usedContext: boolean;
   aiAnswer?: { text: string; references: string[]; customerAnswer?: string; staffAnswer?: string; customerReferenceIds?: string[] };
   error?: string;
+  restored?: boolean;
 }
 export const MAX_CONVERSATION_TURNS = 20;
 const keyFor = (accountId: string) => `baanhome_qa_conversation_v1:${encodeURIComponent(accountId)}`;
+const sessionHistory = new Map<string, ConversationTurn[]>();
+function cleanTurn(t: any): ConversationTurn | null {
+  if (!t || typeof t.id !== 'string' || typeof t.question !== 'string' || typeof t.searchQuery !== 'string' || typeof t.createdAt !== 'string' || !Array.isArray(t.sourceIds)) return null;
+  const ids = (value: unknown): string[] => Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string').slice(0, 30) : [];
+  const answer = t.aiAnswer;
+  const customerAnswer = typeof answer?.customerAnswer === 'string' ? answer.customerAnswer.slice(0, 20000) : '';
+  const staffAnswer = typeof answer?.staffAnswer === 'string' ? answer.staffAnswer.slice(0, 20000) : '';
+  return { id: t.id, question: t.question.slice(0, 1000), searchQuery: t.searchQuery.slice(0, 1600), sourceIds: ids(t.sourceIds), createdAt: t.createdAt, usedContext: !!t.usedContext,
+    ...(customerAnswer || staffAnswer ? { aiAnswer: { text: customerAnswer || staffAnswer, customerAnswer, staffAnswer, references: ids(answer.references), customerReferenceIds: ids(answer.customerReferenceIds) } } : {}),
+    ...(typeof t.error === 'string' ? { error: t.error.slice(0, 1000) } : {}) };
+}
 export function readConversation(accountId: string): ConversationTurn[] {
   if (!accountId) return [];
   try {
-    const value = JSON.parse(localStorage.getItem(keyFor(accountId)) || '[]');
+    const value = sessionHistory.get(accountId) || JSON.parse(localStorage.getItem(keyFor(accountId)) || '[]');
     if (!Array.isArray(value)) return [];
-    return value.filter(t => t && typeof t.id === 'string' && typeof t.question === 'string' && typeof t.searchQuery === 'string' && typeof t.createdAt === 'string' && Array.isArray(t.sourceIds) && t.sourceIds.every((id: unknown) => typeof id === 'string')).slice(-MAX_CONVERSATION_TURNS).map(t => ({ ...t, question: t.question.slice(0, 1000), searchQuery: t.searchQuery.slice(0, 1600), sourceIds: t.sourceIds.slice(0, 30), aiAnswer: undefined }));
+    return value.map(cleanTurn).filter((t): t is ConversationTurn => !!t).slice(-MAX_CONVERSATION_TURNS).map(t => ({ ...t, restored: !!t.aiAnswer }));
   } catch { return []; }
 }
 export function saveConversation(accountId: string, turns: ConversationTurn[]) {
   if (!accountId) return;
-  // Keep references, not copied knowledge/images or generated facts. On reload,
-  // the UI resolves each ID against the latest eligible knowledge base.
-  const value = turns.slice(-MAX_CONVERSATION_TURNS).map(({ aiAnswer, ...turn }) => turn);
-  try { localStorage.setItem(keyFor(accountId), JSON.stringify(value)); } catch { /* session remains usable */ }
+  // Store only bounded text and reference IDs, under the current account's key.
+  // Never save knowledge payloads or image data; restoring history does not call AI.
+  const value = turns.slice(-MAX_CONVERSATION_TURNS).map(cleanTurn).filter((t): t is ConversationTurn => !!t);
+  sessionHistory.set(accountId, value);
+  try { localStorage.setItem(keyFor(accountId), JSON.stringify(value)); } catch { /* Keep answers during navigation if browser storage is full. */ }
 }
 export function clearConversation(accountId: string) {
-  try { localStorage.removeItem(keyFor(accountId)); } catch { /* session remains usable */ }
+  sessionHistory.delete(accountId);
+  try { localStorage.removeItem(keyFor(accountId)); } catch { /* keep other accounts unchanged */ }
 }
 
 const explicitSubject = /พูลวิลล่า|รีสอร์ท|ห้องพัก|ห้องอาหาร|อาหารเช้า|เมนู|ต้มยำ|ผัดไทย|กุ้งเผา|ไก่ย่าง|ส้มตำ|ข้าวผัด|กะเพรา|กระเพรา|ทอดมัน|ลาบ|ยำวุ้นเส้น|คอหมู|คาราโอเกะ|ห้องวีไอพี|สัมมนา|จัดเลี้ยง|สัตว์เลี้ยง|เช็คอิน|เช็คเอาต์|มัดจำ|แผนที่|พนักงาน|สวัสดิการ|คู่แข่ง|pool\s?villa|resort|check.?in|check.?out/i;
