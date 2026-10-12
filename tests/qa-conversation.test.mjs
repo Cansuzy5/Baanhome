@@ -22,12 +22,14 @@ const storage = new Map();
 globalThis.localStorage = { getItem: k => storage.get(k) || null, setItem: (k,v) => storage.set(k,v), removeItem: k => storage.delete(k) };
 const room = { id: 'room', title: 'พูลวิลล่า', customerMessage: 'ราคาอ้างอิงจากฐาน', status: 'Published', audience: 'Both', aiUsable: 'Yes' };
 const internal = { id: 'internal', title: 'เงินเดือนพนักงาน', audience: 'Employee' };
-const turn = { id: '1', question: 'พูลวิลล่าราคาเท่าไหร่', searchQuery: 'พูลวิลล่า', sourceIds: ['room'], createdAt: '2026-10-08', usedContext: false, aiAnswer: { text: 'old generated facts', references: ['room'] } };
-test('personal history stays with its account; reset and reload use current references', () => {
+const turn = { id: '1', question: 'พูลวิลล่าราคาเท่าไหร่', searchQuery: 'พูลวิลล่า', sourceIds: ['room'], createdAt: '2026-10-08', usedContext: false, aiAnswer: { text: 'saved answer', customerAnswer: 'saved answer', staffAnswer: 'staff answer', customerReferenceIds: ['room'], references: ['room'] } };
+test('personal history retains answers per account; reset preserves other accounts', () => {
   saveConversation('A', [turn]);
   assert.equal(readConversation('B').length, 0);
-  assert.equal(readConversation('A')[0].aiAnswer, undefined);
-  assert.equal(JSON.stringify([...storage.values()]).includes('old generated facts'), false);
+  assert.equal(readConversation('A')[0].aiAnswer.customerAnswer, 'saved answer');
+  assert.equal(readConversation('A')[0].aiAnswer.staffAnswer, 'staff answer');
+  assert.equal(readConversation('A')[0].restored, true);
+  assert.equal(JSON.stringify([...storage.values()]).includes('saved answer'), true);
   saveConversation('B', [{ ...turn, id: '2' }]);
   clearConversation('A');
   assert.equal(readConversation('A').length, 0);
