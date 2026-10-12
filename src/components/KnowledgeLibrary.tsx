@@ -1,50 +1,77 @@
-import React, { useState } from 'react';
-import { ArrowLeft, BookOpen, ChevronRight, Leaf } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Leaf, Utensils, ZoomIn, ZoomOut } from 'lucide-react';
 import type { KnowledgeItem } from '../types';
-import { KNOWLEDGE_CATEGORIES } from '../data/categories';
-import { isCustomerReady } from '../utils/knowledgeFilter';
-import { READER_TITLES, readerChapters, readerHeading, readerParagraphs } from '../utils/knowledgeReader';
-import { KnowledgeMedia } from './KnowledgeMedia';
-const competitorLabels: Record<string, string> = { competitorName: 'ชื่อคู่แข่ง', competitorType: 'ประเภท', location: 'ที่ตั้ง', capacityComp: 'รองรับ', pricingComp: 'ราคา', atmosphereComp: 'บรรยากาศ', facilityComp: 'สิ่งอำนวยความสะดวก', bhSweetSpot: 'จุดเด่นบ้านโฮม', salesPitch: 'แนวทางนำเสนอ', guardrails: 'ข้อควรระวัง', mysteryShoppingStatus: 'สถานะสำรวจ' };
+
+type Block = { type: 'paragraph' | 'heading'; text: string } | { type: 'table'; rows: string[][] } | { type: 'image'; src: string };
+type BookData = { source: string; chapters?: { title: string; blocks: Block[] }[]; pages?: { title: string; src: string }[] };
+const BOOKS = [
+  { id: 'menu', title: 'เมนูอาหารบ้านโฮม', description: 'เปิดดูรูปอาหาร ราคา และเมนูตามหน้าต้นฉบับ', source: 'เล่มเมนู อาหารบ้านโฮม BH 2026 (ใช้).pdf', audience: 'ส่งให้ลูกค้าได้', count: '26 หน้า', match: 'เล่มเมนู', icon: Utensils },
+  { id: 'services', title: 'ความรู้และบริการบ้านโฮม', description: 'ทำความรู้จักบ้านโฮมและบริการต่าง ๆ อ่านเป็นบท', source: 'Knowledge Mapping ของ BU บ้านโฮม(2).docx', audience: 'ข้อมูลสำหรับพนักงาน', count: 'คู่มือความรู้', match: 'Knowledge Mapping', icon: Leaf },
+  { id: 'customer-service', title: 'คู่มือบริการลูกค้าและการจอง', description: 'หลักการบริการ ขั้นตอนการจอง และแนวทางปฏิบัติ', source: 'BH_Customer_Service_Handbook_2026(2).docx', audience: 'ข้อมูลสำหรับพนักงาน', count: 'คู่มือหน้างาน', match: 'BH_Customer_Service_Handbook', icon: BookOpen },
+];
 export function KnowledgeLibrary({ items, onRead }: { items: KnowledgeItem[]; onRead: (item: KnowledgeItem) => void }) {
-  const [category, setCategory] = useState<string | null>(null);
-  const categories = KNOWLEDGE_CATEGORIES.filter(c => items.some(i => i.category === c.id));
-  const chapters = category ? readerChapters(items, category) : [];
-  const title = category ? READER_TITLES[category] || categories.find(c => c.id === category)?.nameTh || category : '';
-  const sources = [...new Set(chapters.flatMap(c => c.items.map(i => i.sourceDoc).filter(Boolean)))];
-  const anchorFor = (id: string) => `reader-topic-${encodeURIComponent(id)}`;
-  const openBook = (id: string) => {
-    setCategory(id);
-    const first = items.find(i => i.category === id); if (first) onRead(first);
+  const [bookId, setBookId] = useState<string | null>(null);
+  const [data, setData] = useState<BookData | null>(null);
+  const [error, setError] = useState('');
+  const [page, setPage] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const pageTop = useRef<HTMLDivElement>(null);
+  const imageViewport = useRef<HTMLDivElement>(null);
+  const book = BOOKS.find(b => b.id === bookId);
+  useEffect(() => {
+    setData(null); setError(''); setPage(0); setZoom(1);
+    if (!bookId) return;
+    const controller = new AbortController();
+    void fetch(`/knowledge-books/${bookId}/content.json`, { signal: controller.signal }).then(async response => {
+      if (!response.ok) throw new Error('โหลดเล่มไม่สำเร็จ กรุณาลองเปิดใหม่');
+      const content: BookData = await response.json();
+      if (!(content.pages?.length || content.chapters?.length)) throw new Error('ไม่พบเนื้อหาในเล่ม');
+      if (!controller.signal.aborted) setData(content);
+    }).catch(e => { if (!controller.signal.aborted) setError(e.message || 'โหลดเล่มไม่สำเร็จ'); });
+    return () => controller.abort();
+  }, [bookId]);
+  const count = data?.pages?.length || data?.chapters?.length || 0;
+  const entries = data?.pages || data?.chapters || [];
+  const navigate = (next: number) => {
+    setPage(Math.max(0, Math.min(count - 1, next))); setZoom(1);
+    imageViewport.current?.scrollTo({ top: 0, left: 0 });
+    pageTop.current?.scrollIntoView({ block: 'start', behavior: 'auto' });
   };
+  const open = (id: string) => {
+    setBookId(id);
+    const target = BOOKS.find(b => b.id === id);
+    const sourceItem = items.find(i => i.sourceDoc?.includes(target?.match || ''));
+    if (sourceItem) onRead(sourceItem);
+  };
+  const pager = <div className="flex items-center justify-between gap-3 py-4">
+    <button disabled={page === 0} onClick={() => navigate(page - 1)} className="inline-flex items-center gap-1 text-sm text-[#456448] disabled:opacity-30"><ChevronLeft size={17} />ย้อนกลับ</button>
+    <span className="text-xs text-[#788477]">{bookId === 'menu' ? 'หน้า' : 'บท'} {page + 1} / {count}</span>
+    <button disabled={page >= count - 1} onClick={() => navigate(page + 1)} className="inline-flex items-center gap-1 text-sm text-[#456448] disabled:opacity-30">ถัดไป<ChevronRight size={17} /></button>
+  </div>;
   return <div className="knowledge-library max-w-5xl mx-auto px-4 sm:px-8 py-6 text-[#293e31]">
-    <h1 className="text-xl font-semibold text-[#214b38]">คลังความรู้</h1><p className="text-sm text-[#788477] mt-1 mb-6">อ่านและศึกษาข้อมูลบ้านโฮม แบ่งเป็นหมวดเหมือนคู่มือ</p>
-    {!category ? <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {categories.map((c, index) => <button key={c.id} onClick={() => openBook(c.id)} aria-label={`เปิดอ่าน ${READER_TITLES[c.id] || c.nameTh}`} className="knowledge-book-cover group relative text-left rounded-2xl border border-[#dce3d3] bg-[#fffef9] p-5 pl-7 shadow-sm hover:border-[#9caf8a] transition-colors overflow-hidden min-h-[168px]">
-        <span className="absolute left-0 inset-y-0 w-2 bg-[#456448] opacity-80" aria-hidden="true" />
-        <div className="flex justify-between items-center mb-5"><BookOpen size={21} className="text-[#53754a]" /><span className="text-[10px] tracking-widest text-[#9aa78c]">คู่มือ {String(index + 1).padStart(2, '0')}</span></div>
-        <h2 className="text-base font-semibold text-[#214b38]">{READER_TITLES[c.id] || c.nameTh}</h2>
-        <p className="text-xs text-[#788477] mt-2">{items.filter(i => i.category === c.id).length} หัวข้อ · เปิดอ่านทั้งหมวด</p><ChevronRight size={16} className="absolute right-4 bottom-5 text-[#91a17e]" />
-      </button>)}
-      {!categories.length && <p className="text-sm text-[#788477]">ยังไม่มีข้อมูลในคลังความรู้</p>}
-    </div> : <>
-      <button onClick={() => setCategory(null)} className="flex gap-1 items-center text-xs text-[#597662] mb-5"><ArrowLeft size={14} />กลับไปหมวดความรู้</button>
-      <article className="knowledge-book-reader bg-[#fffef9] rounded-2xl border border-[#dce3d3] shadow-[0_5px_22px_rgba(41,66,35,.06)] overflow-hidden">
-        <header className="px-5 sm:px-9 py-7 bg-[#edf2e6] border-b border-[#dce3d3]"><Leaf size={23} className="text-[#6e8c5b] mb-3" /><p className="text-[11px] text-[#788477] mb-2">คู่มือความรู้บ้านโฮม</p><h2 className="text-xl font-semibold text-[#214b38]">{title}</h2><p className="text-xs text-[#788477] mt-2">รวม {chapters.reduce((n,c) => n+c.items.length, 0)} หัวข้อ · เลื่อนอ่านต่อเนื่องได้ทั้งหมวด</p></header>
-        <nav aria-label="สารบัญหมวดความรู้" className="mx-5 sm:mx-9 py-5 border-b border-[#e1e5d9]"><h3 className="text-sm font-semibold text-[#597662] mb-3">สารบัญ</h3><div className="grid sm:grid-cols-2 gap-x-6 gap-y-2">{chapters.map(chapter => <div key={chapter.title} className="space-y-2"><p className="text-xs text-[#788477]">{chapter.title}</p>{chapter.items.map(item => <a key={item.id} href={`#${anchorFor(item.id)}`} onClick={() => onRead(item)} className="block text-xs leading-6 text-[#456448] hover:underline underline-offset-4">{readerHeading(item.title)}</a>)}</div>)}</div></nav>
-        <div className="px-5 sm:px-9 pb-8">{chapters.map(chapter => <section key={chapter.title} className="pt-8"><h3 className="text-lg font-semibold text-[#214b38] mb-6">{chapter.title}</h3>
-          {chapter.items.map(item => <section id={anchorFor(item.id)} key={item.id} data-reader-item={item.id} className="scroll-mt-24 pb-8 mb-8 border-b border-[#e6e9df] last:mb-0 last:border-0">
-            <div className="flex flex-wrap items-center gap-2 mb-4"><h4 className="text-base font-semibold text-[#293e31]">{readerHeading(item.title)}</h4>{!isCustomerReady(item) && <span className="text-[10px] rounded-full bg-[#f3ebdc] text-[#836d43] px-2 py-1">ข้อมูลสำหรับพนักงาน</span>}</div>
-            <div className="space-y-4 text-sm leading-8 whitespace-pre-wrap break-words">{readerParagraphs(item).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
-              {item.competitorData && <div className="space-y-3">{Object.entries(item.competitorData).filter(([,v]) => v).map(([k,v]) => <p key={k}><span className="font-medium">{competitorLabels[k] || k}: </span>{Array.isArray(v) ? v.join('\n') : String(v)}</p>)}</div>}
-              {(item.nextActions || []).length > 0 && <div className="border-l-2 border-[#cbd9bd] pl-4"><h5 className="text-sm font-medium text-[#597662] mb-1">แนวทางปฏิบัติ</h5>{item.nextActions.map((text,index) => <p key={index}>{text}</p>)}</div>}
-            </div>
-            <KnowledgeMedia item={item} />
-            <p className="text-[11px] leading-6 text-[#8a9383] mt-4">แหล่งข้อมูล: {item.sourceDoc || 'ฐานความรู้กลาง'}{item.docSection ? ` · ${item.docSection}` : ''} · อัปเดต {item.lastUpdated || 'ไม่ระบุ'}{item.dataStatus ? ` · ${item.dataStatus}` : ''}</p>
-          </section>)}
-        </section>)}</div>
-        <footer className="px-5 sm:px-9 py-5 bg-[#f5f6ee] border-t border-[#e1e5d9] text-xs leading-6 text-[#788477]"><p className="font-medium mb-1">เอกสารต้นทางของหมวดนี้</p>{sources.map(source => <p key={source}>{source}</p>)}</footer>
-      </article>
+    {!book ? <>
+      <h1 className="text-xl font-semibold text-[#214b38]">คลังความรู้</h1>
+      <p className="text-sm text-[#788477] mt-2 mb-7">เลือกเล่มที่อยากอ่าน แล้วค่อย ๆ เปิดดูได้เลย</p>
+      <div className="grid md:grid-cols-3 gap-5">{BOOKS.map(b => <button key={b.id} onClick={() => open(b.id)} aria-label={`เปิดอ่าน ${b.title}`} className="knowledge-book-cover group text-left relative rounded-2xl border border-[#d6dfce] bg-[#fffef9] overflow-hidden shadow-[0_5px_20px_rgba(33,75,56,.06)] hover:shadow-[0_8px_25px_rgba(33,75,56,.1)] transition-shadow">
+        <span className="absolute inset-y-0 left-0 w-2 bg-[#456448]" aria-hidden="true" />
+        {b.id === 'menu' ? <div className="h-52 bg-[#e7edde] overflow-hidden"><img src="/knowledge-books/menu/01.webp" alt="ปกรูปเล่มเมนูบ้านโฮม" className="w-full h-full object-cover object-top" /></div> : <div className="h-52 bg-gradient-to-br from-[#e9efdf] to-[#f7f3e8] px-7 py-7 flex flex-col justify-between"><b.icon size={30} strokeWidth={1.4} className="text-[#597662]" /><p className="text-sm leading-7 text-[#597662]">บ้านโฮม<br />{b.count}</p></div>}
+        <div className="p-5 pl-6"><span className="text-[10px] text-[#788477]">{b.audience}</span><h2 className="text-base font-semibold text-[#214b38] mt-2">{b.title}</h2><p className="text-xs leading-6 text-[#788477] mt-2">{b.description}</p><span className="inline-flex gap-1 items-center text-xs text-[#456448] mt-5">เปิดอ่าน<ChevronRight size={14} /></span></div>
+      </button>)}</div>
+    </> : <>
+      <button onClick={() => setBookId(null)} className="flex items-center gap-1 text-xs text-[#597662] mb-5"><ArrowLeft size={15} />กลับไปเลือกเล่ม</button>
+      <header className="mb-5"><span className="text-[10px] rounded-full bg-[#e8eedf] px-2 py-1 text-[#597662]">{book.audience}</span><h1 className="text-xl font-semibold text-[#214b38] mt-3">{book.title}</h1><p className="text-[11px] leading-6 text-[#788477] mt-1 break-words">ไฟล์ต้นทาง: {book.source}</p></header>
+      {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : !data ? <p role="status" className="text-sm text-[#788477]">กำลังเปิดเล่ม…</p> : <>
+        <details className="rounded-xl border border-[#d6dfce] bg-[#fffef9] px-4 py-3 mb-4"><summary className="cursor-pointer text-sm text-[#597662]">สารบัญ · {count} {bookId === 'menu' ? 'หน้า' : 'บท'}</summary><nav aria-label="สารบัญเล่ม" className="grid sm:grid-cols-2 gap-2 mt-4">{entries.map((entry, index) => <button key={index} onClick={() => navigate(index)} className={`text-left text-xs leading-6 rounded-lg px-2 py-1 ${page === index ? 'bg-[#e9efdf] text-[#214b38]' : 'text-[#597662] hover:bg-[#f4f5ed]'}`}>{entry.title}</button>)}</nav></details>
+        <div ref={pageTop} className="scroll-mt-24">{pager}</div>
+        {data.pages ? <>
+          <div className="flex justify-end gap-3 mb-3"><button aria-label="ย่อหน้าเมนู" disabled={zoom <= 1} onClick={() => setZoom(z => Math.max(1, z - .5))} className="text-[#597662] disabled:opacity-30"><ZoomOut size={18} /></button><span className="text-xs text-[#788477]">{Math.round(zoom * 100)}%</span><button aria-label="ขยายหน้าเมนู" disabled={zoom >= 3} onClick={() => setZoom(z => Math.min(3, z + .5))} className="text-[#597662] disabled:opacity-30"><ZoomIn size={18} /></button></div>
+          <div ref={imageViewport} className="knowledge-menu-page rounded-xl border border-[#d6dfce] bg-[#fffef9] overflow-auto max-h-[80dvh] shadow-sm"><img key={page} src={data.pages[page].src} alt={`เมนูอาหารบ้านโฮม หน้า ${page + 1}`} style={{ width: `${zoom * 100}%`, maxWidth: 'none' }} /></div>
+        </> : <article className="knowledge-book-reader rounded-2xl border border-[#d6dfce] bg-[#fffef9] shadow-[0_5px_22px_rgba(41,66,35,.06)] px-5 sm:px-9 py-7">
+          <h2 className="text-lg font-semibold text-[#214b38] mb-6">{data.chapters![page].title}</h2>
+          <div className="space-y-5 text-sm leading-8 break-words">{data.chapters![page].blocks.map((block, index) => block.type === 'paragraph' ? <p key={index} className="whitespace-pre-wrap">{block.text}</p> : block.type === 'heading' ? <h3 key={index} className="font-semibold text-[#456448] pt-3">{block.text}</h3> : block.type === 'image' ? <img key={index} src={block.src} alt={`ภาพจากเอกสาร ${data.chapters![page].title}`} loading="lazy" className="max-w-full h-auto rounded-lg" /> : <div key={index} className="overflow-x-auto rounded-xl border border-[#dfe5d8]"><table className="w-full text-xs leading-6"><tbody>{block.rows.map((row, r) => <tr key={r} className={r === 0 ? 'bg-[#edf2e6] font-medium' : 'border-t border-[#e5e8df]'}>{row.map((cell, c) => <td key={c} className="align-top min-w-[100px] p-3 whitespace-pre-wrap">{cell}</td>)}</tr>)}</tbody></table></div>)}</div>
+        </article>}
+        {pager}
+      </>}
     </>}
   </div>;
 }
