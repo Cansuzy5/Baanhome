@@ -7,10 +7,10 @@ No production data or deployed Firestore rules have been changed.
 ## Why separate authentication
 Existing app login verifies mutable `appUsers` records on the client. Existing repo rules allow broad reads/writes of those records; a claimed app user ID is not a trusted Firebase identity. This implementation therefore uses a separately provisioned Firebase Authentication email/password account, on an ephemeral secondary Firebase app with in-memory auth. It never copies the application's existing passwords/hashes. The owner is Firebase Auth UID, not the legacy app ID. Users explicitly choose whether to upload the chat visible in their local account. Closing/navigating away logs out of the backup identity. This is intentionally a separate backup sign-in until the legacy login is migrated properly.
 
-## Activation gates (not performed)
+## Activation gates (production steps not performed)
 1. Confirm billing/free-quota eligibility and current usage in the EXISTING named Firestore database. Do not create another database. Free quota is shared with the rest of the app and may not be assigned to this database.
 2. Enable Firebase Authentication email/password, provision individual pilot accounts, and add the actual preview host to authorized domains. No account self-registration is included.
-3. Test the additive rules fragment in an emulator: unauthenticated denied, UID A cannot get/write/delete UID B, collection listing denied, owner operations allowed, invalid/oversized/future-expiry writes denied. Inspect actual deployed rules for overlapping wildcard grants. The repo's general wildcard is deny-all; production has not been inspected.
+3. Emulator suite now passes against the combined repository rules + additive fragment: unauthenticated denied, UID A cannot get/write/delete UID B, collection listing denied, owner operations allowed, invalid/oversized/future-expiry writes denied. Inspect actual deployed rules for overlapping wildcard grants. The repo's general wildcard is deny-all; production has not been inspected.
 4. Apply ONLY the new collection rule to the existing deployed rules. Do not replace the entire ruleset with the fragment. Default rules deny this collection, so failures leave local history intact.
 5. Set VITE_PRIVATE_CHAT_BACKUP=true ONLY in the dedicated preview deployment and rebuild. Keep absent/false in production. Run a two-user/two-device pilot before enabling production.
 
@@ -22,6 +22,17 @@ One `privateChatBackups/{FirebaseAuthUID}` document per backup account, at most 
 Example estimate, excluding existing application traffic: 20 staff each opening backup once and saving 30 times/day = about 620 document reads and 600 writes/day, without transaction retries. Maximum payload total for 20 accounts is 3.6 MB plus document/index overhead. Text payload index exemption is advisable before larger rollout. Free standard Firestore quota: 50k reads/day, 20k writes/day, 20k deletes/day, 1 GiB storage, 10 GiB outbound/month; only one database qualifies. Check console eligibility and actual usage, not estimates alone.
 
 ## Validation
-Local payload tests and both disabled/enabled TypeScript/build checks are recorded in the PR. Real Firebase auth, actual database access, rule-emulator tests and browser cross-device verification are NOT yet performed. Do not call the draft production-ready.
+Local payload tests and both disabled/enabled TypeScript/build checks are recorded in the PR.
+On 2026-10-13, six Firestore emulator tests passed: owner CRUD, cross-user denial, anonymous denial, list/nested-path denial, invalid writes, and unchanged shared-config access. Tests load the existing repository rules plus the additive fragment, on a local demo project only. They do not validate the live named database or its deployed rules.
+
+Reproduce using Node 20+ and Java 17+ (firebase-tools 14):
+```sh
+cd tests/private-chat-rules
+npm install
+npm test
+```
+Dependencies are isolated from the application package and lockfile. The test runner refuses non-local emulator targets.
+
+Real Firebase auth, actual database access and browser cross-device verification are NOT yet performed. Firebase Console currently requires Google sign-in in this session; billing/usage and deployed rules remain unverified. Do not call the draft production-ready.
 
 Rollback: unset VITE_PRIVATE_CHAT_BACKUP and redeploy. No existing schema migration is required. Remove the additive rule only after deciding what to do with pilot backups; never clear other collections.
