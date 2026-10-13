@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { ArrowUp, Check, Copy, FileSpreadsheet, Home, Loader2, RotateCcw, X } from 'lucide-react';
 import type { KnowledgeItem, StaffProfile } from '../types';
 import type { SearchResult } from '../utils/searchEngine';
@@ -7,6 +7,7 @@ import { useSearchAnalytics } from '../hooks/useSearchAnalytics';
 import { BotanicalBackdrop } from './BotanicalBackdrop';
 import { KnowledgeMedia } from './KnowledgeMedia';
 import { clearConversation, readConversation, saveConversation, MAX_CONVERSATION_TURNS, type ConversationTurn } from '../utils/qaConversation';
+const PrivateChatBackup = lazy(() => import('./PrivateChatBackup').then(module => ({ default: module.PrivateChatBackup })));
 interface CorporateSearchUIProps {
   activeKnowledgeItems: KnowledgeItem[]; staffName: string; analyticsStaff?: StaffProfile;
   onAddKnowledge?: () => void;
@@ -66,6 +67,7 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({ activeKnow
   const copy = async (id: string, text: string) => { try { await navigator.clipboard.writeText(text); setCopied(id); } catch { setNotice('คัดลอกไม่สำเร็จ กรุณาลองใหม่'); } };
   return <div className="qa-garden-shell"><BotanicalBackdrop /><div className="qa-conversation max-w-4xl mx-auto px-4 sm:px-8 py-6">
     <header className="flex justify-between items-center border-b border-[#e0e5da] pb-4"><div><h1 className="text-xl font-semibold text-[#214b38]">ถาม–ตอบ</h1><p className="text-xs text-[#788477] mt-1">น้องโฮม · {staffName}</p></div><div className="flex items-center gap-2">{onAddKnowledge && <button onClick={onAddKnowledge} className="qa-copy-button text-xs text-[#597662]">เพิ่มข้อมูล/คำตอบ</button>}{turns.length > 0 && <button aria-label="เริ่มบทสนทนาใหม่" onClick={reset} className="p-2 text-[#788477]"><RotateCcw size={17} /></button>}</div></header>
+    {import.meta.env.VITE_PRIVATE_CHAT_BACKUP === 'true' && accountId && <Suspense fallback={null}><PrivateChatBackup key={accountId} turns={turns} busy={!!loading} onRestore={next => publish(next)} /></Suspense>}
     <div className="space-y-6 py-6 min-h-[380px]">
       {!turns.length && <div className="rounded-2xl bg-[#fffdf8] border border-[#e0e5da] p-5 shadow-sm"><Home size={22} className="text-[#214b38] mb-3" /><h2 className="text-lg font-medium text-[#214b38]">วันนี้ให้โฮมช่วยเรื่องไหน?</h2><p className="text-sm text-[#788477] mt-2">ถามเรื่องห้องพัก อาหาร จัดเลี้ยง หรือข้อมูลพนักงานได้เลย</p></div>}
       {turns.map((turn, index) => {
