@@ -21,6 +21,7 @@ interface UnansweredQuestionsViewProps {
   onAskQuestion: (q: string) => void;
   onDeleteQuestion?: (id: string) => void;
   onClearResolved?: () => void;
+  onPrepareAnswer?: (question: UnansweredQuestion) => void;
 }
 
 export const UnansweredQuestionsView: React.FC<UnansweredQuestionsViewProps> = ({
@@ -29,10 +30,23 @@ export const UnansweredQuestionsView: React.FC<UnansweredQuestionsViewProps> = (
   onAskQuestion,
   onDeleteQuestion,
   onClearResolved,
+  onPrepareAnswer,
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const groups = new Map<string, UnansweredQuestion[]>();
+  const resolved = questions.filter(q => q?.status === 'resolved');
+  for (const q of questions.filter(q => q && q.status !== 'resolved')) {
+    const key = q.question.normalize('NFKC').toLowerCase().trim().replace(/[?？]+$/u, '').trim().replace(/\s+/g, ' ') || q.id;
+    const group = groups.get(key) || [];
+    group.push(q);
+    groups.set(key, group);
+  }
+  const rows = [...groups.values()].sort((a, b) => b.length - a.length)
+    .flatMap(group => group.map(q => ({ q, count: group.length })));
+  rows.push(...resolved.map(q => ({ q, count: 0 })));
 
   const pendingCount = questions.filter((q) => q?.status === 'pending').length;
   const assignedCount = questions.filter((q) => q?.status === 'assigned').length;
@@ -123,7 +137,7 @@ export const UnansweredQuestionsView: React.FC<UnansweredQuestionsViewProps> = (
             <p className="text-xs mt-1">ทุกคำถามที่พนักงานถามเข้ามา มีข้อมูลครบถ้วนในฐานความรู้ Google Docs</p>
           </div>
         ) : (
-          questions.filter(Boolean).map((q) => {
+          rows.map(({ q, count }) => {
             const cat = KNOWLEDGE_CATEGORIES.find((c) => c.id === q.suggestedCategory);
             return (
               <div
@@ -166,6 +180,8 @@ export const UnansweredQuestionsView: React.FC<UnansweredQuestionsViewProps> = (
                     <h4 className="text-base font-bold text-[#1B3D2F] mb-1.5 leading-snug">
                       "{q.question}"
                     </h4>
+
+                    {count > 1 && <p className="mb-2 text-xs font-semibold text-[#7D4E19]">คำถามซ้ำที่ยังเปิดอยู่ {count} รายการ</p>}
 
                     {/* Asker Info */}
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[#5D7063]">
@@ -263,7 +279,8 @@ export const UnansweredQuestionsView: React.FC<UnansweredQuestionsViewProps> = (
                     <div className="text-[10px] font-semibold text-[#8C9E90] uppercase tracking-wider hidden sm:block mb-1">
                       อัปเดตสถานะ
                     </div>
-                    <div className="flex sm:flex-col gap-1.5 w-full">
+                    <div className="flex flex-wrap sm:flex-col gap-1.5 w-full">
+                      {onPrepareAnswer && q.status !== 'resolved' && <button type="button" onClick={() => onPrepareAnswer(q)} className="rounded-lg bg-[#214b38] px-2.5 py-1.5 text-xs font-semibold text-white">เตรียมคำตอบเข้าฐานความรู้</button>}
                       {q.status === 'pending' && (
                         <button
                           onClick={() => onUpdateStatus(q.id, 'assigned', q.adminNotes)}
