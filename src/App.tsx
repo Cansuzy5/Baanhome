@@ -83,6 +83,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<NavigationTab>('qa');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddKnowledge, setShowAddKnowledge] = useState(false);
+  const [knowledgeGap, setKnowledgeGap] = useState<UnansweredQuestion | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<KnowledgeCategory | 'all'>('all');
   
   // Users & Activity Logs state (Real-time Firebase Firestore + Local Cache)
@@ -406,17 +407,16 @@ export default function App() {
                     );
                   }
                 }}
-                onAskUnanswered={(query) => {
+                onAskUnanswered={async (query) => {
                   const u = {
-                    id: `un-${Date.now()}`,
+                    id: `un-${crypto.randomUUID()}`,
                     timestamp: new Date().toISOString(),
                     staffName: currentStaff.name,
                     department: currentStaff.department,
                     question: query,
                     status: 'pending' as const,
                   };
-                  void createUnansweredQuestion(u).catch(()=>{});
-                  setActiveTab('unanswered');
+                  await createUnansweredQuestion(u);
                 }}
               />
             )}
@@ -462,6 +462,10 @@ export default function App() {
               <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
                 <UnansweredQuestionsView
                   questions={unansweredQuestions}
+                  onPrepareAnswer={currentRole === 'Administrator' ? question => {
+                    setKnowledgeGap(question);
+                    setShowAddKnowledge(true);
+                  } : undefined}
                   onUpdateStatus={handleUpdateUnansweredStatus}
                   onAskQuestion={(q) => {
                     handleExecuteSearch(q);
@@ -546,7 +550,7 @@ export default function App() {
         }}
       />
 
-      {showAddKnowledge && (currentRole === 'Administrator' || currentRole === 'Operator') && <AddKnowledgeModal items={activeKnowledgeItems} canDelete={currentRole === 'Administrator'} onClose={() => setShowAddKnowledge(false)} onSaved={items => { setActiveKnowledgeItems(items); setIsUsingCustomSheet(true); }} />}
+      {showAddKnowledge && (currentRole === 'Administrator' || currentRole === 'Operator') && <AddKnowledgeModal items={activeKnowledgeItems} gap={currentRole === 'Administrator' ? knowledgeGap : null} canDelete={currentRole === 'Administrator'} onClose={() => { setShowAddKnowledge(false); setKnowledgeGap(null); }} onSaved={items => { setActiveKnowledgeItems(items); setIsUsingCustomSheet(true); }} />}
       {/* Google Sheets Knowledge Base Sync Modal */}
       <GoogleSheetsSyncModal
         isOpen={showSheetsSyncModal}
