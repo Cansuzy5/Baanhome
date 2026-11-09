@@ -10,7 +10,7 @@ import { clearConversation, readConversation, saveConversation, MAX_CONVERSATION
 interface CorporateSearchUIProps {
   activeKnowledgeItems: KnowledgeItem[]; staffName: string; analyticsStaff?: StaffProfile;
   onAddKnowledge?: () => void;
-  onRecordLog: (query: string, result: SearchResult | null) => void; onAskUnanswered: (query: string) => void;
+  onRecordLog: (query: string, result: SearchResult | null) => void; onAskUnanswered: (query: string) => Promise<void>;
   searchQuery?: string; onSearchChange?: (q: string) => void; onOpenSheetsSync?: () => void; isUsingCustomSheet?: boolean;
 }
 export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({ activeKnowledgeItems, staffName, analyticsStaff, onRecordLog, onAskUnanswered, searchQuery = '', onSearchChange, onOpenSheetsSync, isUsingCustomSheet, onAddKnowledge }) => {
@@ -22,6 +22,9 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({ activeKnow
   const setDraft = onSearchChange || setLocalDraft;
   const [loading, setLoading] = useState<string | null>(null);
   const [copied, setCopied] = useState('');
+  const [reported, setReported] = useState<Set<string>>(() => new Set());
+  const [reporting, setReporting] = useState<string | null>(null);
+  const reportInFlight = useRef(false);
   const [notice, setNotice] = useState('');
   const [analyticsQuestion, setAnalyticsQuestion] = useState('');
   const countRef = useRef(0);
@@ -63,6 +66,21 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({ activeKnow
     publish([...previous, turn]); setDraft(''); countRef.current = 0; setAnalyticsQuestion(question); void generate(turn, previous);
   };
   const reset = () => { requestRef.current?.abort(); requestRef.current = null; setLoading(null); setDraft(''); setNotice(''); clearConversation(accountId); turnsRef.current = []; setTurns([]); };
+  const reportQuestion = async (turn: ConversationTurn) => {
+    if (reportInFlight.current || reported.has(turn.id)) return;
+    reportInFlight.current = true;
+    setReporting(turn.id);
+    setNotice('');
+    try {
+      await onAskUnanswered(turn.question);
+      setReported(previous => new Set(previous).add(turn.id));
+    } catch {
+      setNotice('ส่งคำถามไม่สำเร็จ กรุณาลองอีกครั้ง');
+    } finally {
+      reportInFlight.current = false;
+      setReporting(null);
+    }
+  };
   const copy = async (id: string, text: string) => { try { await navigator.clipboard.writeText(text); setCopied(id); } catch { setNotice('คัดลอกไม่สำเร็จ กรุณาลองใหม่'); } };
   return <div className="qa-garden-shell"><BotanicalBackdrop /><div className="qa-conversation max-w-4xl mx-auto px-4 sm:px-8 py-6">
     <header className="flex justify-between items-center border-b border-[#e0e5da] pb-4"><div><h1 className="text-xl font-semibold text-[#214b38]">ถาม–ตอบ</h1><p className="text-xs text-[#788477] mt-1">น้องโฮม · {staffName}</p></div><div className="flex items-center gap-2">{onAddKnowledge && <button onClick={onAddKnowledge} className="qa-copy-button text-xs text-[#597662]">เพิ่มข้อมูล/คำตอบ</button>}{turns.length > 0 && <button aria-label="เริ่มบทสนทนาใหม่" onClick={reset} className="p-2 text-[#788477]"><RotateCcw size={17} /></button>}</div></header>
@@ -79,6 +97,9 @@ export const CorporateSearchUI: React.FC<CorporateSearchUIProps> = ({ activeKnow
               {([{ key: 'customer', text: turn.aiAnswer.customerAnswer, label: 'ส่งให้ลูกค้าได้' }, { key: 'staff', text: turn.aiAnswer.staffAnswer, label: 'ข้อมูลสำหรับพนักงาน' }]).filter(s => s.text).map(section => <div key={section.key} className="mb-4 last:mb-0"><span className={`inline-block rounded-full px-2 py-1 text-[10px] ${section.key === 'customer' ? 'bg-[#eaf2e4] text-[#375f38]' : 'bg-[#f4ebda] text-[#806638]'}`}>{section.label}</span><p className="text-sm leading-7 whitespace-pre-wrap break-words text-[#293e31] mt-3">{section.text}</p><button onClick={() => void copy(`${turn.id}-${section.key}`, section.text!)} className="qa-copy-button inline-flex items-center gap-1 text-xs text-[#597662] mt-3">{copied === `${turn.id}-${section.key}` ? <Check size={13} /> : <Copy size={13} />}คัดลอกคำตอบ{turn.aiAnswer?.customerAnswer && turn.aiAnswer?.staffAnswer ? (section.key === 'customer' ? 'สำหรับลูกค้า' : 'สำหรับพนักงาน') : ''}</button></div>)}
               {refs.filter(i => i.images?.length || i.imageUrl || i.category === 'restaurant').slice(0, 3).map(item => <KnowledgeMedia key={item.id} item={item} />)}
               <button disabled={!!loading} onClick={() => void generate(turn, turns.slice(0, index))} className="text-xs text-[#597662] underline mt-3 disabled:opacity-40">ตอบใหม่จากข้อมูลล่าสุด</button>
+              {turn.sourceIds.length === 0 && !turn.restored && <div className="mt-3">
+                {reported.has(turn.id) ? <p role="status" className="text-xs text-[#597662]">ส่งคำถามให้แอดมินแล้ว</p> : <button type="button" disabled={!!reporting || !!loading} onClick={() => void reportQuestion(turn)} className="rounded-lg border border-[#d6dfce] px-3 py-1.5 text-xs text-[#456448] disabled:opacity-50">{reporting === turn.id ? 'กำลังส่งคำถาม…' : 'ส่งคำถามให้แอดมินตรวจ'}</button>}
+              </div>}
               {refs.length > 0 && <details className="mt-4 pt-3 border-t border-[#e4e8df]"><summary className="cursor-pointer text-xs text-[#788477]">แหล่งอ้างอิงและข้อมูลเพิ่มเติม</summary><div className="space-y-4 mt-3">{refs.map(item => <div key={item.id} className="text-xs text-[#597662]"><p className="font-medium">{item.title}</p><p className="whitespace-pre-wrap leading-6 mt-1">{item.summary}</p><p className="mt-1 text-[#788477]">{item.sourceDoc}{item.docSection ? ` · ${item.docSection}` : ''}</p>{!(item.images?.length || item.imageUrl || item.category === 'restaurant') && <KnowledgeMedia item={item} />}</div>)}</div></details>}
             </div> : <div className="text-sm text-[#788477]"><p>คำถามจากประวัติ · กดตอบใหม่เพื่อใช้ข้อมูลล่าสุด</p><button onClick={() => void generate(turn, turns.slice(0, index))} className="text-xs underline mt-2 text-[#597662]">ตอบคำถามนี้</button></div>}
           </div>

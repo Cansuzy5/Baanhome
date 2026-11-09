@@ -407,17 +407,16 @@ export default function App() {
                     );
                   }
                 }}
-                onAskUnanswered={(query) => {
+                onAskUnanswered={async (query) => {
                   const u = {
-                    id: `un-${Date.now()}`,
+                    id: `un-${crypto.randomUUID()}`,
                     timestamp: new Date().toISOString(),
                     staffName: currentStaff.name,
                     department: currentStaff.department,
                     question: query,
                     status: 'pending' as const,
                   };
-                  void createUnansweredQuestion(u).catch(()=>{});
-                  setActiveTab('unanswered');
+                  await createUnansweredQuestion(u);
                 }}
               />
             )}
