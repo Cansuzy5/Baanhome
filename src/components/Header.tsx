@@ -7,7 +7,6 @@ import {
   History,
   ChevronDown,
   ChevronRight,
-  Sparkles,
   HelpCircle,
   Layers,
   ShieldCheck,
@@ -229,7 +228,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
 
-          {/* User Profile Dropdown & Account Switcher */}
+          {/* User Profile Dropdown */}
           <div className="relative shrink-0">
             <button
               id="user-profile-menu-btn"
@@ -238,7 +237,7 @@ export const Header: React.FC<HeaderProps> = ({
                 setShowDataMenu(false);
               }}
               className="flex items-center gap-1.5 sm:gap-2 pl-1 sm:pl-1.5 pr-2 sm:pr-2.5 py-1 rounded-full bg-[#FAF8F3] hover:bg-[#F1EDE2] text-[#1B3D2F] border border-[#E5DFD1] transition-all cursor-pointer shrink-0"
-              title="โปรไฟล์ผู้ใช้และสลับบัญชี"
+              title="โปรไฟล์ผู้ใช้"
             >
               <span className="w-6 h-6 rounded-full bg-[#E5EFE2] text-xs flex items-center justify-center font-bold shrink-0 border border-[#D5E5D1]">
                 {currentStaff.avatar || '👩🏻‍💼'}
@@ -290,21 +289,6 @@ export const Header: React.FC<HeaderProps> = ({
                     {currentStaff.department}
                   </div>
 
-                  {/* Switch Account Button */}
-                  {onEditProfile && (
-                    <button
-                      id="header-open-login-portal-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowMenu(false);
-                        onEditProfile();
-                      }}
-                      className="mt-2.5 w-full py-2 px-3 rounded-xl bg-gradient-to-r from-[#1E4332] to-[#153526] hover:from-[#173829] hover:to-[#0F281C] text-[#F1DCB0] text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98] cursor-pointer border border-[#E8C57D]/30"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-[#E8C57D]" />
-                      <span>สลับบัญชี / ทดสอบ 3 ระดับสิทธิ์</span>
-                    </button>
-                  )}
                 </div>
 
                 {/* ROLE RESTRICTED TOOLS IN MENU */}
