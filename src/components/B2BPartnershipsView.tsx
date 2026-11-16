@@ -876,11 +876,15 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
     const isClosure = newStage === 'ปิดการขาย' || newStage === 'ปิดการขายไม่สำเร็จ';
     if (isClosure && !sourceAppointmentId) {
       const candidates = appointments.filter(item => item.leadId === leadId && item.status === 'completed' && !item.salesCycleClosedAt);
-      if (candidates.length !== 1) {
+      if (candidates.length > 1) {
         setPermissionError('กรุณาเปิดนัดที่เข้าพบแล้วในปฏิทิน แล้วเลือกปิดดีลจากนัดนั้น');
         return false;
       }
-      sourceAppointmentId = candidates[0].id;
+      sourceAppointmentId = candidates[0]?.id;
+      if (!sourceAppointmentId && oldStage === 'ยังไม่ติดต่อ') {
+        setPermissionError('ยังไม่มีรอบการขายที่ติดต่อแล้วให้ปิด');
+        return false;
+      }
     }
     if (sourceAppointmentId) {
       const source = appointments.find(item => item.id === sourceAppointmentId);
@@ -956,7 +960,7 @@ export const B2BPartnershipsView: React.FC<B2BPartnershipsViewProps> = ({
       setPermissionError(result.error || 'เปลี่ยนสถานะไม่สำเร็จ');
       return false;
     }
-    if (!isClosure && activeLeadModal && activeLeadModal.id === leadId) {
+    if (activeLeadModal && activeLeadModal.id === leadId) {
       setActiveLeadModal(getCachedLeads().find(item => item.id === updatedLead.id) || updatedLead);
     }
     return true;
