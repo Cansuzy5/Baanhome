@@ -106,6 +106,13 @@ function mutate(body: unknown, allowed: boolean): Promise<{ success: boolean; er
       if (deletedAppointmentId && (!Array.isArray(result.appointments) || result.appointments.some((item: B2BAppointment) => item.id === deletedAppointmentId))) {
         throw new Error('ยังยืนยันการลบนัดไม่ได้ กรุณารีเฟรชตรวจสอบก่อนลองอีกครั้ง');
       }
+      if (command.action === 'closeCycleWithoutAppointment') {
+        const lead = result.leads?.find((item: B2BLead) => item.id === command.leadId);
+        const closure = lead?.salesClosures?.find((item: any) => item.id === command.closureId);
+        if (!closure || closure.sourceAppointmentId || closure.outcome !== command.outcome || closure.closedAt !== command.closedAt) {
+          throw new Error('ยังยืนยันการปิดดีลไม่ได้ กรุณารีเฟรชตรวจสอบก่อนลองอีกครั้ง');
+        }
+      }
       if (command.action === 'closeCycleFromAppointment' || command.action === 'closeCycle') {
         const appointmentId = command.appointmentId || command.sourceAppointmentId;
         const saved = result.appointments?.find((item: B2BAppointment) => item.id === appointmentId);
@@ -201,13 +208,15 @@ export function closeCentralB2BSalesCycle(
 ) {
   return mutate(
     {
-      action: 'closeCycle',
-      lead,
+      action: sourceAppointmentId ? 'closeCycle' : 'closeCycleWithoutAppointment',
+      leadId: lead.id,
+      actorId: lead.salesClosures?.find(item => item.id === closureId)?.closedById,
+      actorName: lead.salesClosures?.find(item => item.id === closureId)?.closedByName,
       closedAt,
       closureId,
       outcome,
       sourceAppointmentId,
-      expectedLeadRevision: lead._revision,
+      expectedLeadRevision: Number(lead._revision || 0),
     },
     canUserEditOperational(role)
   );
